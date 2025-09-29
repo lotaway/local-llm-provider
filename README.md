@@ -11,3 +11,7 @@ Change the `model_name` in `model_provider.py` to the downloaded model name.
 Run the `main.py` file to start the server.
 
 Install Vscode Continue Plugin and connect to the server.
+
+## AMD Required
+
+Need install ROCm and [torch ROCm version](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/install-pytorch.html) in Linux/WSL with AMD GPU.
