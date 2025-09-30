@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# AI Model, Datasets
+/models
+
 # C extensions
 *.so
 
