@@ -7,8 +7,6 @@ import time
 import json
 
 app = FastAPI()
-model = LocalModel()
-
 
 class Message(BaseModel):
     role: str
@@ -67,6 +65,7 @@ async def embeddings(req: EmbeddingRequest):
         texts = [req.input]
     else:
         texts = req.input
+    model = LocalModel(req.model)
     vectors = model.tokenizer.encode(texts).tolist()
     return {
         "object": "list",
@@ -82,7 +81,8 @@ async def embeddings(req: EmbeddingRequest):
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatRequest):
     """openai chat/edit/apply"""
-    if (req.stream):
+    model = LocalModel(req.model)
+    if req.stream:
         streamer = model.chat([m.model_dump() for m in req.messages])
         def event_stream():
             for chunk in streamer:
@@ -133,6 +133,7 @@ async def chat_completions(req: ChatRequest):
 @app.post("/v1/completions")
 async def completions(req: CompletionRequest):
     """openai autocompletions"""
+    model = LocalModel(req.model)
     output = model.complete_at_once(req.prompt)
     return {
         "id": "cmpl-1",
