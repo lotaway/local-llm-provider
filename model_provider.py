@@ -10,6 +10,7 @@ import torch
 from threading import Thread
 
 models = {
+    "gpt-oss:20b": "./models/gpt-oss-20b",
     "deepseek-r1:16b": "./models/deepseek-ai/DeepSeek-R1-Distill-Qwen-16B",
     "deepseek-r1:32b": "./models/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
 }
