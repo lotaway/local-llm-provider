@@ -8,13 +8,18 @@ from transformers import (
 from accelerate import init_empty_weights, infer_auto_device_map
 import torch
 from threading import Thread
+import os
 
+project_root = os.path.abspath(os.path.dirname(__file__))
 models = {
-    "gpt-oss:20b": "./models/gpt-oss-20b",
-    "deepseek-r1:16b": "./models/deepseek-ai/DeepSeek-R1-Distill-Qwen-16B",
-    "deepseek-r1:32b": "./models/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+    "gpt-oss:20b": os.path.join(project_root, "models", "openai", "gpt-oss-20b"),
+    "deepseek-r1:16b": os.path.join(project_root, "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-16B"),
+    "deepseek-r1:32b": os.path.join(project_root, "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"),
 }
 model_cache = {}
+for model_path in models.values():
+    if not os.path.exists(model_path) or not os.listdir(model_path):
+        raise ValueError(f"Model path '{model_path}' does not exist or is empty")
 
 class LocalModel:
     def __init__(self, simple_model_name="deepseek-r1:16b"):
