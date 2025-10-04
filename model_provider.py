@@ -41,7 +41,7 @@ class LocalModel:
             device_map = {
                 "transformer.word_embeddings": 0,
                 "transformer.final_layernorm": 0,
-                "transformer.h": "cpu",
+                # "transformer.h": "cpu",
                 "model.embed_tokens": 0,
                 "model.layers": 0,
                 "model.norm": 0,
@@ -66,7 +66,7 @@ class LocalModel:
                     load_in_4bit=True,
                     bnb_4bit_quant_type="nf4",
                     bnb_4bit_compute_dtype=torch.float16,
-                    # llm_int8_enable_fp32_cpu_offload=True,
+                    llm_int8_enable_fp32_cpu_offload=True,
                 )
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model_name,
