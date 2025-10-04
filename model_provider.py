@@ -38,36 +38,44 @@ class LocalModel:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 tokenizer_model_name, local_files_only=True
             )
-            quantization_config = BitsAndBytesConfig(
-                # load_in_8bit=True,
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                llm_int8_enable_fp32_cpu_offload=True,
-            )
-            # device_map = infer_auto_device_map(
-            #     self.model,
-            #     max_memory={0: "20GiB", "cpu": "60GiB"},
-            #     no_split_module_classes=["DeepseekLayer"],  # follow real model
-            # )
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                local_files_only=True,
-                dtype=torch.float16,
-                device_map={
-                    "transformer.word_embeddings": 0,
-                    "transformer.final_layernorm": 0,
-                    "transformer.h": "cpu",
-                    "model.embed_tokens": 0,  # 嵌入层
-                    "model.layers": 0,
-                    # "model.layers": "cpu",  # 中间层
-                    "model.norm": 0,  # LayerNorm
-                    "lm_head": 0,  # 输出层
-                },
-                # device_map=device_map,
-                quantization_config=quantization_config,
-                max_memory={0: "20GiB", "cpu": "60GiB"},
-            )
+            device_map = {
+                "transformer.word_embeddings": 0,
+                "transformer.final_layernorm": 0,
+                "transformer.h": "cpu",
+                "model.embed_tokens": 0,
+                "model.layers": 0,
+                "model.norm": 0,
+                "lm_head": 0,
+            }
+            max_memory={0: "20GiB", "cpu": "60GiB"}
+            if simple_model_name.startswith("gpt"):
+                # quantization_config = Mxfp4Config(
+                #     device_map="auto"
+                # )
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    local_files_only=True,
+                    dtype=torch.bfloat16,
+                    device_map="auto",
+                    max_memory=max_memory,
+                    # quantization_config=quantization_config,
+                    low_cpu_mem_usage=True
+                )
+            else:
+                quantization_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.float16,
+                    # llm_int8_enable_fp32_cpu_offload=True,
+                )
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    local_files_only=True,
+                    # dtype=torch.float16,
+                    device_map=device_map,
+                    max_memory=max_memory,
+                    quantization_config=quantization_config,
+                )
             model_cache[simple_model_name] = (self.model, self.tokenizer)
 
     def chat(self, messages: list[dict]):
