@@ -1,0 +1,6 @@
+# torch install: https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/install-pytorch.html#verify-pytorch-installation
+fastapi>=0.118.0
+pydantic>=2.11.9
+uvicorn>=0.37.0
+transformers>=4.57.0
+accelerate>=1.10.1

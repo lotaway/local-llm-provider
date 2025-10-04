@@ -54,6 +54,7 @@ Follow [Issue: cmake hsa-runtime64 in wsl2 not correctly set the library](https:
 
 ```bash
 cd /opt/rocm/lib/
+# Notice: Those number behind libhsa-runtime64.so, first one is the required version, second one is the installed version.
 ln -s libhsa-runtime64.so.1.14 libhsa-runtime64.so.1.15.60400
 ```
 
