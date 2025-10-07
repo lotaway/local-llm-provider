@@ -17,21 +17,20 @@ models = {
     "deepseek-r1:32b": os.path.join(project_root, "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"),
 }
 model_cache = {}
-for model_path in models.values():
-    if not os.path.exists(model_path) or not os.listdir(model_path):
-        raise ValueError(f"Model path '{model_path}' does not exist or is empty")
 
 class LocalModel:
     def __init__(self, simple_model_name="deepseek-r1:16b"):
         if simple_model_name in model_cache:
             self.model, self.tokenizer = model_cache[simple_model_name]
         else:
-            model_name = models[simple_model_name]
+            model_path = models[simple_model_name]
             tokenizer_model_name = models["deepseek-r1:16b"]
-            if model_name is None:
+            if model_path is None:
                 raise ValueError("Model name not found")
+            if not os.path.exists(model_path) or not os.listdir(model_path):
+                raise ValueError(f"Model path '{model_path}' does not exist or is empty")
 
-            # config = AutoConfig.from_pretrained(model_name)
+            # config = AutoConfig.from_pretrained(model_path)
             # with init_empty_weights():
             #     model = AutoModelForCausalLM.from_config(config)
 
@@ -53,7 +52,7 @@ class LocalModel:
                 #     device_map="auto"
                 # )
                 self.model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
+                    model_path,
                     local_files_only=True,
                     dtype=torch.bfloat16,
                     device_map="auto",
@@ -69,7 +68,7 @@ class LocalModel:
                     llm_int8_enable_fp32_cpu_offload=True,
                 )
                 self.model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
+                    model_path,
                     local_files_only=True,
                     # dtype=torch.float16,
                     device_map=device_map,

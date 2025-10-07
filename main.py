@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
@@ -7,6 +7,7 @@ import time
 import json
 # import triton
 # import triton.language as tl
+from poe_model_provider import PoeModelProvider
 
 app = FastAPI()
 
@@ -57,6 +58,40 @@ class EmbeddingRequest(BaseModel):
     model: str
     input: list[str] | str
 
+poe_model_provider = None
+
+@app.post("/poe/{path:path}")
+async def poe(request: Request, path: str):
+    global poe_model_provider
+    if poe_model_provider is None:
+        poe_model_provider = PoeModelProvider()
+        poe_model_provider.ping()
+    url = str(request.url)
+    print(f"url: {url}")
+    try:
+        body_data = await request.json()
+        is_stream = body_data.get('stream', False)
+        response = poe_model_provider.handle_request(url, body_data)
+        
+        if is_stream:
+            # Stream response line by line
+            async def stream_response():
+                async for line in response.aiter_lines():
+                    yield line + "\n"
+            
+            return StreamingResponse(
+                stream_response(),
+                media_type="text/event-stream"
+            )
+        else:
+            return JSONResponse(content=response.json())
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+local_model = None
+
 @app.post("/api/show")
 async def api_show():
     return {"ok": True}
@@ -67,8 +102,10 @@ async def embeddings(req: EmbeddingRequest):
         texts = [req.input]
     else:
         texts = req.input
-    model = LocalModel(req.model)
-    vectors = model.tokenizer.encode(texts).tolist()
+    global local_model
+    if local_model is None:
+        local_model = LocalModel(req.model)
+    vectors = local_model.tokenizer.encode(texts).tolist()
     return {
         "object": "list",
         "data": [
@@ -83,9 +120,11 @@ async def embeddings(req: EmbeddingRequest):
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatRequest):
     """openai chat/edit/apply"""
-    model = LocalModel(req.model)
+    global local_model
+    if local_model is None:
+        local_model = LocalModel(req.model)
     if req.stream:
-        streamer = model.chat([m.model_dump() for m in req.messages])
+        streamer = local_model.chat([m.model_dump() for m in req.messages])
         def event_stream():
             for chunk in streamer:
                 data = {
@@ -100,7 +139,7 @@ async def chat_completions(req: ChatRequest):
                 yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(event_stream(), media_type="text/event-stream")
-    output = model.chat_at_once([m.model_dump() for m in req.messages])
+    output = local_model.chat_at_once([m.model_dump() for m in req.messages])
     response = {
         "id": "chatcmpl-1",
         "object": "chat.completion",
@@ -135,8 +174,10 @@ async def chat_completions(req: ChatRequest):
 @app.post("/v1/completions")
 async def completions(req: CompletionRequest):
     """openai autocompletions"""
-    model = LocalModel(req.model)
-    output = model.complete_at_once(req.prompt)
+    global local_model
+    if local_model is None:
+        local_model = LocalModel(req.model)
+    output = local_model.complete_at_once(req.prompt)
     return {
         "id": "cmpl-1",
         "object": "text_completion",
