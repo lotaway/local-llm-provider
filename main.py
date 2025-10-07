@@ -2,12 +2,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
-from model_provider import LocalModel
 import time
 import json
 # import triton
 # import triton.language as tl
+from dotenv import load_dotenv
+load_dotenv()
+
 from poe_model_provider import PoeModelProvider
+from model_provider import LocalModel
 
 app = FastAPI()
 
