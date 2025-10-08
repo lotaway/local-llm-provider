@@ -87,21 +87,7 @@ async def poe(request: Request, path: str):
     print(f"url: {url}")
     try:
         body_data = await request.json()
-        is_stream = body_data.get('stream', False)
-        response = poe_model_provider.handle_request(path, body_data)
-        
-        if is_stream:
-            # Stream response line by line
-            async def stream_response():
-                async for line in response.aiter_lines():
-                    yield line + "\n"
-            
-            return StreamingResponse(
-                stream_response(),
-                media_type="text/event-stream"
-            )
-        else:
-            return JSONResponse(content=response.json())
+        return poe_model_provider.handle_request(path, body_data)
     except Exception as e:
         return JSONResponse(
             status_code=500,

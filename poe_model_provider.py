@@ -32,21 +32,28 @@ class PoeModelProvider:
         return chat.choices[0].message.content
     
 
-    async def handle_request(self, path, body_data=None):
+    def handle_request(self, path, body_data=None):
         """Process original URL, remove /poe path, forward to API with API_KEY"""
-        try:
-            api_url = f"https://api.poe.com{path}"
-            print(f"Forwarding request to: {api_url}")
-            headers = { "Authorization": f"Bearer {self.client.api_key}", "Accept": "text/event-stream" }
-            async with httpx.AsyncClient(timeout=None) as client:
-                async with client.stream("POST", api_url, headers=headers, json=body_data or {}) as resp:
-                    resp.raise_for_status()
-                    async for chunk in resp.aiter_text():
-                        if chunk:
-                            yield chunk
-        except httpx.HTTPStatusError as e:
-            print(f"API request failed with status {e.response.status_code}: {e}")
-            raise
-        except Exception as e:
-            print(f"Error processing request: {e}")
-            raise
+        api_url = f"https://api.poe.com/{path}"
+        print(f"Forwarding request to: {api_url}")
+        headers = { 
+            "Authorization": f"Bearer {self.client.api_key}",
+            "Accept": "text/event-stream" 
+        }
+        
+        def generate():
+            try:
+                with httpx.Client(timeout=None) as client:
+                    with client.stream("POST", api_url, headers=headers, json=body_data or {}) as resp:
+                        resp.raise_for_status()
+                        for chunk in resp.iter_text():
+                            if chunk:
+                                yield chunk
+            except httpx.HTTPStatusError as e:
+                print(f"API request failed with status {e.response.status_code}: {e}")
+                raise
+            except Exception as e:
+                print(f"Error processing request: {e}")
+                raise
+                
+        return generate()
