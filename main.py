@@ -11,6 +11,7 @@ load_dotenv()
 
 from poe_model_provider import PoeModelProvider
 from model_provider import LocalModel
+from comfyui_provider import ComfyUIProvider
 
 app = FastAPI()
 
@@ -61,6 +62,19 @@ class EmbeddingRequest(BaseModel):
     model: str
     input: list[str] | str
 
+
+@app.get("/")
+async def index():
+    return "Hello, Local LLM Provider!"
+
+
+comfyui_provider = ComfyUIProvider()
+
+@app.api_route("/comfyui/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+async def comfyui(request: Request, path: str):
+    return await comfyui_provider.proxy_request(request)
+    
+
 poe_model_provider = None
 
 @app.post("/poe/{path:path}")
@@ -93,6 +107,8 @@ async def poe(request: Request, path: str):
             status_code=500,
             content={"error": str(e)}
         )
+    
+
 local_model = None
 
 @app.post("/api/show")
