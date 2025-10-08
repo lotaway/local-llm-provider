@@ -88,7 +88,7 @@ async def poe(request: Request, path: str):
     try:
         body_data = await request.json()
         is_stream = body_data.get('stream', False)
-        response = poe_model_provider.handle_request(url, body_data)
+        response = poe_model_provider.handle_request(path, body_data)
         
         if is_stream:
             # Stream response line by line

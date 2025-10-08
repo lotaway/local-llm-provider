@@ -30,31 +30,20 @@ class PoeModelProvider:
             messages=[{"role": "user", "content": message}],
         )
         return chat.choices[0].message.content
+    
 
-    def handle_request(self, original_url, body_data=None):
+    async def handle_request(self, path, body_data=None):
         """Process original URL, remove /poe path, forward to API with API_KEY"""
         try:
-            if isinstance(original_url, bytes):
-                original_url = original_url.decode('utf-8')
-            parsed = urlparse(original_url)
-            path = parsed.path
-            if path.startswith("/poe"):
-                path = path[4:] or "/"
             api_url = f"https://api.poe.com{path}"
-            if parsed.query:
-                api_url += f"?{parsed.query}"
             print(f"Forwarding request to: {api_url}")
-            response = self.client._client.post(
-                url=api_url,
-                headers={
-                    "Authorization": f"Bearer {self.client.api_key}",
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                },
-                json=body_data or {}
-            )
-            response.raise_for_status()
-            return response
+            headers = { "Authorization": f"Bearer {self.client.api_key}", "Accept": "text/event-stream" }
+            async with httpx.AsyncClient(timeout=None) as client:
+                async with client.stream("POST", api_url, headers=headers, json=body_data or {}) as resp:
+                    resp.raise_for_status()
+                    async for chunk in resp.aiter_text():
+                        if chunk:
+                            yield chunk
         except httpx.HTTPStatusError as e:
             print(f"API request failed with status {e.response.status_code}: {e}")
             raise
