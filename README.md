@@ -23,7 +23,11 @@ Official documents clearly state that AMD GPUs must be compiled from source:
 ```bash
 git clone https://github.com/bitsandbytes-foundation/bitsandbytes.git
 cd bitsandbytes
+```
 
+### for linux rocm
+
+```base
 # Switch to the version you installed, such as 0.47.0
 git fetch origin rocm-build-update:rocm-build-update
 git switch rocm-build-update
