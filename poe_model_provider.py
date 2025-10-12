@@ -1,6 +1,7 @@
 import openai
 import os
 import httpx
+import json
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 
 
@@ -48,12 +49,8 @@ class PoeModelProvider:
                         resp.raise_for_status()
                         for chunk in resp.iter_text():
                             if chunk:
-                                yield chunk
-            except httpx.HTTPStatusError as e:
-                print(f"API request failed with status {e.response.status_code}: {e}")
-                raise
+                                yield f"data: {json.dumps({'content': chunk})}\n\n"
             except Exception as e:
-                print(f"Error processing request: {e}")
-                raise
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 
         return generate()
