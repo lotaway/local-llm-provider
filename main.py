@@ -4,9 +4,12 @@ from pydantic import BaseModel
 import uvicorn
 import time
 import json
+import httpx
+
 # import triton
 # import triton.language as tl
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from poe_model_provider import PoeModelProvider
@@ -14,6 +17,7 @@ from model_provider import LocalModel
 from comfyui_provider import ComfyUIProvider
 
 app = FastAPI()
+
 
 class Message(BaseModel):
     role: str
@@ -29,16 +33,19 @@ class ChatRequest(BaseModel):
 class CompletionRequest(BaseModel):
     model: str
     prompt: str
-    
+
+
 class PromptTokensDetail:
     cached_tokens: int
     audio_tokens: int
-    
+
+
 class CompletionTokensDetail:
     audio_tokens: int
     reasoning_tokens: int
     accepted_prediction_tokens: int
     rejected_prediction_tokens: int
+
 
 class Usege:
     prompt_tokens: int
@@ -50,6 +57,7 @@ class Usege:
     output_tokens: int
     input_tokens_details: dict
 
+
 class ApiRespnose:
     id: str
     object: str
@@ -57,6 +65,7 @@ class ApiRespnose:
     model: str
     choices: list[dict]
     usage: Usege
+
 
 class EmbeddingRequest(BaseModel):
     model: str
@@ -70,40 +79,50 @@ async def index():
 
 comfyui_provider = ComfyUIProvider()
 
-@app.api_route("/comfyui/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+
+@app.api_route(
+    "/comfyui/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+)
 async def comfyui(request: Request, path: str):
     return await comfyui_provider.proxy_request(request)
-    
+
 
 poe_model_provider = None
 
-@app.post("/poe/{path:path}")
+
+@app.post("/poe/v1/{path:path}")
 async def poe(request: Request, path: str):
     global poe_model_provider
     if poe_model_provider is None:
         poe_model_provider = PoeModelProvider()
-        poe_model_provider.ping()
+        res = poe_model_provider.ping()
+        print(f"ping: {res}")
     url = str(request.url)
     print(f"url: {url}")
     try:
-        body_data = await request.json()
-        generator = poe_model_provider.handle_request(path, body_data)
-        return StreamingResponse(
-            content=generator,
-            media_type="text/event-stream"
-        )
+        resp = await poe_model_provider.handle_request(path, request)
+
+        if resp is str:
+            return StreamingResponse(content=resp, media_type="text/event-stream")
+
+        def event_stream(resp: httpx.Response):
+            for chunk in resp.iter_text():
+                if chunk:
+                    yield chunk
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(content=event_stream(resp), media_type="text/event-stream")
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)}
-        )
-    
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 local_model = None
+
 
 @app.post("/api/show")
 async def api_show():
     return {"ok": True}
+
 
 @app.post("/v1/embeddings")
 async def embeddings(req: EmbeddingRequest):
@@ -134,6 +153,7 @@ async def chat_completions(req: ChatRequest):
         local_model = LocalModel(req.model)
     if req.stream:
         streamer = local_model.chat([m.model_dump() for m in req.messages])
+
         def event_stream():
             for chunk in streamer:
                 data = {
@@ -143,10 +163,11 @@ async def chat_completions(req: ChatRequest):
                     "model": req.model,
                     "choices": [
                         {"delta": {"content": chunk}, "index": 0, "finish_reason": None}
-                    ]
+                    ],
                 }
                 yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
+
         return StreamingResponse(event_stream(), media_type="text/event-stream")
     output = local_model.chat_at_once([m.model_dump() for m in req.messages])
     response = {

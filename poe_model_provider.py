@@ -3,7 +3,8 @@ import os
 import httpx
 import json
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
-
+from fastapi import Request
+from typing import cast
 
 class PoeModelProvider:
     def __init__(self):
@@ -18,12 +19,12 @@ class PoeModelProvider:
 
         self.client = openai.OpenAI(
             api_key=api_key,
-            base_url="https://api.poe.com",
+            base_url="https://api.poe.com/v1",
             http_client=http_client,
         )
 
     def ping(self):
-        print(self.chat("Hello, introduce yourself."))
+        return self.chat("Hello, introduce yourself.")
 
     def chat(self, message, model="Claude-Sonnet-4.5"):
         chat = self.client.chat.completions.create(
@@ -33,24 +34,12 @@ class PoeModelProvider:
         return chat.choices[0].message.content
     
 
-    def handle_request(self, path, body_data=None):
+    async def handle_request(self, path, request: Request):
         """Process original URL, remove /poe path, forward to API with API_KEY"""
-        api_url = f"https://api.poe.com/{path}"
-        print(f"Forwarding request to: {api_url}")
-        headers = { 
-            "Authorization": f"Bearer {self.client.api_key}",
-            "Accept": "text/event-stream" 
-        }
-        
-        def generate():
-            try:
-                with httpx.Client(timeout=None) as client:
-                    with client.stream("POST", api_url, headers=headers, json=body_data or {}) as resp:
-                        resp.raise_for_status()
-                        for chunk in resp.iter_text():
-                            if chunk:
-                                yield f"data: {json.dumps({'content': chunk})}\n\n"
-            except Exception as e:
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                
-        return generate()
+        body_data = await request.json()
+        try:
+            resp = self.client.post(path=path, body=body_data or {}, cast_to=httpx.Response, stream=body_data.get("stream", False))
+            resp.raise_for_status()
+            return resp
+        except Exception as e:
+            return f"data: {json.dumps({'error': str(e)})}\n\n"
