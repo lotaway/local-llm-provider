@@ -40,7 +40,7 @@ class LocalModel:
             device_map = {
                 "transformer.word_embeddings": 0,
                 "transformer.final_layernorm": 0,
-                # "transformer.h": "cpu",
+                "transformer.h": "cpu",
                 "model.embed_tokens": 0,
                 "model.layers": 0,
                 "model.norm": 0,
@@ -117,7 +117,7 @@ class LocalModel:
             prompt += "Assistant:"
 
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-        outputs = self.model.generate(**inputs, max_new_tokens=200)
+        outputs = self.model.generate(**inputs, max_new_tokens=3000)
         response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
         return response.split("Assistant:")[-1].strip()
     
@@ -131,5 +131,5 @@ class LocalModel:
 
     def complete_at_once(self, prompt: str) -> str:
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-        outputs = self.model.generate(**inputs, max_new_tokens=200)
+        outputs = self.model.generate(**inputs, max_new_tokens=3000)
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
