@@ -4,7 +4,6 @@ import httpx
 import json
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 from fastapi import Request
-from typing import cast
 
 class PoeModelProvider:
     def __init__(self):

@@ -5,6 +5,7 @@ import uvicorn
 import time
 import json
 import httpx
+from typing import cast
 
 # import triton
 # import triton.language as tl
@@ -111,7 +112,7 @@ async def poe(request: Request, path: str):
                     yield chunk
             yield "data: [DONE]\n\n"
 
-        return StreamingResponse(content=event_stream(resp), media_type="text/event-stream")
+        return StreamingResponse(content=event_stream(cast(httpx.Response,resp)), media_type="text/event-stream")
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -123,15 +124,36 @@ local_model = None
 async def api_show():
     return {"ok": True}
 
+
+@app.get("/api/tags")
+async def api_tags():
+    li = []
+    for model in LocalModel.get_models():
+        li.append({
+            "name": model, 
+            "version": "1.0.0",
+            "object": "model",
+            "owned_by": "lotaway",
+            "api_version": "v1"
+        })
+    return li
+
+
 @app.get("/api/version")
 async def api_version():
-    return {
-        "model_name": local_model.cur_model_name if local_model is not None else "unknown",
-        "version": "1.0.0",
-        "object": "model",
-        "owned_by": "lotaway",
-        "api_version": "v1"
-    }
+    li = await api_tags()
+    if local_model is not None:
+        return {
+            "model_name": "unknown",
+            "version": "1.0.0",
+            "object": "model",
+            "owned_by": "lotaway",
+            "api_version": "v1"
+        }
+    _local_model = cast(LocalModel, local_model)
+    cur = next(model for model in li if model["name"] == _local_model.cur_model_name)
+    return cur
+    
 
 
 @app.post("/v1/embeddings")

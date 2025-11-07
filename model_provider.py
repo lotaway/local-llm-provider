@@ -21,6 +21,12 @@ model_cache = {}
 class LocalModel:
 
     cur_model_name = "deepseek-r1:16b"
+    
+    
+    @staticmethod
+    def get_models():
+        return list(models.keys())
+    
 
     def __init__(self, simple_model_name= "deepseek-r1:16b"):
         if simple_model_name in model_cache:
