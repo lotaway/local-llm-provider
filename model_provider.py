@@ -19,10 +19,14 @@ models = {
 model_cache = {}
 
 class LocalModel:
-    def __init__(self, simple_model_name="deepseek-r1:16b"):
+
+    cur_model_name = "deepseek-r1:16b"
+
+    def __init__(self, simple_model_name= "deepseek-r1:16b"):
         if simple_model_name in model_cache:
             self.model, self.tokenizer = model_cache[simple_model_name]
         else:
+            self.cur_model_name = simple_model_name
             model_path = models[simple_model_name]
             tokenizer_model_name = models["deepseek-r1:16b"]
             if model_path is None:
@@ -40,7 +44,7 @@ class LocalModel:
             device_map = {
                 "transformer.word_embeddings": 0,
                 "transformer.final_layernorm": 0,
-                "transformer.h": "cpu",
+                # "transformer.h": "cpu",
                 "model.embed_tokens": 0,
                 "model.layers": 0,
                 "model.norm": 0,
