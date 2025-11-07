@@ -123,6 +123,16 @@ local_model = None
 async def api_show():
     return {"ok": True}
 
+@app.post("/api/version")
+async def api_version():
+    return {
+        "model_name": local_model.cur_model_name if local_model is not None else "unknown",
+        "version": "1.0.0",
+        "object": "model",
+        "owned_by": "lotaway",
+        "api_version": "v1"
+    }
+
 
 @app.post("/v1/embeddings")
 async def embeddings(req: EmbeddingRequest):
