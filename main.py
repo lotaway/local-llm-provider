@@ -123,7 +123,7 @@ local_model = None
 async def api_show():
     return {"ok": True}
 
-@app.post("/api/version")
+@app.get("/api/version")
 async def api_version():
     return {
         "model_name": local_model.cur_model_name if local_model is not None else "unknown",
