@@ -1,69 +1,64 @@
 import os
-from dotenv import load_dotenv
-from langchain.document_loaders import TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import PGVector
-from langchain.llms import HuggingFacePipeline
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Milvus
+from langchain_community.llms import HuggingFacePipeline
+from langchain.chains import RetrievalQA
+from langchain_core.documents import Document
 
-# 加载环境变量
-load_dotenv()
+def load_docs(path):
+    docs = []
+    for root, _, files in os.walk(path):
+        for f in files:
+            if f.endswith(".txt") or f.endswith(".md"):
+                loader = TextLoader(os.path.join(root, f), encoding="utf-8")
+                docs.extend(loader.load())
+    return docs
 
-# 配置 PostgreSQL 连接字符串
-CONNECTION_STRING = PGVector.connection_string_from_db_params(
-    driver=os.getenv("PGVECTOR_DRIVER", "psycopg2"),
-    host=os.getenv("PGVECTOR_HOST", "localhost"),
-    port=int(os.getenv("PGVECTOR_PORT", "5432")),
-    database=os.getenv("PGVECTOR_DATABASE", "postgres"),
-    user=os.getenv("PGVECTOR_USER", "postgres"),
-    password=os.getenv("PGVECTOR_PASSWORD", "password"),
-)
+def build_vectorstore(docs):
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    chunks = text_splitter.split_documents(docs)
 
-# 加载文档
-loader = TextLoader("document.txt")
-documents = loader.load()
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-# 分割文档
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-texts = text_splitter.split_documents(documents)
+    vectorstore = Milvus.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        connection_args={"host": "localhost", "port": "19530"},
+        collection_name="rag_docs"
+    )
+    return vectorstore
 
-# 初始化嵌入模型
-embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+def get_retriever(vectorstore):
+    return vectorstore.as_retriever(search_kwargs={"k": 3})
 
-# 将文档存入 PGVector
-vectorstore = PGVector.from_documents(
-    embedding=embedding_model,
-    documents=texts,
-    collection_name="rag_documents",
-    connection_string=CONNECTION_STRING,
-)
+def create_qa_chain(retriever):
+    llm = HuggingFacePipeline.from_model_id(model_id="tiiuae/falcon-7b-instruct", task="text-generation")
+    return RetrievalQA.from_chain_type(llm=llm, retriever=retriever, chain_type="stuff")
 
-# 初始化检索器
-retriever = vectorstore.as_retriever()
+def main():
+    data_path = "./docs"
+    milvus_host = "localhost"
+    milvus_port = "19530"
+    collection_name = "rag_docs"
 
-# 初始化本地 LLM（示例使用 GPT-2，可替换为其他模型）
-tokenizer = AutoTokenizer.from_pretrained("gpt2")
-model = AutoModelForCausalLM.from_pretrained("gpt2")
-pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_length=512)
-llm = HuggingFacePipeline(pipeline=pipe)
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    vectorstore = Milvus(
+        embedding_function=embeddings,
+        connection_args={"host": milvus_host, "port": milvus_port},
+        collection_name=collection_name
+    )
 
-# 定义生成回答的函数
-def generate_response(query):
-    # 检索相关文档
-    docs = retriever.get_relevant_documents(query)
+    if not vectorstore.col_exists(collection_name):
+        docs = load_docs(data_path)
+        vectorstore = build_vectorstore(docs)
 
-    # 提取内容
-    context = " ".join([doc.page_content for doc in docs])
+    retriever = get_retriever(vectorstore)
+    qa_chain = create_qa_chain(retriever)
 
-    # 构造提示
-    prompt = f"基于以下上下文：{context}\n\n请回答：{query}"
-
-    # 调用 LLM 生成回答
-    response = llm(prompt)
-    return response
-
-# 示例使用
-if __name__ == "__main__":
-    response = generate_response("你的查询问题")
-    print(response)
+    while True:
+        query = input("\n问：")
+        if query.lower() in ["exit", "quit"]:
+            break
+        print("答：", qa_chain.run(query))
