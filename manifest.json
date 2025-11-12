@@ -1,0 +1,22 @@
+{
+    "name": "local_llm_provider",
+    "version": "1.0.0",
+    "tools": [
+        {
+            "name": "query_rag",
+            "description": "Retrieve and answer question from local vector store",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "User's question"
+                    }
+                },
+                "required": [
+                    "query"
+                ]
+            }
+        }
+    ]
+}

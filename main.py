@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -17,6 +17,9 @@ load_dotenv()
 from poe_model_provider import PoeModelProvider
 from model_provider import LocalModel
 from comfyui_provider import ComfyUIProvider
+from mcp_server.rag import init_rag_app
+
+rag_chain = init_rag_app()
 
 app = FastAPI()
 app.add_middleware(
@@ -26,6 +29,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 class Message(BaseModel):
     role: str
@@ -85,6 +89,21 @@ async def index():
     return "Hello, Local LLM Provider!"
 
 
+@app.get("/manifest.json")
+async def manifest():
+    return FileResponse("manifest.json")
+
+
+@app.get("/mcp")
+async def query_rag(query: str):
+    result = rag_chain.invoke({"question": query})
+
+    def event_stream():
+        yield f"data: {result}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 comfyui_provider = ComfyUIProvider()
 
 
@@ -119,7 +138,10 @@ async def poe(request: Request, path: str):
                     yield chunk
             yield "data: [DONE]\n\n"
 
-        return StreamingResponse(content=event_stream(cast(httpx.Response,resp)), media_type="text/event-stream")
+        return StreamingResponse(
+            content=event_stream(cast(httpx.Response, resp)),
+            media_type="text/event-stream",
+        )
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -136,13 +158,15 @@ async def api_show():
 async def api_tags():
     li = []
     for model in LocalModel.get_models():
-        li.append({
-            "name": model, 
-            "version": "1.0.0",
-            "object": "model",
-            "owned_by": "lotaway",
-            "api_version": "v1"
-        })
+        li.append(
+            {
+                "name": model,
+                "version": "1.0.0",
+                "object": "model",
+                "owned_by": "lotaway",
+                "api_version": "v1",
+            }
+        )
     return li
 
 
@@ -155,12 +179,11 @@ async def api_version():
             "version": "1.0.0",
             "object": "model",
             "owned_by": "lotaway",
-            "api_version": "v1"
+            "api_version": "v1",
         }
     _local_model = cast(LocalModel, local_model)
     cur = next(model for model in li if model["name"] == _local_model.cur_model_name)
     return cur
-    
 
 
 @app.post("/v1/embeddings")
@@ -263,3 +286,4 @@ async def completions(req: CompletionRequest):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=11434)
+    mcp.run(host="0.0.0.0", port=11435)
