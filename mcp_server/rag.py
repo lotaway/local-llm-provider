@@ -31,7 +31,7 @@ def build_vectorstore(docs, host="localhost", port="19530", collection="rag_docs
     )
     return vectorstore
 
-def get_or_create_vectorstore(data_path, host="localhost", port="19530", collection="rag_docs"):
+def get_or_create_vectorstore(data_path, host, port, collection):
     connections.connect(host=host, port=port)
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     if not utility.has_collection(collection):
@@ -48,9 +48,9 @@ def get_or_create_vectorstore(data_path, host="localhost", port="19530", collect
 
 def init_rag_app():
     data_path = "./docs"
-    host = "localhost"
-    port = "19530"
-    collection = "rag_docs"
+    host = os.getenv("DB_HOST", "localhost")
+    port = os.getenv("DB_PORT", "19530")
+    collection = os.getenv("DB_COLLECTION", "rag_docs")
 
     vectorstore = get_or_create_vectorstore(data_path, host, port, collection)
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
