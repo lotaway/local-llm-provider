@@ -5,6 +5,7 @@ from transformers import (
     AutoConfig,
     TextIteratorStreamer,
 )
+from sentence_transformers import SentenceTransformer
 from accelerate import init_empty_weights, infer_auto_device_map
 import torch
 from threading import Thread
@@ -13,39 +14,48 @@ import os
 project_root = os.path.abspath(os.path.dirname(__file__))
 models = {
     "gpt-oss:20b": os.path.join(project_root, "models", "openai", "gpt-oss-20b"),
-    "deepseek-r1:16b": os.path.join(project_root, "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-16B"),
-    "deepseek-r1:32b": os.path.join(project_root, "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"),
+    "deepseek-r1:16b": os.path.join(
+        project_root, "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-16B"
+    ),
+    "deepseek-r1:32b": os.path.join(
+        project_root, "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"
+    ),
 }
 model_cache = {}
+
 
 class LocalModel:
 
     cur_model_name = "deepseek-r1:16b"
-    
-    
+
     @staticmethod
     def get_models():
         return list(models.keys())
-    
 
-    def __init__(self, simple_model_name= "deepseek-r1:16b"):
+    def __init__(self, simple_model_name="deepseek-r1:16b", embedding_model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct"):
         if simple_model_name in model_cache:
             self.model, self.tokenizer = model_cache[simple_model_name]
         else:
             self.cur_model_name = simple_model_name
             model_path = models[simple_model_name]
-            tokenizer_model_name = models["deepseek-r1:16b"]
+            # tokenizer_model_name = models["deepseek-r1:16b"]
             if model_path is None:
                 raise ValueError("Model name not found")
             if not os.path.exists(model_path) or not os.listdir(model_path):
-                raise ValueError(f"Model path '{model_path}' does not exist or is empty")
+                raise ValueError(
+                    f"Model path '{model_path}' does not exist or is empty"
+                )
 
             # config = AutoConfig.from_pretrained(model_path)
             # with init_empty_weights():
             #     model = AutoModelForCausalLM.from_config(config)
 
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                tokenizer_model_name, local_files_only=True
+            # self.tokenizer = AutoTokenizer.from_pretrained(
+            #     tokenizer_model_name, local_files_only=True
+            # )
+            self.tokenizer = SentenceTransformer(
+                embedding_model_name,
+                # device="cpu",
             )
             device_map = {
                 "transformer.word_embeddings": 0,
@@ -56,7 +66,7 @@ class LocalModel:
                 "model.norm": 0,
                 "lm_head": 0,
             }
-            max_memory={0: "20GiB", "cpu": "60GiB"}
+            max_memory = {0: "20GiB", "cpu": "60GiB"}
             if simple_model_name.startswith("gpt"):
                 # quantization_config = Mxfp4Config(
                 #     device_map="auto"
@@ -68,7 +78,7 @@ class LocalModel:
                     device_map="auto",
                     max_memory=max_memory,
                     # quantization_config=quantization_config,
-                    low_cpu_mem_usage=True
+                    low_cpu_mem_usage=True,
                 )
             else:
                 quantization_config = BitsAndBytesConfig(
@@ -104,7 +114,9 @@ class LocalModel:
             prompt += "Assistant:"
 
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-        streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
+        streamer = TextIteratorStreamer(
+            self.tokenizer, skip_prompt=True, skip_special_tokens=True
+        )
         generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=2000)
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
         thread.start()
@@ -130,10 +142,12 @@ class LocalModel:
         outputs = self.model.generate(**inputs, max_new_tokens=3000)
         response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
         return response.split("Assistant:")[-1].strip()
-    
+
     def complete(self, prompt: str):
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-        streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
+        streamer = TextIteratorStreamer(
+            self.tokenizer, skip_prompt=True, skip_special_tokens=True
+        )
         generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=200)
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
         thread.start()

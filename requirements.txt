@@ -14,3 +14,4 @@ langchain-text-splitters
 langchain-core
 langchain-huggingface
 pymilvus
+sentence_transformers

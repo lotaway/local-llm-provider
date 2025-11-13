@@ -9,6 +9,8 @@ from langchain_classic.chains import create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from sentence_transformers import SentenceTransformer
+from model_provider import LocalModel
 
 def load_docs(path):
     docs = []
@@ -19,6 +21,7 @@ def load_docs(path):
                 docs.extend(loader.load())
     return docs
 
+# @TODO change to class to use embedding and model from llm local_model class
 def build_vectorstore(docs, host="localhost", port="19530", collection="rag_docs"):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = text_splitter.split_documents(docs)
@@ -46,7 +49,7 @@ def get_or_create_vectorstore(data_path, host, port, collection):
             collection_name=collection
         )
 
-def init_rag_app():
+def init_rag_app(llm: LocalModel):
     data_path = "./docs"
     host = os.getenv("DB_HOST", "localhost")
     port = os.getenv("DB_PORT", "19530")
@@ -55,10 +58,10 @@ def init_rag_app():
     vectorstore = get_or_create_vectorstore(data_path, host, port, collection)
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
-    llm = HuggingFacePipeline.from_model_id(
-        model_id="tiiuae/falcon-7b-instruct",
-        task="text-generation"
-    )
+    # llm = HuggingFacePipeline.from_model_id(
+    #     model_id="tiiuae/falcon-7b-instruct",
+    #     task="text-generation"
+    # )
 
     prompt = ChatPromptTemplate.from_template(
         "根据以下内容回答问题：\n\n{context}\n\n问题：{question}"
@@ -75,7 +78,8 @@ def init_rag_app():
     return rag_chain
 
 def command_line_rag():
-    rag_chain = init_rag_app()
+    local_model = LocalModel()
+    rag_chain = init_rag_app(local_model)
     while True:
         query = input("\n问：")
         if query.lower() in ["exit", "quit"]:

@@ -19,7 +19,7 @@ from model_provider import LocalModel
 from comfyui_provider import ComfyUIProvider
 from mcp_server.rag import init_rag_app
 
-rag_chain = init_rag_app()
+rag_chain = None
 
 app = FastAPI()
 app.add_middleware(
@@ -96,6 +96,12 @@ async def manifest():
 
 @app.get("/mcp")
 async def query_rag(query: str):
+    global rag_chain
+    global local_model
+    if rag_chain is None:
+        if local_model is None:
+            local_model = LocalModel()
+        rag_chain = init_rag_app(local_model)
     result = rag_chain.invoke({"question": query})
 
     def event_stream():
@@ -194,7 +200,7 @@ async def embeddings(req: EmbeddingRequest):
         texts = req.input
     global local_model
     if local_model is None:
-        local_model = LocalModel(req.model)
+        local_model = LocalModel(embedding_model_name=req.model)
     vectors = local_model.tokenizer.encode(texts).tolist()
     return {
         "object": "list",
