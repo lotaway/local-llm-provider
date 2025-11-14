@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,11 +16,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from poe_model_provider import PoeModelProvider
-from model_provider import LocalModel
+from model_provider import LocalLLModel
 from comfyui_provider import ComfyUIProvider
-from mcp_server.rag import init_rag_app
+from mcp_server.rag import LocalRAG
 
-rag_chain = None
+local_rag = None
 
 app = FastAPI()
 app.add_middleware(
@@ -96,13 +97,13 @@ async def manifest():
 
 @app.get("/mcp")
 async def query_rag(query: str):
-    global rag_chain
+    global local_rag
     global local_model
-    if rag_chain is None:
+    if local_rag is None:
         if local_model is None:
-            local_model = LocalModel()
-        rag_chain = init_rag_app(local_model)
-    result = rag_chain.invoke({"question": query})
+            local_model = LocalLLModel()
+        local_rag = LocalRAG(local_model)
+    result = local_rag.rag_chain.invoke({"question": query})
 
     def event_stream():
         yield f"data: {result}\n\n"
@@ -163,7 +164,7 @@ async def api_show():
 @app.get("/api/tags")
 async def api_tags():
     li = []
-    for model in LocalModel.get_models():
+    for model in LocalLLModel.get_models():
         li.append(
             {
                 "name": model,
@@ -187,7 +188,7 @@ async def api_version():
             "owned_by": "lotaway",
             "api_version": "v1",
         }
-    _local_model = cast(LocalModel, local_model)
+    _local_model = cast(LocalLLModel, local_model)
     cur = next(model for model in li if model["name"] == _local_model.cur_model_name)
     return cur
 
@@ -200,7 +201,7 @@ async def embeddings(req: EmbeddingRequest):
         texts = req.input
     global local_model
     if local_model is None:
-        local_model = LocalModel(embedding_model_name=req.model)
+        local_model = LocalLLModel(embedding_model_name=req.model)
     vectors = local_model.tokenizer.encode(texts).tolist()
     return {
         "object": "list",
@@ -218,7 +219,7 @@ async def chat_completions(req: ChatRequest):
     """openai chat/edit/apply"""
     global local_model
     if local_model is None:
-        local_model = LocalModel(req.model)
+        local_model = LocalLLModel(req.model)
     if req.stream:
         streamer = local_model.chat([m.model_dump() for m in req.messages])
 
@@ -274,7 +275,7 @@ async def completions(req: CompletionRequest):
     """openai autocompletions"""
     global local_model
     if local_model is None:
-        local_model = LocalModel(req.model)
+        local_model = LocalLLModel(req.model)
     output = local_model.complete_at_once(req.prompt)
     return {
         "id": "cmpl-1",
@@ -291,5 +292,10 @@ async def completions(req: CompletionRequest):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=11434)
-    mcp.run(host="0.0.0.0", port=11435)
+    default_port = 11434
+    port = os.getenv("PORT", default_port)
+    try:
+        port = int(port)
+    except ValueError:
+        port = default_port
+    uvicorn.run(app, host="0.0.0.0", port=port)

@@ -9,9 +9,9 @@ httpx>=0.28.1
 python-dotenv>=1.1.1
 # For RAG
 langchain>=1.0.5
-langchain-community
-langchain-text-splitters
-langchain-core
-langchain-huggingface
-pymilvus
-sentence_transformers
+langchain-community>=0.4.1
+langchain-text-splitters>=1.0.0
+langchain-core>=1.0.4
+langchain-huggingface>=1.0.1
+pymilvus>=2.6.3
+sentence_transformers>=5.1.2

@@ -1,91 +1,193 @@
 import os
 from pymilvus import connections, utility
-from langchain_community.document_loaders import TextLoader
+from langchain_community.document_loaders import (
+    TextLoader,
+    UnstructuredMarkdownLoader,
+    PyPDFLoader,
+    UnstructuredWordDocumentLoader,
+    CSVLoader,
+    JSONLoader,
+    UnstructuredPowerPointLoader,
+    UnstructuredExcelLoader
+)
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Milvus
-from langchain_community.llms import HuggingFacePipeline
-from langchain_classic.chains import create_retrieval_chain
-from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from sentence_transformers import SentenceTransformer
-from model_provider import LocalModel
+from langchain_core.runnables import RunnableLambda
+from model_provider import LocalLLModel
 
-def load_docs(path):
-    docs = []
-    for root, _, files in os.walk(path):
-        for f in files:
-            if f.endswith(".txt") or f.endswith(".md"):
-                loader = TextLoader(os.path.join(root, f), encoding="utf-8")
-                docs.extend(loader.load())
-    return docs
 
-# @TODO change to class to use embedding and model from llm local_model class
-def build_vectorstore(docs, host="localhost", port="19530", collection="rag_docs"):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    chunks = text_splitter.split_documents(docs)
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    vectorstore = Milvus.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        connection_args={"host": host, "port": port},
-        collection_name=collection
-    )
-    return vectorstore
+class LocalRAG:
 
-def get_or_create_vectorstore(data_path, host, port, collection):
-    connections.connect(host=host, port=port)
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    if not utility.has_collection(collection):
-        print(f"Collection '{collection}' not found, creating and inserting documents...")
-        docs = load_docs(data_path)
-        return build_vectorstore(docs, host, port, collection)
-    else:
-        print(f"Collection '{collection}' already exists, reusing it.")
-        return Milvus(
-            embedding_function=embeddings,
-            connection_args={"host": host, "port": port},
-            collection_name=collection
+    def __init__(self, llm: LocalLLModel, data_path="./docs"):
+        self.llm = llm
+        self.data_path = data_path
+        self.host = os.getenv("DB_HOST", "localhost")
+        self.port = os.getenv("DB_PORT", "19530")
+        self.collection = os.getenv("DB_COLLECTION", "rag_docs")
+
+        vectorstore = self.get_or_create_vectorstore()
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+
+        # 将 LocalLLModel 包装成 LangChain 兼容的 Runnable
+        llm_runnable = RunnableLambda(self.llm.chat)
+
+        prompt = ChatPromptTemplate.from_template(
+            "根据以下内容回答问题：\n\n{context}\n\n问题：{question}"
         )
 
-def init_rag_app(llm: LocalModel):
-    data_path = "./docs"
-    host = os.getenv("DB_HOST", "localhost")
-    port = os.getenv("DB_PORT", "19530")
-    collection = os.getenv("DB_COLLECTION", "rag_docs")
+        # LCEL 链
+        self.rag_chain = (
+            {"context": retriever, "question": lambda x: x["question"]}
+            | prompt
+            | llm_runnable
+            | StrOutputParser()
+        )
 
-    vectorstore = get_or_create_vectorstore(data_path, host, port, collection)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+    def load_base_documents(self):
+        docs = []
+        for root, _, files in os.walk(self.data_path):
+            for f in files:
+                if f.endswith(".txt") or f.endswith(".md"):
+                    try:
+                        loader = TextLoader(os.path.join(root, f), encoding="utf-8")
+                        docs.extend(loader.load())
+                    except Exception as e:
+                        print(f"加载文件 {f} 时出错: {e}")
+        return docs
+    
+    def load_documents(self) -> list[Document]:
+        """加载多种格式的文档"""
+        docs = []
+        
+        for root, _, files in os.walk(self.data_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                file_ext = os.path.splitext(file)[1].lower()
+                
+                try:
+                    if file_ext in ['.txt']:
+                        loader = TextLoader(file_path, encoding='utf-8')
+                        docs.extend(loader.load())
+                        
+                    elif file_ext in ['.md', '.markdown']:
+                        loader = UnstructuredMarkdownLoader(file_path)
+                        docs.extend(loader.load())
+                        
+                    elif file_ext == '.pdf':
+                        loader = PyPDFLoader(file_path)
+                        docs.extend(loader.load())
+                        
+                    elif file_ext in ['.docx', '.doc']:
+                        loader = UnstructuredWordDocumentLoader(file_path)
+                        docs.extend(loader.load())
+                        
+                    elif file_ext in ['.pptx', '.ppt']:
+                        loader = UnstructuredPowerPointLoader(file_path)
+                        docs.extend(loader.load())
+                        
+                    elif file_ext in ['.xlsx', '.xls']:
+                        loader = UnstructuredExcelLoader(file_path)
+                        docs.extend(loader.load())
+                        
+                    elif file_ext == '.csv':
+                        loader = CSVLoader(file_path)
+                        docs.extend(loader.load())
+                        
+                    elif file_ext == '.json':
+                        # JSONLoader 需要指定 jq_schema 来提取内容
+                        loader = JSONLoader(
+                            file_path=file_path,
+                            jq_schema='.',  # 提取所有内容，根据实际结构调整
+                            text_content=False
+                        )
+                        docs.extend(loader.load())
+                        
+                    elif file_ext in ['.py', '.java', '.js', '.html', '.css']:
+                        # 代码文件作为纯文本处理
+                        loader = TextLoader(file_path, encoding='utf-8')
+                        docs.extend(loader.load())
+                        
+                    else:
+                        print(f"跳过不支持的文件格式: {file}")
+                        
+                except Exception as e:
+                    print(f"加载文件 {file} 时出错: {e}")
+                    
+        print(f"成功加载 {len(docs)} 个文档片段")
+        return docs
 
-    # llm = HuggingFacePipeline.from_model_id(
-    #     model_id="tiiuae/falcon-7b-instruct",
-    #     task="text-generation"
-    # )
+    def build_vectorstore(self, docs: list[Document]):
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000, chunk_overlap=200
+        )
+        chunks = text_splitter.split_documents(docs)
+        
+        # 确保 embedding_model 属性存在
+        if not hasattr(self.llm, 'embedding_model') or not self.llm.embedding_model:
+            raise ValueError("LocalLLModel 必须提供 embedding_model 属性")
+            
+        embeddings = HuggingFaceEmbeddings(
+            model_name=self.llm.embedding_model
+        )
+        
+        vectorstore = Milvus.from_documents(
+            documents=chunks,
+            embedding=embeddings,
+            connection_args={"host": self.host, "port": self.port},
+            collection_name=self.collection,
+        )
+        return vectorstore
 
-    prompt = ChatPromptTemplate.from_template(
-        "根据以下内容回答问题：\n\n{context}\n\n问题：{question}"
-    )
+    def get_or_create_vectorstore(self):
+        connections.connect(host=self.host, port=self.port)
+        
+        if not hasattr(self.llm, 'embedding_model') or not self.llm.embedding_model:
+            raise ValueError("LocalLLModel 必须提供 embedding_model 属性")
+            
+        embeddings = HuggingFaceEmbeddings(
+            model_name=self.llm.embedding_model
+        )
+        
+        if not utility.has_collection(self.collection):
+            print(f"Collection '{self.collection}' not found, creating and inserting documents...")
+            docs = self.load_documents()
+            if not docs:
+                raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档")
+            return self.build_vectorstore(docs)
+        else:
+            print(f"Collection '{self.collection}' already exists, reusing it.")
+            return Milvus(
+                embedding_function=embeddings,
+                connection_args={"host": self.host, "port": self.port},
+                collection_name=self.collection,
+            )
 
-    # 这是 LCEL 风格链：prompt → LLM → 输出解析
-    rag_chain = (
-        {"context": retriever, "question": lambda x: x["question"]}
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
+    def invoke(self, question):
+        """更方便的调用方法"""
+        return self.rag_chain.invoke({"question": question})
 
-    return rag_chain
 
 def command_line_rag():
-    local_model = LocalModel()
-    rag_chain = init_rag_app(local_model)
+    local_model = LocalLLModel()
+    local_rag = LocalRAG(local_model)
+    
+    print("RAG 系统已启动，输入 'exit' 或 'quit' 退出")
     while True:
-        query = input("\n问：")
-        if query.lower() in ["exit", "quit"]:
+        try:
+            query = input("\n问：")
+            if query.lower() in ["exit", "quit"]:
+                break
+            answer = local_rag.invoke(query)
+            print("答：", answer)
+        except KeyboardInterrupt:
             break
-        answer = rag_chain.invoke({"question": query})
-        print("答：", answer)
+        except Exception as e:
+            print(f"错误: {e}")
+
 
 if __name__ == "__main__":
     command_line_rag()
