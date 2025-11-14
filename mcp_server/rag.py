@@ -39,7 +39,7 @@ class LocalRAG:
             "根据以下内容回答问题：\n\n{context}\n\n问题：{question}"
         )
 
-        # LCEL 链
+        # LCEL链
         self.rag_chain = (
             {"context": retriever, "question": lambda x: x["question"]}
             | prompt
