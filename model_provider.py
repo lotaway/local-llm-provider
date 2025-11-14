@@ -28,6 +28,7 @@ class LocalLLModel:
 
     cur_model_name = "deepseek-r1:16b"
     embedding_model_name: str = ""
+    embedding_model: SentenceTransformer | None = None
 
     @staticmethod
     def get_models():
@@ -38,12 +39,7 @@ class LocalLLModel:
         model_name="deepseek-r1:16b",
         embedding_model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
     ):
-        if self.embedding_model_name is not embedding_model_name:
-            self.embedding_model = SentenceTransformer(
-                embedding_model_name,
-                # device="cpu",
-            )
-            self.embedding_model_name = embedding_model_name
+        self.embedding_model_name = embedding_model_name
         if model_name != self.cur_model_name:
             self.cur_model_name = model_name
             model_path = models[model_name]
@@ -122,6 +118,12 @@ class LocalLLModel:
         return all_chunks
 
     def embed(self, text: str) -> torch.Tensor:
+        if self.embedding_model is None:
+            self.embedding_model = SentenceTransformer(
+                self.embedding_model_name,
+                # device="cpu",
+                cache_folder=os.getenv("CACHE_PATH", "./cache")
+            )
         return self.embedding_model.encode(text)
 
     def tokenize(self, messages: list[dict]):

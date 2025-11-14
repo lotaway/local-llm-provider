@@ -18,7 +18,7 @@ load_dotenv()
 from poe_model_provider import PoeModelProvider
 from model_provider import LocalLLModel
 from comfyui_provider import ComfyUIProvider
-from mcp_server.rag import LocalRAG
+from rag import LocalRAG
 
 local_rag = None
 
@@ -102,7 +102,8 @@ async def query_rag(query: str):
     if local_rag is None:
         if local_model is None:
             local_model = LocalLLModel()
-        local_rag = LocalRAG(local_model)
+        data_path = os.getenv("DATA_PATH", "./docs")
+        local_rag = LocalRAG(local_model, data_path=data_path)
     result = local_rag.rag_chain.invoke({"question": query})
 
     def event_stream():
