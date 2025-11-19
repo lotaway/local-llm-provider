@@ -26,9 +26,10 @@ models = {
 
 class LocalLLModel:
 
-    cur_model_name = "deepseek-r1:16b"
+    cur_model_name: str = ""
     embedding_model_name: str = ""
     embedding_model: SentenceTransformer | None = None
+    # tokenizer: AutoTokenizer
 
     @staticmethod
     def get_models():
@@ -126,7 +127,7 @@ class LocalLLModel:
             )
         return self.embedding_model.encode(text)
 
-    def tokenize(self, messages: list[dict]):
+    def formatPrompt(self, messages: list[dict]):
         if hasattr(self.tokenizer, "apply_chat_template"):
             prompt = self.tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
@@ -141,6 +142,7 @@ class LocalLLModel:
                 elif msg["role"] == "assistant":
                     prompt += f"Assistant: {msg['content']}\n"
             prompt += "Assistant:"
+        return prompt
             
     def generate(self, prompt_content):
         if hasattr(prompt_content, 'to_messages'):
@@ -162,7 +164,7 @@ class LocalLLModel:
         return self.chat(formatted_messages)
 
     def chat(self, messages: list[dict]):
-        prompt = self.tokenize(messages)
+        prompt = self.formatPrompt(messages)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         streamer = TextIteratorStreamer(
             self.tokenizer, skip_prompt=True, skip_special_tokens=True
@@ -173,7 +175,12 @@ class LocalLLModel:
         return streamer
 
     def chat_at_once(self, messages: list[dict]) -> str:
-        prompt = self.tokenize(messages)
+        if not hasattr(self, 'tokenizer') or self.tokenizer is None:
+            tokenizer_model_name = models["deepseek-r1:16b"]
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                tokenizer_model_name, local_files_only=True
+            )
+        prompt = self.formatPrompt(messages)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         outputs = self.model.generate(**inputs, max_new_tokens=3000)
         response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
