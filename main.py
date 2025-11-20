@@ -1,6 +1,11 @@
 import os
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
+from fastapi.responses import (
+    JSONResponse,
+    StreamingResponse,
+    FileResponse,
+    PlainTextResponse,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -96,18 +101,24 @@ async def manifest():
 
 
 @app.get("/mcp")
-async def query_rag(query: str | None = None):
+async def query_rag(request: Request):
     global local_rag
     global local_model
+    query = request.query_params.get("query")
     if query is None:
-        raise HTTPException(status_code=400, detail="Either query or request parameter is required")
-    
+        raise HTTPException(
+            status_code=400, detail="Either query or request parameter is required"
+        )
+
     if local_rag is None:
         if local_model is None:
             local_model = LocalLLModel()
         data_path = os.getenv("DATA_PATH", "./docs")
         local_rag = LocalRAG(local_model, data_path=data_path)
     result = local_rag.rag_chain.invoke(query)
+
+    if result is str:
+        return PlainTextResponse(result)
 
     def event_stream():
         yield f"data: {result}\n\n"

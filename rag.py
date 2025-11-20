@@ -33,8 +33,8 @@ class LocalRAG:
         retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
         # 将 LocalLLModel 的方法包装成 LangChain 兼容的 Runnable
-        generate_runnable = RunnableLambda(self.llm.generate)
-        chat_runnable = RunnableLambda(self.llm.chat)
+        # generate_runnable = RunnableLambda(self.llm.generate)
+        chat_runnable = RunnableLambda(self.llm.chat_at_once)
 
         prompt = ChatPromptTemplate.from_template(
             "根据以下内容回答问题：\n\n{context}\n\n问题：{question}"
@@ -44,7 +44,7 @@ class LocalRAG:
         self.rag_chain = (
             {"context": retriever, "question": lambda x: x}
             | prompt
-            | generate_runnable
+            # | generate_runnable
             | chat_runnable
             | StrOutputParser()
         )
