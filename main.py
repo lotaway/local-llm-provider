@@ -115,7 +115,7 @@ async def query_rag(request: Request):
             local_model = LocalLLModel()
         data_path = os.getenv("DATA_PATH", "./docs")
         local_rag = LocalRAG(local_model, data_path=data_path)
-    result = local_rag.rag_chain.invoke(query)
+    result = local_rag.generate_answer(query)
 
     if result is str:
         return PlainTextResponse(result)

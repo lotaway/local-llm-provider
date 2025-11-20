@@ -126,8 +126,30 @@ class LocalLLModel:
                 cache_folder=os.getenv("CACHE_PATH", "./cache")
             )
         return self.embedding_model.encode(text)
+            
+    def format_messages(self, prompt_content):
+        if hasattr(prompt_content, 'to_messages'):
+            return self.format_messages(prompt_content.to_messages())
+        if  hasattr(prompt_content, 'messages'):
+            return self.format_messages(prompt_content.messages)
+        if isinstance(prompt_content, dict):
+            return prompt_content
+        text = str(prompt_content)
+        prompt_content = [{"role": "user", "content": text}]
+        
+        # 转换为模型需要的 messages 格式
+        formatted_messages: list[dict] = []
+        for msg in prompt_content:
+            if hasattr(msg, 'type'):
+                role = "user" if msg.type == "human" else "assistant" if msg.type == "ai" else "system"
+                content = msg.content
+            else:
+                role = "user"
+                content = str(msg)
+            formatted_messages.append({"role": role, "content": content})
+        return formatted_messages
 
-    def formatPrompt(self, messages: list[dict]):
+    def format_prompt(self, messages: list[dict]):
         if hasattr(self.tokenizer, "apply_chat_template"):
             prompt = self.tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
@@ -143,28 +165,9 @@ class LocalLLModel:
                     prompt += f"Assistant: {msg['content']}\n"
             prompt += "Assistant:"
         return prompt
-            
-    def generate(self, prompt_content):
-        if hasattr(prompt_content, 'to_messages'):
-            messages = prompt_content.to_messages()
-        else:
-            text = str(prompt_content)
-            messages = [{"role": "user", "content": text}]
-        
-        # 转换为模型需要的 messages 格式
-        formatted_messages: list[dict] = []
-        for msg in messages:
-            if hasattr(msg, 'type'):
-                role = "user" if msg.type == "human" else "assistant" if msg.type == "ai" else "system"
-                content = msg.content
-            else:
-                role = "user"
-                content = str(msg)
-            formatted_messages.append({"role": role, "content": content})
-        return self.chat(formatted_messages)
 
     def chat(self, messages: list[dict]):
-        prompt = self.formatPrompt(messages)
+        prompt = self.format_prompt(messages)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         streamer = TextIteratorStreamer(
             self.tokenizer, skip_prompt=True, skip_special_tokens=True
@@ -180,11 +183,22 @@ class LocalLLModel:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 tokenizer_model_name, local_files_only=True
             )
-        prompt = self.formatPrompt(messages)
+        prompt = self.format_prompt(messages)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-        outputs = self.model.generate(**inputs, max_new_tokens=3000)
-        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return response.split("Assistant:")[-1].strip()
+        
+        from queue import Queue
+        result_queue = Queue()
+        
+        def generate_and_put():
+            outputs = self.model.generate(**inputs, max_new_tokens=3000)
+            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            result_queue.put(response)
+            
+        thread = Thread(target=generate_and_put)
+        thread.start()
+        thread.join()
+        
+        return result_queue.get().split("Assistant:")[-1].strip()
 
     def complete(self, prompt: str):
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
@@ -200,3 +214,9 @@ class LocalLLModel:
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         outputs = self.model.generate(**inputs, max_new_tokens=3000)
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+    
+    def extract_after_think(self, text: str) -> str:
+        think_pos = text.find("</think>")
+        if think_pos != -1:
+            return text[think_pos + len("</think>"):].strip()
+        return text.strip()

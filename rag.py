@@ -31,22 +31,54 @@ class LocalRAG:
 
         vectorstore = self.get_or_create_vectorstore()
         retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+        format_messages_runnable = RunnableLambda(self.llm.format_messages)
 
-        # 将 LocalLLModel 的方法包装成 LangChain 兼容的 Runnable
-        # generate_runnable = RunnableLambda(self.llm.generate)
-        chat_runnable = RunnableLambda(self.llm.chat_at_once)
+        def prepare_messages(input_data) -> list[dict]:
+            if hasattr(input_data, "messages"):
+                return input_data.messages
+            else:
+                return input_data
 
-        prompt = ChatPromptTemplate.from_template(
-            "根据以下内容回答问题：\n\n{context}\n\n问题：{question}"
+        chat_runnable = RunnableLambda(
+            lambda x: self.llm.chat_at_once(prepare_messages(x))
+        )
+        after_runnable = RunnableLambda(self.llm.extract_after_think)
+
+        prompt_str = ChatPromptTemplate.from_template(
+            """
+你是一名检索增强问答系统的回答助手。
+
+【规则】
+1. 只能根据提供的内容（context）回答问题，不允许推测、臆断或使用外部知识。
+2. 如果内容不足以回答，必须回复：`无法从提供的内容中找到答案。`
+3. 不要编造事实或超出 context 的信息。
+4. 回答必须简洁、准确、结构清晰。
+5. 如果 context 中包含多个矛盾信息，仅选择最明确且重复出现的部分作为答案。
+6. 如果内容是列表、步骤、定义等，需要保留原有格式再组织语言。
+7. 禁止输出 context 本身，除非问题要求引用。
+8. 如果问题与 context 无关，回复：`该问题与提供的内容无关。`
+
+【context】
+{context}
+
+【question】
+{question}
+
+【回答格式要求】
+- 如果有答案：直接回答，不要多余开头词。
+- 如果无法回答：使用规则中对应内容。
+            """
         )
 
         # LCEL链
+
         self.rag_chain = (
             {"context": retriever, "question": lambda x: x}
-            | prompt
-            # | generate_runnable
+            | prompt_str
+            | format_messages_runnable
             | chat_runnable
             | StrOutputParser()
+            | after_runnable
         )
 
     def load_base_documents(self):
@@ -166,9 +198,8 @@ class LocalRAG:
                 collection_name=self.collection,
             )
 
-    def invoke(self, question):
-        """更方便的调用方法"""
-        return self.rag_chain.invoke({"question": question})
+    def generate_answer(self, question):
+        return self.rag_chain.invoke(question)
 
 
 def command_line_rag():
