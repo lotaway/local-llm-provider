@@ -65,7 +65,7 @@ class CompletionTokensDetail:
     rejected_prediction_tokens: int
 
 
-class Usege:
+class Usage:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
@@ -76,13 +76,13 @@ class Usege:
     input_tokens_details: dict
 
 
-class ApiRespnose:
+class ApiResponse:
     id: str
     object: str
     created: int
     model: str
     choices: list[dict]
-    usage: Usege
+    usage: Usage
 
 
 class EmbeddingRequest(BaseModel):
