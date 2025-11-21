@@ -117,7 +117,7 @@ async def query_rag(request: Request):
         local_rag = LocalRAG(local_model, data_path=data_path)
     result = local_rag.generate_answer(query)
 
-    if result is str:
+    if isinstance(result, str):
         return PlainTextResponse(result)
 
     def event_stream():
