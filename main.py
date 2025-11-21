@@ -121,7 +121,7 @@ async def query_rag(request: Request):
         return PlainTextResponse(result)
 
     def event_stream():
-        yield f"data: {result}\n\n"
+        yield f"data: [DONE]{result}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

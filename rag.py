@@ -43,8 +43,15 @@ class LocalRAG:
             else:
                 return input_data
 
+        # Set standard RAG sampling parameters for a balance of accuracy and creativity
         chat_runnable = RunnableLambda(
-            lambda x: self.llm.chat_at_once(prepare_messages(x))
+            lambda x: self.llm.chat_at_once(
+                prepare_messages(x), 
+                # do_sample=False,
+                temperature=0.1,
+                top_p=0.95,
+                top_k=40
+            )
         )
         after_runnable = RunnableLambda(self.llm.extract_after_think)
 

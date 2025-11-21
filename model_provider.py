@@ -189,7 +189,7 @@ class LocalLLModel:
         thread.start()
         return streamer
 
-    def chat_at_once(self, messages: list[dict]) -> str:
+    def chat_at_once(self, messages: list[dict], **kwargs) -> str:
         self.load_model()
         prompt = self.format_prompt(messages)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
@@ -198,7 +198,9 @@ class LocalLLModel:
         result_queue = Queue()
         
         def generate_and_put():
-            outputs = self.model.generate(**inputs, max_new_tokens=3000)
+            if "max_new_tokens" not in kwargs:
+                kwargs["max_new_tokens"] = 3000
+            outputs = self.model.generate(**inputs, **kwargs)
             response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
             result_queue.put(response)
             
