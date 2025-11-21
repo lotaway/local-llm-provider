@@ -41,62 +41,73 @@ class LocalLLModel:
         embedding_model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
     ):
         self.embedding_model_name = embedding_model_name
-        if model_name != self.cur_model_name:
-            self.cur_model_name = model_name
-            model_path = models[model_name]
-            tokenizer_model_name = models["deepseek-r1:16b"]
-            if model_path is None:
-                raise ValueError("Model name not found")
-            if not os.path.exists(model_path) or not os.listdir(model_path):
-                raise ValueError(
-                    f"Model path '{model_path}' does not exist or is empty"
-                )
+        self.model = None
+        self.tokenizer = None
 
-            # config = AutoConfig.from_pretrained(model_path)
-            # with init_empty_weights():
-            #     model = AutoModelForCausalLM.from_config(config)
+    def load_model(self):
+        if self.model is not None and self.tokenizer is not None:
+            return
 
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                tokenizer_model_name, local_files_only=True
+        if self.cur_model_name == "":
+             self.cur_model_name = "deepseek-r1:16b"
+
+        model_path = models[self.cur_model_name]
+        tokenizer_model_name = models["deepseek-r1:16b"]
+        
+        if model_path is None:
+            raise ValueError("Model name not found")
+        if not os.path.exists(model_path) or not os.listdir(model_path):
+            raise ValueError(
+                f"Model path '{model_path}' does not exist or is empty"
             )
-            device_map = {
-                "transformer.word_embeddings": 0,
-                "transformer.final_layernorm": 0,
-                # "transformer.h": "cpu",
-                "model.embed_tokens": 0,
-                "model.layers": 0,
-                "model.norm": 0,
-                "lm_head": 0,
-            }
-            max_memory = {0: "20GiB", "cpu": "60GiB"}
-            if model_name.startswith("gpt"):
-                # quantization_config = Mxfp4Config(
-                #     device_map="auto"
-                # )
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    model_path,
-                    local_files_only=True,
-                    dtype=torch.bfloat16,
-                    device_map="auto",
-                    max_memory=max_memory,
-                    # quantization_config=quantization_config,
-                    low_cpu_mem_usage=True,
-                )
-            else:
-                quantization_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_compute_dtype=torch.float16,
-                    llm_int8_enable_fp32_cpu_offload=True,
-                )
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    model_path,
-                    local_files_only=True,
-                    # dtype=torch.float16,
-                    device_map=device_map,
-                    max_memory=max_memory,
-                    quantization_config=quantization_config,
-                )
+
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_model_name, local_files_only=True
+        )
+        device_map = {
+            "transformer.word_embeddings": 0,
+            "transformer.final_layernorm": 0,
+            # "transformer.h": "cpu",
+            "model.embed_tokens": 0,
+            "model.layers": 0,
+            "model.norm": 0,
+            "lm_head": 0,
+        }
+        max_memory = {0: "20GiB", "cpu": "60GiB"}
+        if self.cur_model_name.startswith("gpt"):
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                local_files_only=True,
+                dtype=torch.bfloat16,
+                device_map="auto",
+                max_memory=max_memory,
+                low_cpu_mem_usage=True,
+            )
+        else:
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+                llm_int8_enable_fp32_cpu_offload=True,
+            )
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                local_files_only=True,
+                # dtype=torch.float16,
+                device_map=device_map,
+                max_memory=max_memory,
+                quantization_config=quantization_config,
+            )
+
+    def unload_model(self):
+        if self.model is not None:
+            del self.model
+            self.model = None
+        if self.tokenizer is not None:
+            del self.tokenizer
+            self.tokenizer = None
+        gc.collect()
+        torch.cuda.empty_cache()
 
     def group_turns(self, messages: list[dict]) -> list[str]:
         turns: list[str] = []
@@ -167,6 +178,7 @@ class LocalLLModel:
         return prompt
 
     def chat(self, messages: list[dict]):
+        self.load_model()
         prompt = self.format_prompt(messages)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         streamer = TextIteratorStreamer(
@@ -178,11 +190,7 @@ class LocalLLModel:
         return streamer
 
     def chat_at_once(self, messages: list[dict]) -> str:
-        if not hasattr(self, 'tokenizer') or self.tokenizer is None:
-            tokenizer_model_name = models["deepseek-r1:16b"]
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                tokenizer_model_name, local_files_only=True
-            )
+        self.load_model()
         prompt = self.format_prompt(messages)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         
@@ -201,6 +209,7 @@ class LocalLLModel:
         return result_queue.get().split("Assistant:")[-1].strip()
 
     def complete(self, prompt: str):
+        self.load_model()
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         streamer = TextIteratorStreamer(
             self.tokenizer, skip_prompt=True, skip_special_tokens=True
@@ -211,6 +220,7 @@ class LocalLLModel:
         return streamer
 
     def complete_at_once(self, prompt: str) -> str:
+        self.load_model()
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         outputs = self.model.generate(**inputs, max_new_tokens=3000)
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)

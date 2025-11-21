@@ -1,5 +1,7 @@
 import os
 from pymilvus import connections, utility
+import gc
+import torch
 from langchain_community.document_loaders import (
     TextLoader,
     UnstructuredMarkdownLoader,
@@ -16,7 +18,7 @@ from langchain_community.vectorstores import Milvus
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnableLambda
+from langchain_core.runnables import RunnableLambda, RunnableSequence
 from model_provider import LocalLLModel
 
 
@@ -28,7 +30,9 @@ class LocalRAG:
         self.host = os.getenv("DB_HOST", "localhost")
         self.port = os.getenv("DB_PORT", "19530")
         self.collection = os.getenv("DB_COLLECTION", "rag_docs")
+        self.rag_chain: RunnableSequence | None = None
 
+    def init_rag_chain(self):
         vectorstore = self.get_or_create_vectorstore()
         retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
         format_messages_runnable = RunnableLambda(self.llm.format_messages)
@@ -71,7 +75,6 @@ class LocalRAG:
         )
 
         # LCEL链
-
         self.rag_chain = (
             {"context": retriever, "question": lambda x: x}
             | prompt_str
@@ -80,6 +83,7 @@ class LocalRAG:
             | StrOutputParser()
             | after_runnable
         )
+
 
     def load_base_documents(self):
         docs = []
@@ -96,73 +100,100 @@ class LocalRAG:
     def load_documents(self) -> list[Document]:
         """加载多种格式的文档"""
         docs = []
-
+        print(f"开始扫描文档目录: {self.data_path}")
+        
         for root, _, files in os.walk(self.data_path):
+            print(f"当前目录: {root}, 文件数: {len(files)}")
             for file in files:
                 file_path = os.path.join(root, file)
                 file_ext = os.path.splitext(file)[1].lower()
+                print(f"处理文件: {file}, 扩展名: {file_ext}, 完整路径: {file_path}")
 
                 try:
                     if file_ext in [".txt"]:
+                        print(f"加载文本文件: {file}")
                         loader = TextLoader(file_path, encoding="utf-8")
-                        docs.extend(loader.load())
+                        loaded = loader.load()
+                        print(f"成功加载 {len(loaded)} 个文本片段")
+                        docs.extend(loaded)
 
                     elif file_ext in [".md", ".markdown"]:
+                        print(f"加载Markdown文件: {file}")
                         loader = UnstructuredMarkdownLoader(file_path)
-                        docs.extend(loader.load())
+                        loaded = loader.load()
+                        print(f"成功加载 {len(loaded)} 个Markdown片段")
+                        docs.extend(loaded)
 
                     elif file_ext == ".pdf":
+                        print(f"加载PDF文件: {file}")
                         loader = PyPDFLoader(file_path)
-                        docs.extend(loader.load())
+                        loaded = loader.load()
+                        print(f"成功加载 {len(loaded)} 个PDF页面")
+                        docs.extend(loaded)
 
                     elif file_ext in [".docx", ".doc"]:
+                        print(f"加载Word文档: {file}")
                         loader = UnstructuredWordDocumentLoader(file_path)
-                        docs.extend(loader.load())
+                        loaded = loader.load()
+                        print(f"成功加载 {len(loaded)} 个Word文档片段")
+                        docs.extend(loaded)
 
                     elif file_ext in [".pptx", ".ppt"]:
+                        print(f"加载PPT文件: {file}")
                         loader = UnstructuredPowerPointLoader(file_path)
-                        docs.extend(loader.load())
+                        loaded = loader.load()
+                        print(f"成功加载 {len(loaded)} 个PPT幻灯片")
+                        docs.extend(loaded)
 
                     elif file_ext in [".xlsx", ".xls"]:
+                        print(f"加载Excel文件: {file}")
                         loader = UnstructuredExcelLoader(file_path)
-                        docs.extend(loader.load())
+                        loaded = loader.load()
+                        print(f"成功加载 {len(loaded)} 个Excel工作表")
+                        docs.extend(loaded)
 
                     elif file_ext == ".csv":
+                        print(f"加载CSV文件: {file}")
                         loader = CSVLoader(file_path)
-                        docs.extend(loader.load())
+                        loaded = loader.load()
+                        print(f"成功加载 {len(loaded)} 个CSV记录")
+                        docs.extend(loaded)
 
                     elif file_ext == ".json":
+                        print(f"加载JSON文件: {file}")
                         # JSONLoader 需要指定 jq_schema 来提取内容
                         loader = JSONLoader(
                             file_path=file_path,
                             jq_schema=".",  # 提取所有内容，根据实际结构调整
                             text_content=True,  # 确保输出是文本而不是字典
                         )
-                        docs.extend(loader.load())
+                        loaded = loader.load()
+                        print(f"成功加载 {len(loaded)} 个JSON条目")
+                        docs.extend(loaded)
 
-                    elif file_ext in [".py", ".java", ".js", ".html", ".css"]:
-                        # 代码文件作为纯文本处理
+                    elif file_ext in [".py", ".java", ".kt", ".rs", ".js", ".ts", ".html", ".css", ".cs", ".swift"]:
+                        print(f"加载代码文件: {file}")
                         loader = TextLoader(file_path, encoding="utf-8")
-                        docs.extend(loader.load())
+                        loaded = loader.load()
+                        print(f"成功加载 {len(loaded)} 个代码片段")
+                        docs.extend(loaded)
 
                     else:
                         print(f"跳过不支持的文件格式: {file}")
 
                 except Exception as e:
-                    print(f"加载文件 {file} 时出错: {e}")
+                    print(f"加载文件 {file} 时出错: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
 
         print(f"成功加载 {len(docs)} 个文档片段")
         return docs
 
     def get_embeddings(self):
-        if (
-            not hasattr(self.llm, "embedding_model_name")
-            or not self.llm.embedding_model_name
-        ):
-            raise ValueError("LocalLLModel 必须提供 embedding_model_name 属性")
-
-        embeddings = HuggingFaceEmbeddings(model_name=self.llm.embedding_model_name)
-
+        embeddings = HuggingFaceEmbeddings(
+            model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
+            encode_kwargs={"batch_size": 8}
+        )
         return embeddings
 
     def build_vectorstore(self, docs: list[Document]):
@@ -171,12 +202,31 @@ class LocalRAG:
         )
         chunks = text_splitter.split_documents(docs)
         embeddings = self.get_embeddings()
-        vectorstore = Milvus.from_documents(
-            documents=chunks,
-            embedding=embeddings,
-            connection_args={"host": self.host, "port": self.port},
-            collection_name=self.collection,
-        )
+        print(f"共切分为 {len(chunks)} 个文本块，开始分批向量化...")
+
+        # 分批处理以避免显存溢出
+        batch_size = 50
+        vectorstore = None
+
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i : i + batch_size]
+            print(f"正在处理第 {i + 1} 到 {min(i + batch_size, len(chunks))} 个文本块...")
+
+            if vectorstore is None:
+                vectorstore = Milvus.from_documents(
+                    documents=batch,
+                    embedding=embeddings,
+                    connection_args={"host": self.host, "port": self.port},
+                    collection_name=self.collection,
+                )
+            else:
+                vectorstore.add_documents(batch)
+            
+            # 清理显存
+            del batch
+            gc.collect()
+            torch.cuda.empty_cache()
+        
         return vectorstore
 
     def get_or_create_vectorstore(self):
@@ -199,7 +249,18 @@ class LocalRAG:
             )
 
     def generate_answer(self, question):
+        if self.rag_chain is None:
+            self.init_rag_chain()
         return self.rag_chain.invoke(question)
+
+    def release_memory(self):
+        """释放显存资源"""
+        if hasattr(self, "rag_chain"):
+            del self.rag_chain
+            self.rag_chain = None # Set to None after deletion
+        gc.collect()
+        torch.cuda.empty_cache()
+        print("已释放 RAG 相关显存资源")
 
 
 def command_line_rag():

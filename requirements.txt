@@ -15,3 +15,4 @@ langchain-core>=1.0.4
 langchain-huggingface>=1.0.1
 pymilvus>=2.6.3
 sentence_transformers>=5.1.2
+unstructured>=0.18.20
