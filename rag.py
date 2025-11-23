@@ -104,7 +104,7 @@ class LocalRAG:
                         print(f"加载文件 {f} 时出错: {e}")
         return docs
 
-    def load_documents(self) -> list[Document]:
+    def load_documents(self, after_doc_load: Callable[[Document, str], Document] = lambda x: x) -> list[Document]:
         """加载多种格式的文档"""
         docs = []
         print(f"开始扫描文档目录: {self.data_path}")
@@ -122,49 +122,49 @@ class LocalRAG:
                         loader = TextLoader(file_path, encoding="utf-8")
                         loaded = loader.load()
                         print(f"成功加载 {len(loaded)} 个文本片段")
-                        docs.extend(loaded)
+                        docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext in [".md", ".markdown"]:
                         print(f"加载Markdown文件: {file}")
                         loader = UnstructuredMarkdownLoader(file_path)
                         loaded = loader.load()
                         print(f"成功加载 {len(loaded)} 个Markdown片段")
-                        docs.extend(loaded)
+                        docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext == ".pdf":
                         print(f"加载PDF文件: {file}")
                         loader = PyPDFLoader(file_path)
                         loaded = loader.load()
                         print(f"成功加载 {len(loaded)} 个PDF页面")
-                        docs.extend(loaded)
+                        docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext in [".docx", ".doc"]:
                         print(f"加载Word文档: {file}")
                         loader = UnstructuredWordDocumentLoader(file_path)
                         loaded = loader.load()
                         print(f"成功加载 {len(loaded)} 个Word文档片段")
-                        docs.extend(loaded)
+                        docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext in [".pptx", ".ppt"]:
                         print(f"加载PPT文件: {file}")
                         loader = UnstructuredPowerPointLoader(file_path)
                         loaded = loader.load()
                         print(f"成功加载 {len(loaded)} 个PPT幻灯片")
-                        docs.extend(loaded)
+                        docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext in [".xlsx", ".xls"]:
                         print(f"加载Excel文件: {file}")
                         loader = UnstructuredExcelLoader(file_path)
                         loaded = loader.load()
                         print(f"成功加载 {len(loaded)} 个Excel工作表")
-                        docs.extend(loaded)
+                        docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext == ".csv":
                         print(f"加载CSV文件: {file}")
                         loader = CSVLoader(file_path)
                         loaded = loader.load()
                         print(f"成功加载 {len(loaded)} 个CSV记录")
-                        docs.extend(loaded)
+                        docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext == ".json":
                         print(f"加载JSON文件: {file}")
@@ -176,14 +176,14 @@ class LocalRAG:
                         )
                         loaded = loader.load()
                         print(f"成功加载 {len(loaded)} 个JSON条目")
-                        docs.extend(loaded)
+                        docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext in [".py", ".java", ".kt", ".rs", ".js", ".ts", ".html", ".css", ".cs", ".swift"]:
                         print(f"加载代码文件: {file}")
                         loader = TextLoader(file_path, encoding="utf-8")
                         loaded = loader.load()
                         print(f"成功加载 {len(loaded)} 个代码片段")
-                        docs.extend(loaded)
+                        docs.extend(after_doc_load(loaded, file))
 
                     else:
                         print(f"跳过不支持的文件格式: {file}")
@@ -244,6 +244,7 @@ class LocalRAG:
                 f"Collection '{self.collection}' not found, creating and inserting documents..."
             )
             docs = self.load_documents()
+            # docs = self.load_documents(lambda doc, file : doc.metadata["author"] = file)
             if not docs:
                 raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档")
             return self.build_vectorstore(docs)
