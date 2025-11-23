@@ -13,13 +13,15 @@ from langchain_community.document_loaders import (
     UnstructuredExcelLoader,
 )
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+# from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Milvus
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableSequence
 from model_provider import LocalLLModel
+from typing import Callable
 
 
 class LocalRAG:
@@ -46,7 +48,7 @@ class LocalRAG:
         # Set standard RAG sampling parameters for a balance of accuracy and creativity
         chat_runnable = RunnableLambda(
             lambda x: self.llm.chat_at_once(
-                prepare_messages(x), 
+                prepare_messages(x),
                 # do_sample=False,
                 temperature=0.1,
                 top_p=0.95,
