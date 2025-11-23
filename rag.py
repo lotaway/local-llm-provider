@@ -22,6 +22,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableSequence
 from model_provider import LocalLLModel
 from typing import Callable
+from ExpandedRetriever import ExpandedRetriever
 
 
 class LocalRAG:
@@ -37,6 +38,7 @@ class LocalRAG:
     def init_rag_chain(self):
         vectorstore = self.get_or_create_vectorstore()
         retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+        # retriever = ExpandedRetriever(vectorstore, search_kwargs={"k": 3})
         format_messages_runnable = RunnableLambda(self.llm.format_messages)
 
         def prepare_messages(input_data) -> list[dict]:
