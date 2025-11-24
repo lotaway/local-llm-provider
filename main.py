@@ -102,6 +102,12 @@ class EmbeddingRequest(BaseModel):
     input: list[str] | str
 
 
+class AgentDecisionRequest(BaseModel):
+    approved: bool
+    feedback: str = ""
+    data: dict = None
+
+
 @app.get("/")
 async def index():
     return "Hello, Local LLM Provider!"
@@ -185,9 +191,59 @@ async def query_agent(request: Request):
         return PlainTextResponse(f"Error: {str(e)}")
 
 
-# @app.post("/agent/decision")
-async def agent_decision():
-    raise Exception("@TODO: No implemention!")
+@app.post("/agent/decision")
+async def agent_decision(req: AgentDecisionRequest):
+    """Handle human decision for paused agent workflow"""
+    global agent_runtime
+    
+    if agent_runtime is None:
+        raise HTTPException(status_code=400, detail="Agent runtime not initialized")
+    
+    try:
+        # Resume execution with human decision
+        state = agent_runtime.resume(req.model_dump())
+        
+        # Format response similar to chat completion
+        if state.status.value == "completed":
+            answer = state.final_result
+            status = "success"
+        elif state.status.value == "waiting_human":
+            answer = "Waiting for further human input..."
+            status = "waiting_human"
+        else:
+            answer = f"Workflow {state.status.value}: {state.error_message}"
+            status = state.status.value
+        
+        response = {
+            "id": "agent-decision-1",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": "agent-decision",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": str(answer)},
+                    "finish_reason": "stop" if status == "success" else "length",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": len(str(answer).split()),
+                "total_tokens": len(str(answer).split()),
+            },
+            "agent_metadata": {
+                "status": status,
+                "iterations": state.iteration_count,
+                "history_length": len(state.history)
+            }
+        }
+        
+        return JSONResponse(content=response)
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/agent/chat")

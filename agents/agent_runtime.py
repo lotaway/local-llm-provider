@@ -94,8 +94,41 @@ class AgentRuntime:
         self.state.context["initial_input"] = initial_input
         self.state.current_agent = start_agent
         
-        current_input = initial_input
+        return self._run_loop(initial_input)
+
+    def resume(self, decision_data: Dict[str, Any]) -> RuntimeState:
+        """
+        Resume execution after human intervention
         
+        Args:
+            decision_data: Data from human decision (approved, feedback, etc.)
+            
+        Returns:
+            Updated RuntimeState
+        """
+        if self.state.status != RuntimeStatus.WAITING_HUMAN:
+            raise ValueError(f"Cannot resume: Runtime is in {self.state.status.value} state, not waiting_human")
+            
+        if decision_data.get("approved", False):
+            self.state.status = RuntimeStatus.RUNNING
+            self.logger.info("Resuming execution after human approval")
+            
+            # Use provided data if available, otherwise use data from last history entry or context
+            current_input = decision_data.get("data")
+            
+            # If feedback provided, add to context
+            if decision_data.get("feedback"):
+                self.state.context["human_feedback"] = decision_data["feedback"]
+                
+            return self._run_loop(current_input)
+        else:
+            self.state.status = RuntimeStatus.FAILED
+            self.state.error_message = f"Human rejected operation: {decision_data.get('feedback', 'No reason provided')}"
+            self.logger.info(self.state.error_message)
+            return self.state
+
+    def _run_loop(self, current_input: Any) -> RuntimeState:
+        """Internal execution loop"""
         while self.state.status == RuntimeStatus.RUNNING:
             # Check iteration limit
             if self.state.iteration_count >= self.state.max_iterations:
@@ -134,6 +167,10 @@ class AgentRuntime:
                 
                 elif result.status == AgentStatus.NEEDS_HUMAN:
                     self.state.status = RuntimeStatus.WAITING_HUMAN
+                    
+                    # Prepare for potential resume
+                    self.state.current_agent = result.next_agent or "planning"
+                    
                     if self.human_callback:
                         # Call human intervention callback
                         human_response = self.human_callback(result.data, self.state)
@@ -141,13 +178,14 @@ class AgentRuntime:
                             # Continue with human approval
                             self.state.status = RuntimeStatus.RUNNING
                             current_input = human_response.get("data", result.data)
-                            self.state.current_agent = result.next_agent or "planning"
                         else:
                             # Human rejected, stop execution
                             self.state.error_message = "Human intervention rejected operation"
                             break
                     else:
-                        self.logger.warning("Human intervention needed but no callback set")
+                        self.logger.info("Pausing execution for human intervention")
+                        # Break loop to return control to caller (e.g. API)
+                        # The state is already set to WAITING_HUMAN
                         break
                 
                 elif result.status == AgentStatus.FAILURE:
