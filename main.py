@@ -24,8 +24,22 @@ from poe_model_provider import PoeModelProvider
 from model_provider import LocalLLModel
 from comfyui_provider import ComfyUIProvider
 from rag import LocalRAG
+from permission_manager import PermissionManager, SafetyLevel
+
+# Import agents
+from agents import AgentRuntime
+from agents.qa_agent import QAAgent
+from agents.planning_agent import PlanningAgent
+from agents.router_agent import RouterAgent
+from agents.verification_agent import VerificationAgent
+from agents.risk_agent import RiskAgent, RiskLevel
+from agents.task_agents.llm_agent import LLMTaskAgent
+from agents.task_agents.rag_agent import RAGTaskAgent
+from agents.task_agents.mcp_agent import MCPTaskAgent
 
 local_rag = None
+agent_runtime = None
+permission_manager = None
 
 app = FastAPI()
 app.add_middleware(
@@ -102,6 +116,7 @@ async def manifest():
 
 @app.get("/mcp")
 async def query_rag(request: Request):
+    """Direct RAG query endpoint (original functionality)"""
     global local_rag
     global local_model
     query = request.query_params.get("query")
@@ -124,6 +139,140 @@ async def query_rag(request: Request):
         yield f"data: [DONE]{result}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/agent")
+async def query_agent(request: Request):
+    """Agent-based query endpoint with full workflow"""
+    global local_model
+    global agent_runtime
+    
+    query = request.query_params.get("query")
+    if query is None:
+        raise HTTPException(
+            status_code=400, detail="Query parameter is required"
+        )
+
+    # Initialize agent runtime if needed
+    if agent_runtime is None:
+        if local_model is None:
+            local_model = LocalLLModel()
+        if local_rag is None:
+            data_path = os.getenv("DATA_PATH", "./docs")
+            local_rag = LocalRAG(local_model, data_path=data_path)
+        agent_runtime = AgentRuntime.create_with_all_agents(
+            local_model, 
+            rag_instance=local_rag,
+            permission_manager=permission_manager
+        )
+    
+    # Execute through agent system
+    try:
+        state = agent_runtime.execute(query, start_agent="qa")
+        
+        if state.status.value == "completed":
+            result = state.final_result
+        else:
+            result = f"Error: {state.error_message}"
+        
+        if isinstance(result, str):
+            return PlainTextResponse(result)
+
+        def event_stream():
+            yield f"data: [DONE]{result}\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+    except Exception as e:
+        return PlainTextResponse(f"Error: {str(e)}")
+
+
+
+@app.post("/agent/chat")
+async def agent_chat(req: ChatRequest):
+    """Agent-based chat endpoint with full workflow"""
+    global local_model
+    global agent_runtime
+    
+    if local_model is None:
+        local_model = LocalLLModel(req.model)
+    
+    if agent_runtime is None:
+        if local_rag is None:
+            data_path = os.getenv("DATA_PATH", "./docs")
+            local_rag = LocalRAG(local_model, data_path=data_path)
+        agent_runtime = AgentRuntime.create_with_all_agents(
+            local_model,
+            rag_instance=local_rag,
+            permission_manager=permission_manager
+        )
+    
+    # Extract user query from messages
+    user_messages = [m for m in req.messages if m.role == "user"]
+    if not user_messages:
+        raise HTTPException(status_code=400, detail="No user message found")
+    
+    query = user_messages[-1].content
+    
+    try:
+        # Execute agent workflow
+        state = agent_runtime.execute(query, start_agent="qa")
+        
+        # Format response
+        if state.status.value == "completed":
+            answer = state.final_result
+            status = "success"
+        else:
+            answer = f"Workflow {state.status.value}: {state.error_message}"
+            status = state.status.value
+        
+        response = {
+            "id": "agent-chat-1",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": req.model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": answer},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": len(str(answer).split()),
+                "total_tokens": len(str(answer).split()),
+            },
+            "agent_metadata": {
+                "status": status,
+                "iterations": state.iteration_count,
+                "history_length": len(state.history)
+            }
+        }
+        
+        return JSONResponse(content=response)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/agent/status")
+async def agent_status():
+    """Get agent runtime status"""
+    global agent_runtime
+    
+    if agent_runtime is None:
+        return {"status": "not_initialized"}
+    
+    state = agent_runtime.get_state()
+    
+    return {
+        "status": state.status.value,
+        "current_agent": state.current_agent,
+        "iteration_count": state.iteration_count,
+        "max_iterations": state.max_iterations,
+        "history_length": len(state.history),
+        "context_keys": list(state.context.keys())
+    }
 
 
 comfyui_provider = ComfyUIProvider()

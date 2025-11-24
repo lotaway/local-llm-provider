@@ -1,0 +1,122 @@
+"""Hybrid Retriever - Combines vector and keyword search"""
+
+from typing import List, Dict, Any
+from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
+from rank_bm25 import BM25Okapi
+import numpy as np
+
+
+class HybridRetriever(BaseRetriever):
+    """
+    Hybrid retriever combining vector similarity and BM25 keyword search
+    Uses weighted linear fusion to combine results
+    """
+    
+    def __init__(
+        self,
+        vectorstore,
+        documents: List[Document],
+        vector_weight: float = 0.7,
+        bm25_weight: float = 0.3,
+        k: int = 5,
+        **kwargs
+    ):
+        """
+        Initialize hybrid retriever
+        
+        Args:
+            vectorstore: Vector store for semantic search
+            documents: All documents for BM25 indexing
+            vector_weight: Weight for vector search results (0-1)
+            bm25_weight: Weight for BM25 results (0-1)
+            k: Number of documents to retrieve
+        """
+        super().__init__(**kwargs)
+        self.vectorstore = vectorstore
+        self.documents = documents
+        self.vector_weight = vector_weight
+        self.bm25_weight = bm25_weight
+        self.k = k
+        
+        # Build BM25 index
+        self._build_bm25_index()
+    
+    def _build_bm25_index(self):
+        """Build BM25 index from documents"""
+        # Tokenize documents
+        tokenized_docs = [doc.page_content.split() for doc in self.documents]
+        self.bm25 = BM25Okapi(tokenized_docs)
+    
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun = None
+    ) -> List[Document]:
+        """
+        Retrieve documents using hybrid search
+        
+        Args:
+            query: Search query
+            run_manager: Callback manager
+            
+        Returns:
+            List of retrieved documents
+        """
+        # Vector search
+        vector_docs = self.vectorstore.similarity_search_with_score(query, k=self.k * 2)
+        
+        # BM25 search
+        tokenized_query = query.split()
+        bm25_scores = self.bm25.get_scores(tokenized_query)
+        
+        # Get top BM25 documents
+        top_bm25_indices = np.argsort(bm25_scores)[::-1][:self.k * 2]
+        bm25_docs = [(self.documents[i], bm25_scores[i]) for i in top_bm25_indices]
+        
+        # Normalize scores
+        vector_scores_norm = self._normalize_scores([score for _, score in vector_docs])
+        bm25_scores_norm = self._normalize_scores([score for _, score in bm25_docs])
+        
+        # Combine results with weighted fusion
+        doc_scores = {}
+        
+        # Add vector search results
+        for i, (doc, score) in enumerate(vector_docs):
+            doc_id = self._get_doc_id(doc)
+            doc_scores[doc_id] = {
+                "doc": doc,
+                "score": vector_scores_norm[i] * self.vector_weight
+            }
+        
+        # Add BM25 results
+        for i, (doc, score) in enumerate(bm25_docs):
+            doc_id = self._get_doc_id(doc)
+            if doc_id in doc_scores:
+                doc_scores[doc_id]["score"] += bm25_scores_norm[i] * self.bm25_weight
+            else:
+                doc_scores[doc_id] = {
+                    "doc": doc,
+                    "score": bm25_scores_norm[i] * self.bm25_weight
+                }
+        
+        # Sort by combined score and return top k
+        sorted_docs = sorted(doc_scores.values(), key=lambda x: x["score"], reverse=True)
+        return [item["doc"] for item in sorted_docs[:self.k]]
+    
+    def _normalize_scores(self, scores: List[float]) -> List[float]:
+        """Normalize scores to 0-1 range"""
+        if not scores:
+            return []
+        
+        min_score = min(scores)
+        max_score = max(scores)
+        
+        if max_score == min_score:
+            return [1.0] * len(scores)
+        
+        return [(s - min_score) / (max_score - min_score) for s in scores]
+    
+    def _get_doc_id(self, doc: Document) -> str:
+        """Get unique identifier for document"""
+        # Use content hash as ID
+        return str(hash(doc.page_content))

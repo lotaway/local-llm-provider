@@ -21,24 +21,63 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableSequence
 from model_provider import LocalLLModel
-from typing import Callable
+from typing import Callable, List
 from ExpandedRetriever import ExpandedRetriever
+from retrievers.hybrid_retriever import HybridRetriever
+from retrievers.reranker import Reranker
 
 
 class LocalRAG:
 
-    def __init__(self, llm: LocalLLModel, data_path="./docs"):
+    def __init__(
+        self,
+        llm: LocalLLModel,
+        data_path="./docs",
+        use_hybrid_search: bool = True,
+        use_reranking: bool = True,
+        retrieval_strategy: str = "adaptive"
+    ):
         self.llm = llm
         self.data_path = data_path
         self.host = os.getenv("DB_HOST", "localhost")
         self.port = os.getenv("DB_PORT", "19530")
         self.collection = os.getenv("DB_COLLECTION", "rag_docs")
         self.rag_chain: RunnableSequence | None = None
+        
+        # Enhanced retrieval settings
+        self.use_hybrid_search = use_hybrid_search
+        self.use_reranking = use_reranking
+        self.retrieval_strategy = retrieval_strategy  # "adaptive", "hybrid", "vector"
+        self.reranker = Reranker() if use_reranking else None
+        self.all_documents: List[Document] = []
 
     def init_rag_chain(self):
         vectorstore = self.get_or_create_vectorstore()
-        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-        # retriever = ExpandedRetriever(vectorstore, search_kwargs={"k": 3})
+        # retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+        #retriever = ExpandedRetriever(vectorstore, search_kwargs={"k": 3})
+        # Choose retrieval strategy
+        if self.use_hybrid_search and self.all_documents:
+            retriever = HybridRetriever(
+                vectorstore=vectorstore,
+                documents=self.all_documents,
+                vector_weight=0.7,
+                bm25_weight=0.3,
+                k=10 if self.use_reranking else 5
+            )
+        else:
+            retriever = vectorstore.as_retriever(
+                search_kwargs={"k": 10 if self.use_reranking else 5}
+            )
+        # Add reranking step if enabled
+        if self.use_reranking and self.reranker:
+            def retrieve_and_rerank(query: str) -> List[Document]:
+                docs = retriever.invoke(query)
+                return self.reranker.adaptive_rerank(query, docs, top_k=5)
+            
+            retrieval_runnable = RunnableLambda(retrieve_and_rerank)
+        else:
+            retrieval_runnable = retriever
+        
         format_messages_runnable = RunnableLambda(self.llm.format_messages)
 
         def prepare_messages(input_data) -> list[dict]:
@@ -61,17 +100,16 @@ class LocalRAG:
 
         prompt_str = ChatPromptTemplate.from_template(
             """
-你是一名检索增强问答系统的回答助手。
+你是检索增强问答助手，严格基于提供的内容回答问题。
 
-【规则】
-1. 只能根据提供的内容（context）回答问题，不允许推测、臆断或使用外部知识。
-2. 如果内容不足以回答，必须回复：`无法从提供的内容中找到答案。`
-3. 不要编造事实或超出 context 的信息。
-4. 回答必须简洁、准确、结构清晰。
-5. 如果 context 中包含多个矛盾信息，仅选择最明确且重复出现的部分作为答案。
-6. 如果内容是列表、步骤、定义等，需要保留原有格式再组织语言。
-7. 禁止输出 context 本身，除非问题要求引用。
-8. 如果问题与 context 无关，回复：`该问题与提供的内容无关。`
+【核心规则】
+1. 仅根据 context 回答，禁止推测或使用外部知识
+2. 内容不足时回复：`无法从提供的内容中找到答案`
+3. 保持简洁准确，结构清晰
+4. context 有矛盾时，选择最明确且重复的部分
+5. 保留列表、步骤等原有格式
+6. 不输出 context 原文（除非问题要求引用）
+7. 问题与 context 无关时回复：`该问题与提供的内容无关`
 
 【context】
 {context}
@@ -79,15 +117,14 @@ class LocalRAG:
 【question】
 {question}
 
-【回答格式要求】
-- 如果有答案：直接回答，不要多余开头词。
-- 如果无法回答：使用规则中对应内容。
+【输出要求】
+有答案：直接回答，保持礼貌用词，无需开场白
+无答案：使用上述规则中的标准回复
             """
         )
 
-        # LCEL链
         self.rag_chain = (
-            {"context": retriever, "question": lambda x: x}
+            {"context": retrieval_runnable, "question": lambda x: x}
             | prompt_str
             | format_messages_runnable
             | chat_runnable
@@ -251,6 +288,13 @@ class LocalRAG:
             # docs = self.load_documents(lambda doc, file : doc.metadata["author"] = file)
             if not docs:
                 raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档")
+            
+            # Store documents for hybrid search
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000, chunk_overlap=200
+            )
+            self.all_documents = text_splitter.split_documents(docs)
+            
             return self.build_vectorstore(docs)
         else:
             print(f"Collection '{self.collection}' already exists, reusing it.")
