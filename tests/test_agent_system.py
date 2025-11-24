@@ -6,7 +6,7 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from model_provider import LocalLLModel
+from model_providers import LocalLLModel
 from agents import AgentRuntime
 from agents.qa_agent import QAAgent
 from agents.planning_agent import PlanningAgent

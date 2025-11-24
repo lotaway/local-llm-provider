@@ -13,7 +13,7 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from model_provider import LocalLLModel
+from model_providers import LocalLLModel
 from permission_manager import PermissionManager, SafetyLevel
 from agents.task_agents.mcp_agent import MCPTaskAgent
 from agents.agent_base import AgentStatus

@@ -20,9 +20,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from poe_model_provider import PoeModelProvider
-from model_provider import LocalLLModel
-from comfyui_provider import ComfyUIProvider
+from model_providers import LocalLLModel, PoeModelProvider, ComfyUIProvider
 from rag import LocalRAG
 from permission_manager import PermissionManager, SafetyLevel
 
