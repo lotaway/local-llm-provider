@@ -21,8 +21,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableSequence
 from model_providers import LocalLLModel
-from typing import Callable, List
-from ExpandedRetriever import ExpandedRetriever
+from typing import Any, Callable, List, cast
+from retrievers.ExpandedRetriever import ExpandedRetriever
 from retrievers.hybrid_retriever import HybridRetriever
 from retrievers.reranker import Reranker
 
@@ -53,6 +53,9 @@ class LocalRAG:
 
     def init_rag_chain(self):
         vectorstore = self.get_or_create_vectorstore()
+        if vectorstore is None:
+            Exception("No vectorstore available, maybe not docs are loaded?")
+        vectorstore = cast(Milvus, vectorstore)
         # retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
         #retriever = ExpandedRetriever(vectorstore, search_kwargs={"k": 3})
         # Choose retrieval strategy
@@ -72,7 +75,7 @@ class LocalRAG:
         if self.use_reranking and self.reranker:
             def retrieve_and_rerank(query: str) -> List[Document]:
                 docs = retriever.invoke(query)
-                return self.reranker.adaptive_rerank(query, docs, top_k=5)
+                return cast(Reranker, self.reranker).adaptive_rerank(query, docs, top_k=5)
             
             retrieval_runnable = RunnableLambda(retrieve_and_rerank)
         else:
@@ -123,7 +126,7 @@ class LocalRAG:
             """
         )
 
-        self.rag_chain = (
+        chain = (
             {"context": retrieval_runnable, "question": lambda x: x}
             | prompt_str
             | format_messages_runnable
@@ -131,6 +134,7 @@ class LocalRAG:
             | StrOutputParser()
             | after_runnable
         )
+        self.rag_chain = RunnableSequence(chain)
 
 
     def load_base_documents(self):
@@ -145,7 +149,7 @@ class LocalRAG:
                         print(f"加载文件 {f} 时出错: {e}")
         return docs
 
-    def load_documents(self, after_doc_load: Callable[[Document, str], Document] = lambda x: x) -> list[Document]:
+    def load_documents(self, after_doc_load: Callable[[List[Document], str], List[Document]] = lambda x, _: x) -> list[Document]:
         """加载多种格式的文档"""
         docs = []
         print(f"开始扫描文档目录: {self.data_path}")
@@ -254,7 +258,7 @@ class LocalRAG:
 
         # 分批处理以避免显存溢出
         batch_size = 50
-        vectorstore = None
+        vectorstore: Milvus | None = None
 
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i : i + batch_size]
@@ -285,7 +289,7 @@ class LocalRAG:
                 f"Collection '{self.collection}' not found, creating and inserting documents..."
             )
             docs = self.load_documents()
-            # docs = self.load_documents(lambda doc, file : doc.metadata["author"] = file)
+            # docs = self.load_documents(lambda docs, file : docs.map(lambda doc: doc.metadata["author"] = file)
             if not docs:
                 raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档")
             
@@ -307,7 +311,7 @@ class LocalRAG:
     def generate_answer(self, question):
         if self.rag_chain is None:
             self.init_rag_chain()
-        return self.rag_chain.invoke(question)
+        return cast(RunnableSequence, self.rag_chain).invoke(question)
 
     def release_memory(self):
         """释放显存资源"""
@@ -329,7 +333,7 @@ def command_line_rag():
             query = input("\n问：")
             if query.lower() in ["exit", "quit"]:
                 break
-            answer = local_rag.invoke(query)
+            answer = local_rag.generate_answer(query)
             print("答：", answer)
         except KeyboardInterrupt:
             break
