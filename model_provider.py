@@ -10,7 +10,10 @@ from accelerate import init_empty_weights, infer_auto_device_map
 import torch
 from threading import Thread
 import os
+import platform
+import psutil
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from utils import platform_is_mac
 
 project_root = os.path.abspath(os.path.dirname(__file__))
 models = {
@@ -30,6 +33,37 @@ class LocalLLModel:
     embedding_model_name: str = ""
     embedding_model: SentenceTransformer | None = None
     # tokenizer: AutoTokenizer
+
+    @staticmethod
+    def get_available_memory():
+        """
+        自动检测系统可用内存配置
+        返回格式: {0: "20GiB", "cpu": "60GiB"}
+        """
+        max_memory = {}
+        is_mac = platform_is_mac()
+        
+        if is_mac:
+            total_memory = psutil.virtual_memory().total
+            reserved_gb = 4
+            available_memory_gb = max(1, (total_memory / (1024**3)) - reserved_gb)
+            max_memory["cpu"] = f"{int(available_memory_gb)}GiB"
+            if torch.backends.mps.is_available():
+                print(f"MPS 加速可用")
+        else:
+            if torch.cuda.is_available():
+                gpu_memory = torch.cuda.get_device_properties(0).total_memory
+                available_gpu_gb = max(1, (gpu_memory / (1024**3)) - 4)
+                max_memory[0] = f"{int(available_gpu_gb)}GiB"
+            total_memory = psutil.virtual_memory().total
+            available_cpu_gb = max(1, (total_memory / (1024**3)) - 8)
+            max_memory["cpu"] = f"{int(available_cpu_gb)}GiB"
+        if max_memory.get("cpu") == "0GiB" and max_memory.get(0) == "0GiB":
+            print("内存检测异常，使用默认配置")
+            max_memory[0] = f"{24 - 4}GiB"
+            max_memory["cpu"] = f"{60}GiB"
+        
+        return max_memory
 
     @staticmethod
     def get_models():
@@ -64,16 +98,20 @@ class LocalLLModel:
         self.tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_model_name, local_files_only=True
         )
-        device_map = {
-            "transformer.word_embeddings": 0,
-            "transformer.final_layernorm": 0,
-            # "transformer.h": "cpu",
-            "model.embed_tokens": 0,
-            "model.layers": 0,
-            "model.norm": 0,
-            "lm_head": 0,
-        }
-        max_memory = {0: "20GiB", "cpu": "60GiB"}
+        is_mac = platform_is_mac()
+        if is_mac:
+            device_map = "auto"
+        else:
+            device_map = {
+                "transformer.word_embeddings": 0,
+                "transformer.final_layernorm": 0,
+                # "transformer.h": "cpu",
+                "model.embed_tokens": 0,
+                "model.layers": 0,
+                "model.norm": 0,
+                "lm_head": 0,
+            }
+        max_memory = self.get_available_memory()
         if self.cur_model_name.startswith("gpt"):
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_path,
@@ -84,7 +122,6 @@ class LocalLLModel:
                 low_cpu_mem_usage=True,
             )
         else:
-            is_mac = os.sys.platform == "darwin"
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
@@ -94,10 +131,13 @@ class LocalLLModel:
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_path,
                 local_files_only=True,
-                # dtype=torch.float16,
+                dtype=torch.float16 if is_mac else None,
                 device_map=device_map,
                 max_memory=max_memory,
                 quantization_config=quantization_config,
+                # low_cpu_mem_usage=True,  # 启用低内存模式
+                # offload_folder="./offload",  # 将部分权重卸载到磁盘
+                # offload_state_dict=True,  # 卸载状态字典
             )
 
     def unload_model(self):
