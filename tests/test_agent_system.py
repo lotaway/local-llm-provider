@@ -3,8 +3,8 @@
 import sys
 import os
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(__file__))
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from model_provider import LocalLLModel
 from agents import AgentRuntime
