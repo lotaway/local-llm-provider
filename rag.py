@@ -22,9 +22,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableSequence
 from model_providers import LocalLLModel
 from typing import Any, Callable, List, cast
-from retrievers.ExpandedRetriever import ExpandedRetriever
-from retrievers.hybrid_retriever import HybridRetriever
-from retrievers.reranker import Reranker
+from retrievers import ExpandedRetriever, HybridRetriever, Reranker
 
 
 class LocalRAG:

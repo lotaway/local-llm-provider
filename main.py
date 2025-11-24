@@ -139,7 +139,7 @@ async def query_rag(request: Request):
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-@app.get("/agent")
+@app.get("/agents/run")
 async def query_agent(request: Request):
     """Agent-based query endpoint with full workflow"""
     global local_rag
@@ -184,6 +184,10 @@ async def query_agent(request: Request):
     except Exception as e:
         return PlainTextResponse(f"Error: {str(e)}")
 
+
+# @app.post("/agent/decision")
+async def agent_decision():
+    raise Exception("@TODO: No implemention!")
 
 
 @app.post("/agent/chat")

@@ -1,6 +1,3 @@
-from langchain.retrievers import MergerRetriever
-from langchain.vectorstores import Chroma
-
 class ExpandedRetriever:
     def __init__(self, vectorstore, search_kwargs = {}):
         self.vectorstore = vectorstore
@@ -34,19 +31,20 @@ class ExpandedRetriever:
         return unique_results[:5]
 
 
-def test():
-    expanded_retriever = ExpandedRetriever(vectorstore)
-    rag_chain = (
-        {"context": expanded_retriever, 
-         "question": lambda x: x["question"]}
-        | prompt_str
-        | format_messages_runnable
-        | chat_runnable
-        | StrOutputParser()
-    )
-    result = rag_chain.invoke({
-        "question": "API认证", 
-        "outline_context": "用户管理/权限系统",
-        "categories": ["安全", "用户认证", "权限管理"]
-    })
-    print(result)
+# def test():
+#     vectorstore = Milvus
+#     expanded_retriever = ExpandedRetriever(vectorstore)
+#     rag_chain = (
+#         {"context": expanded_retriever, 
+#          "question": lambda x: x["question"]}
+#         | prompt_str
+#         | format_messages_runnable
+#         | chat_runnable
+#         | StrOutputParser()
+#     )
+#     result = rag_chain.invoke({
+#         "question": "API认证", 
+#         "outline_context": "用户管理/权限系统",
+#         "categories": ["安全", "用户认证", "权限管理"]
+#     })
+#     print(result)
