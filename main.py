@@ -142,6 +142,7 @@ async def query_rag(request: Request):
 @app.get("/agent")
 async def query_agent(request: Request):
     """Agent-based query endpoint with full workflow"""
+    global local_rag
     global local_model
     global agent_runtime
     
@@ -188,6 +189,7 @@ async def query_agent(request: Request):
 @app.post("/agent/chat")
 async def agent_chat(req: ChatRequest):
     """Agent-based chat endpoint with full workflow"""
+    global local_rag
     global local_model
     global agent_runtime
     
