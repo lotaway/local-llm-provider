@@ -129,20 +129,53 @@ async def query_rag(request: Request):
             status_code=400, detail="Either query or request parameter is required"
         )
 
-    if local_rag is None:
-        if local_model is None:
-            local_model = LocalLLModel()
-        data_path = os.getenv("DATA_PATH", "./docs")
-        local_rag = LocalRAG(local_model, data_path=data_path)
-    result = local_rag.generate_answer(query)
+    try:
+        if local_rag is None:
+            if local_model is None:
+                local_model = LocalLLModel()
+            data_path = os.getenv("DATA_PATH", "./docs")
+            print(f"初始化 RAG 系统，数据路径: {data_path}")
+            local_rag = LocalRAG(local_model, data_path=data_path)
+        result = local_rag.generate_answer(query)
 
-    if isinstance(result, str):
-        return PlainTextResponse(result)
+        if isinstance(result, str):
+            return PlainTextResponse(result)
 
-    def event_stream():
-        yield f"data: [DONE]{result}\n\n"
+        def event_stream():
+            yield f"data: [DONE]{result}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+        
+    except json.JSONDecodeError as e:
+        error_msg = (
+            f"模型配置文件解析失败: {str(e)}\n\n"
+            "可能的原因:\n"
+            "1. Embedding 模型缓存文件损坏\n"
+            "2. 模型下载不完整\n\n"
+            "建议解决方案:\n"
+            "1. 清理缓存: rm -rf ~/.cache/huggingface/hub/models--Alibaba-NLP--gte-Qwen2-1.5B-instruct\n"
+            "2. 重新启动服务以重新下载模型\n"
+            "3. 检查网络连接"
+        )
+        print(f"错误: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
+        
+    except ValueError as e:
+        error_msg = f"配置错误: {str(e)}"
+        print(f"错误: {error_msg}")
+        raise HTTPException(status_code=400, detail=error_msg)
+        
+    except RuntimeError as e:
+        error_msg = f"运行时错误: {str(e)}"
+        print(f"错误: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
+        
+    except Exception as e:
+        error_msg = f"未知错误: {type(e).__name__} - {str(e)}"
+        print(f"错误: {error_msg}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.get("/agents/run")
