@@ -47,6 +47,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+VERSION = "/v1"
 
 
 class Message(BaseModel):
@@ -63,6 +64,11 @@ class ChatRequest(BaseModel):
 class CompletionRequest(BaseModel):
     model: str
     prompt: str
+    
+    
+class AgentRequest(BaseModel):
+    model: str
+    messages: list[str]
 
 
 class PromptTokensDetail:
@@ -178,14 +184,14 @@ async def query_rag(request: Request):
         raise HTTPException(status_code=500, detail=error_msg)
 
 
-@app.get("/agents/run")
-async def query_agent(request: Request):
+@app.post(f"{VERSION}/agents/run")
+async def query_agent(request: AgentRequest):
     """Agent-based query endpoint with full workflow"""
     global local_rag
     global local_model
     global agent_runtime
     
-    query = request.query_params.get("query")
+    query = request.messages
     if query is None:
         raise HTTPException(
             status_code=400, detail="Query parameter is required"
@@ -224,7 +230,7 @@ async def query_agent(request: Request):
         return PlainTextResponse(f"Error: {str(e)}")
 
 
-@app.post("/agent/decision")
+@app.post(f"{VERSION}/agents/decision")
 async def agent_decision(req: AgentDecisionRequest):
     """Handle human decision for paused agent workflow"""
     global agent_runtime
@@ -279,7 +285,7 @@ async def agent_decision(req: AgentDecisionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/agent/chat")
+@app.post(f"{VERSION}/agents/chat")
 async def agent_chat(req: ChatRequest):
     """Agent-based chat endpoint with full workflow"""
     global local_rag
@@ -348,7 +354,7 @@ async def agent_chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/agent/status")
+@app.get(f"{VERSION}/agents/status")
 async def agent_status():
     """Get agent runtime status"""
     global agent_runtime
@@ -450,7 +456,7 @@ async def api_version():
     return cur
 
 
-@app.post("/v1/embeddings")
+@app.post(f"{VERSION}/embeddings")
 async def embeddings(req: EmbeddingRequest):
     if isinstance(req.input, str):
         texts = [req.input]
@@ -471,7 +477,7 @@ async def embeddings(req: EmbeddingRequest):
     }
 
 
-@app.post("/v1/chat/completions")
+@app.post(f"{VERSION}/chat/completions")
 async def chat_completions(req: ChatRequest):
     """openai chat/edit/apply"""
     global local_model
@@ -527,7 +533,7 @@ async def chat_completions(req: ChatRequest):
     return JSONResponse(content=response, headers={"Content-Type": "application/json"})
 
 
-@app.post("/v1/completions")
+@app.post(f"{VERSION}/completions")
 async def completions(req: CompletionRequest):
     """openai autocompletions"""
     global local_model
