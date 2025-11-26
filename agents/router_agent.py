@@ -7,13 +7,14 @@ from .agent_base import BaseAgent, AgentResult, AgentStatus
 class RouterAgent(BaseAgent):
     """Agent for routing tasks to appropriate execution agents"""
     
-    def execute(self, input_data: Any, context: Dict[str, Any]) -> AgentResult:
+    def execute(self, input_data: Any, context: Dict[str, Any], stream_callback=None) -> AgentResult:
         """
         Route task to appropriate agent
         
         Args:
             input_data: Task definition from planning agent
             context: Runtime context
+            stream_callback: Optional callback for streaming LLM outputs (not used by router)
             
         Returns:
             AgentResult with routing decision

@@ -45,13 +45,14 @@ class MCPTaskAgent(BaseAgent):
         }
         self.logger.info(f"Registered MCP tool: {tool_name} with permission {permission_name or f'mcp.{tool_name}'}")
     
-    def execute(self, input_data: Any, context: Dict[str, Any]) -> AgentResult:
+    def execute(self, input_data: Any, context: Dict[str, Any], stream_callback=None) -> AgentResult:
         """
         Execute MCP task with permission checking
         
         Args:
             input_data: Task definition with tool_name
             context: Runtime context
+            stream_callback: Optional callback for streaming LLM outputs (not used by MCP)
             
         Returns:
             AgentResult with tool execution result

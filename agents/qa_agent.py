@@ -23,13 +23,14 @@ class QAAgent(BaseAgent):
     "processed_query": "处理后的清晰问题"
 }"""
     
-    def execute(self, input_data: Any, context: Dict[str, Any]) -> AgentResult:
+    def execute(self, input_data: Any, context: Dict[str, Any], stream_callback=None) -> AgentResult:
         """
         Parse and understand user query
         
         Args:
             input_data: User query string
             context: Runtime context
+            stream_callback: Optional callback for streaming LLM outputs
             
         Returns:
             AgentResult with parsed query information
@@ -45,7 +46,7 @@ class QAAgent(BaseAgent):
         ]
         
         try:
-            response = self._call_llm(messages, temperature=0.1, max_new_tokens=1000)
+            response = self._call_llm(messages, stream_callback=stream_callback, temperature=0.1, max_new_tokens=1000)
             parsed = self._parse_json_response(response)
             
             # Check if clarification needed

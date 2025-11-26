@@ -25,13 +25,14 @@ class VerificationAgent(BaseAgent):
     "verification_notes": "验证说明"
 }"""
     
-    def execute(self, input_data: Any, context: Dict[str, Any]) -> AgentResult:
+    def execute(self, input_data: Any, context: Dict[str, Any], stream_callback=None) -> AgentResult:
         """
         Verify task execution result
         
         Args:
             input_data: Task execution result
             context: Runtime context
+            stream_callback: Optional callback for streaming LLM outputs
             
         Returns:
             AgentResult with verification status
@@ -52,7 +53,7 @@ class VerificationAgent(BaseAgent):
         ]
         
         try:
-            response = self._call_llm(messages, temperature=0.1, max_new_tokens=1000)
+            response = self._call_llm(messages, stream_callback=stream_callback, temperature=0.1, max_new_tokens=1000)
             verification = self._parse_json_response(response)
             
             # Store verification in context

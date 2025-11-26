@@ -186,7 +186,7 @@ async def query_rag(request: Request):
 
 @app.post(f"{VERSION}/agents/run")
 async def query_agent(request: AgentRequest):
-    """Agent-based query endpoint with full workflow"""
+    """Agent-based query endpoint with streaming support"""
     global local_rag
     global local_model
     global agent_runtime
@@ -210,24 +210,178 @@ async def query_agent(request: AgentRequest):
             permission_manager=permission_manager
         )
     
-    # Execute through agent system
-    try:
-        state = agent_runtime.execute(query, start_agent="qa")
+    # Execute through agent system with streaming
+    def event_stream():
+        """Generate Server-Sent Events for agent execution"""
+        import queue
+        import threading
         
-        if state.status.value == "completed":
-            result = state.final_result
-        else:
-            result = f"Error: {state.error_message}"
+        # Create a queue for streaming events
+        event_queue = queue.Queue()
+        execution_complete = threading.Event()
+        final_state = {"state": None, "error": None}
         
-        if isinstance(result, str):
-            return PlainTextResponse(result)
-
-        def event_stream():
-            yield f"data: [DONE]{result}\n\n"
-
-        return StreamingResponse(event_stream(), media_type="text/event-stream")
-    except Exception as e:
-        return PlainTextResponse(f"Error: {str(e)}")
+        def stream_callback(event_data):
+            """Callback to receive streaming events from agents"""
+            event_queue.put(event_data)
+        
+        def execute_agents():
+            """Execute agents in a separate thread"""
+            try:
+                state = agent_runtime.execute(query, start_agent="qa", stream_callback=stream_callback)
+                final_state["state"] = state
+            except Exception as e:
+                final_state["error"] = str(e)
+            finally:
+                execution_complete.set()
+        
+        # Start agent execution in background thread
+        execution_thread = threading.Thread(target=execute_agents)
+        execution_thread.start()
+        
+        # Stream events as they arrive
+        while not execution_complete.is_set() or not event_queue.empty():
+            try:
+                # Get event with timeout to check completion status
+                event_data = event_queue.get(timeout=0.1)
+                
+                event_type = event_data.get("event_type")
+                
+                if event_type == "agent_start":
+                    # Agent start event
+                    data = {
+                        "id": "agent-run-1",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": request.model,
+                        "choices": [{
+                            "delta": {},
+                            "index": 0,
+                            "finish_reason": None
+                        }],
+                        "agent_metadata": {
+                            "event_type": "agent_start",
+                            "current_agent": event_data.get("agent_name"),
+                            "iteration": event_data.get("iteration")
+                        }
+                    }
+                    yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                
+                elif event_type == "llm_chunk":
+                    # LLM chunk event
+                    chunk = event_data.get("chunk", "")
+                    if chunk:
+                        data = {
+                            "id": "agent-run-1",
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": request.model,
+                            "choices": [{
+                                "delta": {"content": chunk},
+                                "index": 0,
+                                "finish_reason": None
+                            }],
+                            "agent_metadata": {
+                                "event_type": "llm_chunk",
+                                "current_agent": event_data.get("agent_name")
+                            }
+                        }
+                        yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                
+                elif event_type == "agent_complete":
+                    # Agent complete event
+                    data = {
+                        "id": "agent-run-1",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": request.model,
+                        "choices": [{
+                            "delta": {},
+                            "index": 0,
+                            "finish_reason": None
+                        }],
+                        "agent_metadata": {
+                            "event_type": "agent_complete",
+                            "current_agent": event_data.get("agent_name"),
+                            "status": event_data.get("status"),
+                            "next_agent": event_data.get("next_agent"),
+                            "message": event_data.get("message")
+                        }
+                    }
+                    yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                
+            except queue.Empty:
+                # No events available, continue waiting
+                continue
+        
+        # Wait for execution thread to complete
+        execution_thread.join()
+        
+        # Send final completion event
+        if final_state["error"]:
+            # Error occurred
+            data = {
+                "id": "agent-run-1",
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": request.model,
+                "choices": [{
+                    "delta": {"content": f"\n\nError: {final_state['error']}"},
+                    "index": 0,
+                    "finish_reason": "error"
+                }],
+                "agent_metadata": {
+                    "event_type": "error",
+                    "error": final_state["error"]
+                }
+            }
+            yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+        elif final_state["state"]:
+            state = final_state["state"]
+            # Send final result summary
+            if state.status.value == "completed":
+                data = {
+                    "id": "agent-run-1",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": request.model,
+                    "choices": [{
+                        "delta": {},
+                        "index": 0,
+                        "finish_reason": "stop"
+                    }],
+                    "agent_metadata": {
+                        "event_type": "workflow_complete",
+                        "status": state.status.value,
+                        "iterations": state.iteration_count,
+                        "history_length": len(state.history)
+                    }
+                }
+                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+            else:
+                # Workflow ended in non-completed state
+                data = {
+                    "id": "agent-run-1",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": request.model,
+                    "choices": [{
+                        "delta": {"content": f"\n\nWorkflow {state.status.value}: {state.error_message}"},
+                        "index": 0,
+                        "finish_reason": "stop"
+                    }],
+                    "agent_metadata": {
+                        "event_type": "workflow_end",
+                        "status": state.status.value,
+                        "error_message": state.error_message
+                    }
+                }
+                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+        
+        # Send [DONE] marker
+        yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post(f"{VERSION}/agents/decision")

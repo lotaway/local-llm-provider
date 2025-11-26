@@ -11,13 +11,14 @@ from agents.agent_base import BaseAgent, AgentResult, AgentStatus
 class LLMTaskAgent(BaseAgent):
     """Agent for direct LLM queries without RAG or tools"""
     
-    def execute(self, input_data: Any, context: Dict[str, Any]) -> AgentResult:
+    def execute(self, input_data: Any, context: Dict[str, Any], stream_callback=None) -> AgentResult:
         """
         Execute LLM task
         
         Args:
             input_data: Task definition
             context: Runtime context
+            stream_callback: Optional callback for streaming LLM outputs
             
         Returns:
             AgentResult with LLM response
@@ -38,7 +39,7 @@ class LLMTaskAgent(BaseAgent):
         ]
         
         try:
-            response = self._call_llm(messages, temperature=0.7, max_new_tokens=2000)
+            response = self._call_llm(messages, stream_callback=stream_callback, temperature=0.7, max_new_tokens=2000)
             
             return AgentResult(
                 status=AgentStatus.SUCCESS,

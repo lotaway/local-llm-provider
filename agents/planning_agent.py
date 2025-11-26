@@ -41,13 +41,14 @@ class PlanningAgent(BaseAgent):
     "reasoning": "完成理由"
 }"""
     
-    def execute(self, input_data: Any, context: Dict[str, Any]) -> AgentResult:
+    def execute(self, input_data: Any, context: Dict[str, Any], stream_callback=None) -> AgentResult:
         """
         Create or update execution plan
         
         Args:
             input_data: Parsed query or previous task results
             context: Runtime context with history
+            stream_callback: Optional callback for streaming LLM outputs
             
         Returns:
             AgentResult with execution plan or completion status
@@ -85,7 +86,7 @@ class PlanningAgent(BaseAgent):
             ]
         
         try:
-            response = self._call_llm(messages, temperature=0.2, max_new_tokens=2000)
+            response = self._call_llm(messages, stream_callback=stream_callback, temperature=0.2, max_new_tokens=2000)
             plan_data = self._parse_json_response(response)
             
             # Check if completed

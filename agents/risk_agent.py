@@ -51,13 +51,14 @@ class RiskAgent(BaseAgent):
         super().__init__(llm_model, name)
         self.risk_threshold = risk_threshold
     
-    def execute(self, input_data: Any, context: Dict[str, Any]) -> AgentResult:
+    def execute(self, input_data: Any, context: Dict[str, Any], stream_callback=None) -> AgentResult:
         """
         Assess operation risk
         
         Args:
             input_data: Task result from verification
             context: Runtime context
+            stream_callback: Optional callback for streaming LLM outputs
             
         Returns:
             AgentResult with risk assessment
@@ -78,7 +79,7 @@ class RiskAgent(BaseAgent):
         ]
         
         try:
-            response = self._call_llm(messages, temperature=0.1, max_new_tokens=1000)
+            response = self._call_llm(messages, stream_callback=stream_callback, temperature=0.1, max_new_tokens=1000)
             risk_assessment = self._parse_json_response(response)
             
             risk_level = risk_assessment.get("risk_level", RiskLevel.MEDIUM)

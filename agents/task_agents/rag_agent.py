@@ -23,13 +23,14 @@ class RAGTaskAgent(BaseAgent):
         super().__init__(llm_model, name)
         self.rag = rag_instance
     
-    def execute(self, input_data: Any, context: Dict[str, Any]) -> AgentResult:
+    def execute(self, input_data: Any, context: Dict[str, Any], stream_callback=None) -> AgentResult:
         """
         Execute RAG task
         
         Args:
             input_data: Task definition
             context: Runtime context
+            stream_callback: Optional callback for streaming LLM outputs
             
         Returns:
             AgentResult with RAG response

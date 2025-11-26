@@ -79,13 +79,14 @@ class AgentRuntime:
         """Set callback for human intervention requests"""
         self.human_callback = callback
     
-    def execute(self, initial_input: Any, start_agent: str = "qa") -> RuntimeState:
+    def execute(self, initial_input: Any, start_agent: str = "qa", stream_callback=None) -> RuntimeState:
         """
         Execute agent workflow starting from specified agent
         
         Args:
             initial_input: Initial input (usually user query)
             start_agent: Name of starting agent (default: "qa")
+            stream_callback: Optional callback for streaming events
             
         Returns:
             Final RuntimeState with results
@@ -94,14 +95,15 @@ class AgentRuntime:
         self.state.context["initial_input"] = initial_input
         self.state.current_agent = start_agent
         
-        return self._run_loop(initial_input)
+        return self._run_loop(initial_input, stream_callback)
 
-    def resume(self, decision_data: Dict[str, Any]) -> RuntimeState:
+    def resume(self, decision_data: Dict[str, Any], stream_callback=None) -> RuntimeState:
         """
         Resume execution after human intervention
         
         Args:
             decision_data: Data from human decision (approved, feedback, etc.)
+            stream_callback: Optional callback for streaming events
             
         Returns:
             Updated RuntimeState
@@ -120,14 +122,14 @@ class AgentRuntime:
             if decision_data.get("feedback"):
                 self.state.context["human_feedback"] = decision_data["feedback"]
                 
-            return self._run_loop(current_input)
+            return self._run_loop(current_input, stream_callback)
         else:
             self.state.status = RuntimeStatus.FAILED
             self.state.error_message = f"Human rejected operation: {decision_data.get('feedback', 'No reason provided')}"
             self.logger.info(self.state.error_message)
             return self.state
 
-    def _run_loop(self, current_input: Any) -> RuntimeState:
+    def _run_loop(self, current_input: Any, stream_callback=None) -> RuntimeState:
         """Internal execution loop"""
         while self.state.status == RuntimeStatus.RUNNING:
             # Check iteration limit
@@ -150,13 +152,40 @@ class AgentRuntime:
             agent = self.agents[agent_name]
             self.logger.info(f"Iteration {self.state.iteration_count}: Executing {agent_name}")
             
+            # Emit agent start event
+            if stream_callback:
+                stream_callback({
+                    "event_type": "agent_start",
+                    "agent_name": agent_name,
+                    "iteration": self.state.iteration_count
+                })
+            
             try:
-                # Execute agent
-                result = agent.execute(current_input, self.state.context)
+                # Create a wrapper callback for LLM chunks
+                def llm_chunk_callback(chunk: str):
+                    if stream_callback:
+                        stream_callback({
+                            "event_type": "llm_chunk",
+                            "agent_name": agent_name,
+                            "chunk": chunk
+                        })
+                
+                # Execute agent with streaming callback
+                result = agent.execute(current_input, self.state.context, stream_callback=llm_chunk_callback)
                 agent.log_execution(current_input, result)
                 
                 # Update state
                 self.state.add_to_history(agent_name, result)
+                
+                # Emit agent complete event
+                if stream_callback:
+                    stream_callback({
+                        "event_type": "agent_complete",
+                        "agent_name": agent_name,
+                        "status": result.status.value,
+                        "next_agent": result.next_agent,
+                        "message": result.message
+                    })
                 
                 # Handle result status
                 if result.status == AgentStatus.COMPLETE:
