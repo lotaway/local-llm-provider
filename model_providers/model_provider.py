@@ -10,19 +10,18 @@ from accelerate import init_empty_weights, infer_auto_device_map
 import torch
 from threading import Thread
 import os
-import platform
 import psutil
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils import platform_is_mac
 
 project_root = os.path.abspath(os.path.dirname(__file__))
 models = {
-    "gpt-oss:20b": os.path.join(project_root, "models", "openai", "gpt-oss-20b"),
+    "gpt-oss:20b": os.path.join(project_root, "..", "models", "openai", "gpt-oss-20b"),
     "deepseek-r1:16b": os.path.join(
-        project_root, "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-16B"
+        project_root, "..", "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-16B"
     ),
     "deepseek-r1:32b": os.path.join(
-        project_root, "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"
+        project_root, "..", "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"
     ),
 }
 
