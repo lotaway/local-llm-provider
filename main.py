@@ -354,12 +354,68 @@ async def query_agent(request: AgentRequest):
                         "event_type": "workflow_complete",
                         "status": state.status.value,
                         "iterations": state.iteration_count,
+                        "iteration_count_round": state.iteration_count_round,
                         "history_length": len(state.history)
                     }
                 }
                 yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+            elif state.status.value == "waiting_human":
+                # Workflow paused for human intervention
+                data = {
+                    "id": "agent-run-1",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": request.model,
+                    "choices": [{
+                        "delta": {
+                            "content": f"\n\n⏸️ Workflow paused: Waiting for human decision.\nPlease call POST /v1/agents/decision to continue.",    
+                            "resume_api": "/v1/agents/decision",
+                            "resume_method": "POST",
+                        },
+                        "index": 0,
+                        "finish_reason": "length"
+                    }],
+                    "agent_metadata": {
+                        "event_type": "needs_decision",
+                        "status": state.status.value,
+                        "reason": "waiting_human",
+                        "message": state.error_message or "Human intervention required",
+                        "iterations": state.iteration_count,
+                        "iteration_count_round": state.iteration_count_round,
+                        "action_required": "POST /v1/agents/decision with approved/feedback/data"
+                    }
+                }
+                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+            elif state.status.value == "max_iterations":
+                # Workflow paused due to max iterations
+                data = {
+                    "id": "agent-run-1",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": request.model,
+                    "choices": [{
+                        "delta": {
+                            "content": f"\n\n⏸️ Workflow paused: Reached maximum iterations ({state.max_iterations}) in round {state.iteration_count_round}.\nPlease call POST /v1/agents/decision to continue or stop.",
+                            "resume_api": "/v1/agents/decision",
+                            "resume_method": "POST",
+                        },
+                        "index": 0,
+                        "finish_reason": "length"
+                    }],
+                    "agent_metadata": {
+                        "event_type": "needs_decision",
+                        "status": state.status.value,
+                        "reason": "max_iterations",
+                        "message": state.error_message,
+                        "iterations": state.iteration_count,
+                        "iteration_count_round": state.iteration_count_round,
+                        "max_iterations": state.max_iterations,
+                        "action_required": "POST /v1/agents/decision with approved=true/false"
+                    }
+                }
+                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
             else:
-                # Workflow ended in non-completed state
+                # Workflow ended in other non-completed state (failed, etc.)
                 data = {
                     "id": "agent-run-1",
                     "object": "chat.completion.chunk",
@@ -373,7 +429,9 @@ async def query_agent(request: AgentRequest):
                     "agent_metadata": {
                         "event_type": "workflow_end",
                         "status": state.status.value,
-                        "error_message": state.error_message
+                        "error_message": state.error_message,
+                        "iterations": state.iteration_count,
+                        "iteration_count_round": state.iteration_count_round
                     }
                 }
                 yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -386,15 +444,33 @@ async def query_agent(request: AgentRequest):
 
 @app.post(f"{VERSION}/agents/decision")
 async def agent_decision(req: AgentDecisionRequest):
-    """Handle human decision for paused agent workflow"""
+    """Handle human decision for paused agent workflow or max iterations continuation"""
     global agent_runtime
     
     if agent_runtime is None:
         raise HTTPException(status_code=400, detail="Agent runtime not initialized")
     
     try:
-        # Resume execution with human decision
-        state = agent_runtime.resume(req.model_dump())
+        current_state = agent_runtime.get_state()
+        
+        # Check current runtime status and call appropriate resume method
+        if current_state.status.value == "max_iterations":
+            # Handle max_iterations: only continue if approved
+            if not req.approved:
+                current_state.status = agent_runtime.state.status.__class__.FAILED
+                current_state.error_message = f"User declined to continue after max_iterations (round {current_state.iteration_count_round})"
+                state = current_state
+            else:
+                # Resume execution after max_iterations
+                state = agent_runtime.resume_after_max_iterations()
+        elif current_state.status.value == "waiting_human":
+            # Handle human intervention with decision data
+            state = agent_runtime.resume(req.model_dump())
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot make decision: Runtime is in {current_state.status.value} state, expected 'waiting_human' or 'max_iterations'"
+            )
         
         # Format response similar to chat completion
         if state.status.value == "completed":
@@ -403,6 +479,9 @@ async def agent_decision(req: AgentDecisionRequest):
         elif state.status.value == "waiting_human":
             answer = "Waiting for further human input..."
             status = "waiting_human"
+        elif state.status.value == "max_iterations":
+            answer = f"Reached max_iterations again in round {state.iteration_count_round}. Continue?"
+            status = "max_iterations"
         else:
             answer = f"Workflow {state.status.value}: {state.error_message}"
             status = state.status.value
@@ -427,6 +506,7 @@ async def agent_decision(req: AgentDecisionRequest):
             "agent_metadata": {
                 "status": status,
                 "iterations": state.iteration_count,
+                "iteration_count_round": state.iteration_count_round,
                 "history_length": len(state.history)
             }
         }
@@ -522,6 +602,7 @@ async def agent_status():
         "status": state.status.value,
         "current_agent": state.current_agent,
         "iteration_count": state.iteration_count,
+        "iteration_count_round": state.iteration_count_round,
         "max_iterations": state.max_iterations,
         "history_length": len(state.history),
         "context_keys": list(state.context.keys())

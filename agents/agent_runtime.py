@@ -1,5 +1,6 @@
 """Agent Runtime for managing agent execution flow"""
 
+import os
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
@@ -24,6 +25,7 @@ class RuntimeState:
     status: RuntimeStatus = RuntimeStatus.RUNNING
     current_agent: Optional[str] = None
     iteration_count: int = 0
+    iteration_count_round: int = 0
     max_iterations: int = 20
     context: Dict[str, Any] = field(default_factory=dict)
     history: List[Dict[str, Any]] = field(default_factory=list)
@@ -54,7 +56,7 @@ class RuntimeState:
 class AgentRuntime:
     """Runtime environment for agent execution with loop and branch support"""
     
-    def __init__(self, llm_model, max_iterations: int = 20):
+    def __init__(self, llm_model, max_iterations: int):
         """
         Initialize runtime
         
@@ -129,14 +131,46 @@ class AgentRuntime:
             self.logger.info(self.state.error_message)
             return self.state
 
+    def resume_after_max_iterations(self, stream_callback=None) -> RuntimeState:
+        """
+        Resume execution after reaching max_iterations
+        User has decided to continue, so reset iteration_count and continue
+        
+        Args:
+            stream_callback: Optional callback for streaming events
+            
+        Returns:
+            Updated RuntimeState
+        """
+        if self.state.status != RuntimeStatus.MAX_ITERATIONS:
+            raise ValueError(f"Cannot resume: Runtime is in {self.state.status.value} state, not max_iterations")
+        
+        # Reset iteration count for new round
+        self.state.iteration_count = 0
+        self.state.status = RuntimeStatus.RUNNING
+        self.logger.info(f"Resuming execution after max_iterations (round {self.state.iteration_count_round})")
+        
+        # Get the last input from context or history
+        current_input = None
+        if self.state.history:
+            last_entry = self.state.history[-1]
+            current_input = last_entry.get("data")
+        
+        if current_input is None:
+            current_input = self.state.context.get("initial_input")
+        
+        return self._run_loop(current_input, stream_callback)
+
     def _run_loop(self, current_input: Any, stream_callback=None) -> RuntimeState:
         """Internal execution loop"""
         while self.state.status == RuntimeStatus.RUNNING:
             # Check iteration limit
             if self.state.iteration_count >= self.state.max_iterations:
                 self.state.status = RuntimeStatus.MAX_ITERATIONS
-                self.state.error_message = f"Exceeded maximum iterations ({self.state.max_iterations})"
+                self.state.iteration_count_round += 1
+                self.state.error_message = f"Reached maximum iterations ({self.state.max_iterations}) in round {self.state.iteration_count_round}. User decision required to continue."
                 self.logger.warning(self.state.error_message)
+                # Don't raise error, return control to user for decision
                 break
             
             self.state.iteration_count += 1
@@ -256,7 +290,7 @@ class AgentRuntime:
         self.logger.info("Runtime state reset")
     
     @staticmethod
-    def create_with_all_agents(llm_model, rag_instance=None, permission_manager=None, max_iterations: int = 20):
+    def create_with_all_agents(llm_model, rag_instance=None, permission_manager=None, max_iterations: int = int(os.getenv("MAX_ITERATIONS", 100))):
         """
         Factory method to create a fully initialized AgentRuntime with all standard agents
         
@@ -269,7 +303,6 @@ class AgentRuntime:
         Returns:
             Fully initialized AgentRuntime
         """
-        import os
         from .qa_agent import QAAgent
         from .planning_agent import PlanningAgent
         from .router_agent import RouterAgent
