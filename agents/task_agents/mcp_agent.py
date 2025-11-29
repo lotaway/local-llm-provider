@@ -30,6 +30,15 @@ class MCPTaskAgent(BaseAgent):
         # Tools will be implemented in mcp_tools package
         pass
     
+    def get_available_tools(self) -> list:
+        """
+        Get list of available MCP tool names
+        
+        Returns:
+            List of registered tool names
+        """
+        return list(self.tools.keys())
+    
     def register_tool(self, tool_name: str, tool_callable, permission_name: str = None):
         """
         Register an MCP tool
@@ -70,10 +79,20 @@ class MCPTaskAgent(BaseAgent):
             )
         
         if tool_name not in self.tools:
+            available_tools = self.get_available_tools()
+            available_tools_str = ", ".join(available_tools) if available_tools else "无"
+            
             return AgentResult(
-                status=AgentStatus.FAILURE,
-                data=None,
-                message=f"MCP任务失败：工具 '{tool_name}' 未注册"
+                status=AgentStatus.NEEDS_RETRY,
+                data={
+                    "error": "tool_not_found",
+                    "requested_tool": tool_name,
+                    "available_mcp_tools": available_tools,
+                    "original_task": task_description,
+                    "suggestion": f"MCP工具 '{tool_name}' 未注册。可用的MCP工具: {available_tools_str}。建议使用LLM或RAG能力重新规划任务。"
+                },
+                message=f"MCP工具 '{tool_name}' 不可用，需要重新规划（可用工具: {available_tools_str}）",
+                next_agent="planning"
             )
         
         tool_info = self.tools[tool_name]

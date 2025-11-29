@@ -258,8 +258,15 @@ class AgentRuntime:
                     break
                 
                 elif result.status == AgentStatus.NEEDS_RETRY:
-                    # Retry with same agent
+                    # Retry with same agent or update context for replanning
                     current_input = result.data
+                    
+                    # If this is MCP tool unavailable, ensure context has tool availability
+                    if isinstance(result.data, dict) and result.data.get("error") == "tool_not_found":
+                        # Update context with available MCP tools if not already present
+                        if "available_mcp_tools" not in self.state.context:
+                            self.state.context["available_mcp_tools"] = result.data.get("available_mcp_tools", [])
+                    
                     self.logger.info(f"Retrying {agent_name}")
                 
                 elif result.status in [AgentStatus.SUCCESS, AgentStatus.CONTINUE]:
@@ -341,6 +348,9 @@ class AgentRuntime:
         mcp_agent = MCPTaskAgent(llm_model)
         mcp_agent.permission_manager = permission_manager
         runtime.register_agent("task_mcp", mcp_agent)
+        
+        # Populate context with available MCP tools for planning agent
+        runtime.state.context["available_mcp_tools"] = mcp_agent.get_available_tools()
         
         logger.info("Created AgentRuntime with all standard agents")
         

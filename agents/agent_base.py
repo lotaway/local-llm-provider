@@ -124,7 +124,7 @@ class BaseAgent(ABC):
             raise
     
     def _parse_json_response(self, response: str) -> Dict[str, Any]:
-        """Parse JSON from LLM response"""
+        """Parse JSON from LLM response, handling control characters"""
         import json
         import re
         
@@ -139,10 +139,37 @@ class BaseAgent(ABC):
             response = json_match.group(0)
         
         try:
+            # First attempt: try parsing as-is
             return json.loads(response)
         except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to parse JSON response: {e}\nResponse: {response}")
-            raise
+            # Second attempt: try with strict=False to be more lenient
+            try:
+                return json.loads(response, strict=False)
+            except json.JSONDecodeError:
+                # Third attempt: manually clean control characters in string values
+                try:
+                    # Replace common control characters in JSON string values
+                    # This regex finds string values and replaces control chars within them
+                    def clean_string_value(match):
+                        string_content = match.group(1)
+                        # Replace control characters with escaped versions
+                        string_content = string_content.replace('\n', '\\n')
+                        string_content = string_content.replace('\r', '\\r')
+                        string_content = string_content.replace('\t', '\\t')
+                        return f'"{string_content}"'
+                    
+                    # Find all string values in JSON and clean them
+                    cleaned_response = re.sub(r'"([^"]*)"', clean_string_value, response)
+                    return json.loads(cleaned_response)
+                except Exception:
+                    # If all attempts fail, log error with sanitized response
+                    # Truncate response for logging to avoid huge error messages
+                    sanitized_response = response[:500] + "..." if len(response) > 500 else response
+                    # Replace control characters for readable error message
+                    sanitized_response = sanitized_response.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                    self.logger.error(f"Failed to parse JSON response: {e}\nResponse: {sanitized_response}")
+                    raise ValueError(f"Failed to parse JSON response: {e}")
+
     
     def log_execution(self, input_data: Any, result: AgentResult):
         """Log agent execution for debugging"""

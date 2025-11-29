@@ -18,6 +18,11 @@ class PlanningAgent(BaseAgent):
 - rag: 使用RAG检索文档回答，适合需要特定知识库的问题
 - mcp: 调用外部工具，如搜索、文件操作、图像识别等
 
+重要提示：
+- 只能使用已注册的MCP工具，可用的MCP工具列表会在用户消息中提供
+- 如果没有可用的MCP工具，请只使用LLM和RAG能力来完成任务
+- 不要建议使用不存在的MCP工具
+
 输出JSON格式：
 {
     "plan": [
@@ -57,10 +62,31 @@ class PlanningAgent(BaseAgent):
         history_summary = context.get("history_summary", "")
         parsed_query = context.get("parsed_query", {})
         
+        # Get available MCP tools
+        available_mcp_tools = context.get("available_mcp_tools", [])
+        mcp_tools_info = f"可用的MCP工具: {', '.join(available_mcp_tools)}" if available_mcp_tools else "当前没有可用的MCP工具，请只使用LLM和RAG能力"
+        
+        # Check if this is a retry due to MCP tool unavailable
+        is_mcp_retry = isinstance(input_data, dict) and input_data.get("error") == "tool_not_found"
+        
         # Check if we have task results to evaluate
         task_results = context.get("task_results", [])
         
-        if task_results:
+        if is_mcp_retry:
+            # Replanning due to MCP tool unavailable
+            messages = [
+                {"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "user", "content": f"""
+原始问题：{context.get('original_query', '')}
+之前尝试的任务：{input_data.get('original_task', '')}
+失败原因：{input_data.get('suggestion', '')}
+
+{mcp_tools_info}
+
+请重新规划任务，只使用可用的工具（LLM、RAG或已注册的MCP工具）。
+"""}
+            ]
+        elif task_results:
             # Evaluate if task is complete
             messages = [
                 {"role": "system", "content": self.SYSTEM_PROMPT},
@@ -68,6 +94,8 @@ class PlanningAgent(BaseAgent):
 原始问题：{context.get('original_query', '')}
 已完成的任务结果：
 {self._format_task_results(task_results)}
+
+{mcp_tools_info}
 
 请判断是否已经完成用户的问题，如果完成则输出final_answer，否则规划下一步任务。
 """}
@@ -80,6 +108,8 @@ class PlanningAgent(BaseAgent):
 用户问题：{context.get('original_query', '')}
 问题意图：{parsed_query.get('intent', '')}
 问题类型：{parsed_query.get('query_type', '')}
+
+{mcp_tools_info}
 
 请为这个问题创建执行计划。
 """}
