@@ -97,6 +97,8 @@ class LocalLLModel:
         self.tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_model_name, local_files_only=True
         )
+        if self.tokenizer.pad_token_id is None:
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         is_mac = platform_is_mac()
         if is_mac:
             device_map = "auto"
