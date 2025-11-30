@@ -49,8 +49,8 @@ class RAGTaskAgent(BaseAgent):
                 data_path = os.getenv("DATA_PATH", "./docs")
                 self.rag = LocalRAG(self.llm, data_path=data_path)
             
-            # Execute RAG query
-            answer = self.rag.generate_answer(query)
+            # Execute RAG query with streaming support
+            answer = self.rag.generate_answer(query, stream_callback=stream_callback)
             
             return AgentResult(
                 status=AgentStatus.SUCCESS,

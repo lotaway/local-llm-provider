@@ -26,6 +26,29 @@ from retrievers import ExpandedRetriever, HybridRetriever, Reranker
 
 
 class LocalRAG:
+    # Unified RAG prompt template
+    RAG_PROMPT_TEMPLATE = """
+你是检索增强问答助手，严格基于提供的内容回答问题。
+
+【核心规则】
+1. 仅根据 context 回答，禁止推测或使用外部知识
+2. 内容不足时回复：`无法从提供的内容中找到答案`
+3. 保持简洁准确，结构清晰
+4. context 有矛盾时，选择最明确且重复的部分
+5. 保留列表、步骤等原有格式
+6. 不输出 context 原文（除非问题要求引用）
+7. 问题与 context 无关时回复：`该问题与提供的内容无关`
+
+【context】
+{context}
+
+【question】
+{question}
+
+【输出要求】
+有答案：直接回答，保持礼貌用词，无需开场白
+无答案：使用上述规则中的标准回复
+            """
 
     def __init__(
         self,
@@ -99,30 +122,7 @@ class LocalRAG:
         )
         after_runnable = RunnableLambda(self.llm.extract_after_think)
 
-        prompt_str = ChatPromptTemplate.from_template(
-            """
-你是检索增强问答助手，严格基于提供的内容回答问题。
-
-【核心规则】
-1. 仅根据 context 回答，禁止推测或使用外部知识
-2. 内容不足时回复：`无法从提供的内容中找到答案`
-3. 保持简洁准确，结构清晰
-4. context 有矛盾时，选择最明确且重复的部分
-5. 保留列表、步骤等原有格式
-6. 不输出 context 原文（除非问题要求引用）
-7. 问题与 context 无关时回复：`该问题与提供的内容无关`
-
-【context】
-{context}
-
-【question】
-{question}
-
-【输出要求】
-有答案：直接回答，保持礼貌用词，无需开场白
-无答案：使用上述规则中的标准回复
-            """
-        )
+        prompt_str = ChatPromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
 
         chain = (
             {"context": retrieval_runnable, "question": lambda x: x}
@@ -306,10 +306,43 @@ class LocalRAG:
                 collection_name=self.collection,
             )
 
-    def generate_answer(self, question):
+    def generate_answer(self, question, stream_callback=None):
+        """Generate answer with optional streaming support
+        
+        Args:
+            question: User question
+            stream_callback: Optional callback for streaming LLM chunks
+            
+        Returns:
+            Generated answer string
+        """
         if self.rag_chain is None:
             self.init_rag_chain()
-        return cast(RunnableSequence, self.rag_chain).invoke(question)
+        
+        if stream_callback is None:
+            # Non-streaming mode - use the existing chain
+            return cast(RunnableSequence, self.rag_chain).invoke(question)
+        else:
+            # Streaming mode - manually execute chain steps with streaming
+            # Step 1: Retrieve context documents
+            retrieval_runnable = cast(RunnableSequence, self.rag_chain).steps[0]["context"]
+            context_docs = retrieval_runnable.invoke(question)
+            context = "\n\n".join([doc.page_content for doc in context_docs])
+            
+            # Step 2: Format prompt
+            prompt_str = ChatPromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
+            prompt_value = prompt_str.invoke({"context": context, "question": question})
+            messages = self.llm.format_messages(prompt_value)
+            
+            # Step 3: Stream LLM response
+            streamer = self.llm.chat(messages, temperature=0.1, top_p=0.95, top_k=40)
+            full_response = ""
+            for chunk in streamer:
+                if chunk:
+                    full_response += chunk
+                    stream_callback(chunk)
+            
+            return self.llm.extract_after_think(full_response)
 
     def release_memory(self):
         """释放显存资源"""
