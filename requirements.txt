@@ -22,3 +22,6 @@ langchain-huggingface>=1.0.1
 rank-bm25==0.2.2
 sentence-transformers>=2.2.0
 langchain-milvus>=0.3.0
+# For Context Storage
+redis>=5.0.0
+psycopg2-binary>=2.9.0

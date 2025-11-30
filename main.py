@@ -12,6 +12,8 @@ import uvicorn
 import time
 import json
 import httpx
+import logging
+import uuid
 from typing import cast
 
 # import triton
@@ -19,6 +21,15 @@ from typing import cast
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Configure logging
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 from model_providers import LocalLLModel, PoeModelProvider, ComfyUIProvider
 from rag import LocalRAG
@@ -34,10 +45,12 @@ from agents.risk_agent import RiskAgent, RiskLevel
 from agents.task_agents.llm_agent import LLMTaskAgent
 from agents.task_agents.rag_agent import RAGTaskAgent
 from agents.task_agents.mcp_agent import MCPTaskAgent
+from agents.context_storage import create_context_storage
 
 local_rag = None
 agent_runtime = None
 permission_manager = None
+context_storage = None  # Global context storage instance
 
 app = FastAPI()
 app.add_middleware(
@@ -69,6 +82,7 @@ class CompletionRequest(BaseModel):
 class AgentRequest(BaseModel):
     model: str
     messages: list[str]
+    session_id: str = None  # Optional session ID for context persistence
 
 
 class PromptTokensDetail:
@@ -190,12 +204,28 @@ async def query_agent(request: AgentRequest):
     global local_rag
     global local_model
     global agent_runtime
+    global context_storage
     
     query = request.messages
     if query is None:
         raise HTTPException(
             status_code=400, detail="Query parameter is required"
         )
+    
+    # Initialize context storage if not already done
+    if context_storage is None:
+        try:
+            context_storage = create_context_storage()
+            logger.info(f"Initialized context storage: {type(context_storage).__name__}")
+        except Exception as e:
+            logger.error(f"Failed to initialize context storage: {e}")
+            # Fall back to memory storage
+            from agents.context_storage import MemoryContextStorage
+            context_storage = MemoryContextStorage()
+    
+    # Generate session ID if not provided
+    session_id = request.session_id or str(uuid.uuid4())
+    logger.info(f"Processing request for session: {session_id}")
 
     # Initialize agent runtime if needed
     if agent_runtime is None:
@@ -207,8 +237,18 @@ async def query_agent(request: AgentRequest):
         agent_runtime = AgentRuntime.create_with_all_agents(
             local_model, 
             rag_instance=local_rag,
-            permission_manager=permission_manager
+            permission_manager=permission_manager,
+            context_storage=context_storage,
+            session_id=session_id
         )
+    else:
+        # Update session ID for existing runtime
+        agent_runtime.session_id = session_id
+        # Try to load existing state
+        loaded_state = agent_runtime._load_state()
+        if loaded_state:
+            agent_runtime.state = loaded_state
+            logger.info(f"Resumed existing session {session_id}")
     
     # Execute through agent system with streaming
     def event_stream():

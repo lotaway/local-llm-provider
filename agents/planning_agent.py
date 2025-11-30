@@ -66,11 +66,19 @@ class PlanningAgent(BaseAgent):
         available_mcp_tools = context.get("available_mcp_tools", [])
         mcp_tools_info = f"可用的MCP工具: {', '.join(available_mcp_tools)}" if available_mcp_tools else "当前没有可用的MCP工具，请只使用LLM和RAG能力"
         
+        self.logger.info(f"Planning agent started")
+        self.logger.debug(f"  Available MCP tools: {available_mcp_tools}")
+        self.logger.debug(f"  Context keys: {list(context.keys())}")
+        
         # Check if this is a retry due to MCP tool unavailable
         is_mcp_retry = isinstance(input_data, dict) and input_data.get("error") == "tool_not_found"
+        if is_mcp_retry:
+            self.logger.warning(f"Replanning due to MCP tool unavailable: {input_data.get('original_task', '')}")
         
         # Check if we have task results to evaluate
         task_results = context.get("task_results", [])
+        if task_results:
+            self.logger.info(f"Evaluating {len(task_results)} completed task results")
         
         if is_mcp_retry:
             # Replanning due to MCP tool unavailable
@@ -116,8 +124,14 @@ class PlanningAgent(BaseAgent):
             ]
         
         try:
+            self.logger.debug("Calling LLM for planning...")
             response = self._call_llm(messages, stream_callback=stream_callback, temperature=0.2, max_new_tokens=2000)
+            
+            self.logger.debug(f"LLM response received (length: {len(response)} chars)")
+            self.logger.debug(f"Raw LLM response: {response[:500]}..." if len(response) > 500 else f"Raw LLM response: {response}")
+            
             plan_data = self._parse_json_response(response)
+            self.logger.debug(f"Parsed plan data: {plan_data}")
             
             # Check if completed
             if plan_data.get("completed", False):
@@ -134,22 +148,70 @@ class PlanningAgent(BaseAgent):
             
             # Get first task to execute
             plan = plan_data.get("plan", [])
+            self.logger.info(f"Generated plan with {len(plan)} tasks")
+            
             if not plan:
+                self.logger.error("Planning failed: LLM returned empty plan")
+                self.logger.error(f"  Plan data: {plan_data}")
+                self.logger.error(f"  Context: original_query={context.get('original_query', 'N/A')}")
+                
+                # Fallback: create a simple LLM task
+                self.logger.warning("Falling back to simple LLM task")
+                fallback_task = {
+                    "task_id": "fallback_llm_1",
+                    "description": f"使用LLM直接回答: {context.get('original_query', input_data)}",
+                    "agent_type": "llm",
+                    "dependencies": [],
+                    "priority": 1
+                }
                 return AgentResult(
-                    status=AgentStatus.FAILURE,
-                    data=None,
-                    message="规划失败：没有生成任务"
+                    status=AgentStatus.SUCCESS,
+                    data=fallback_task,
+                    message=f"使用备用方案: LLM直接回答",
+                    next_agent="router",
+                    metadata={"plan": [fallback_task], "fallback": True}
                 )
             
             # Find first task with no dependencies or satisfied dependencies
             next_task = self._get_next_task(plan, context.get("completed_tasks", []))
             
             if not next_task:
+                completed_tasks = context.get("completed_tasks", [])
+                self.logger.error("Planning failed: No executable task found")
+                self.logger.error(f"  Total tasks in plan: {len(plan)}")
+                self.logger.error(f"  Completed tasks: {completed_tasks}")
+                self.logger.error(f"  Plan details:")
+                for i, task in enumerate(plan):
+                    self.logger.error(f"    Task {i+1}: {task.get('task_id')} - {task.get('description')}")
+                    self.logger.error(f"      Dependencies: {task.get('dependencies', [])}")
+                    self.logger.error(f"      Agent type: {task.get('agent_type')}")
+                
+                # Fallback: create a simple LLM task if no tasks were completed yet
+                if not completed_tasks:
+                    self.logger.warning("No tasks completed yet, falling back to simple LLM task")
+                    fallback_task = {
+                        "task_id": "fallback_llm_1",
+                        "description": f"使用LLM直接回答: {context.get('original_query', input_data)}",
+                        "agent_type": "llm",
+                        "dependencies": [],
+                        "priority": 1
+                    }
+                    return AgentResult(
+                        status=AgentStatus.SUCCESS,
+                        data=fallback_task,
+                        message=f"使用备用方案: LLM直接回答",
+                        next_agent="router",
+                        metadata={"plan": [fallback_task], "fallback": True}
+                    )
+                
                 return AgentResult(
                     status=AgentStatus.FAILURE,
                     data=None,
                     message="规划失败：无法找到可执行的任务"
                 )
+            
+            self.logger.info(f"Next task selected: {next_task.get('task_id')} - {next_task.get('description')}")
+            self.logger.debug(f"  Task details: {next_task}")
             
             return AgentResult(
                 status=AgentStatus.SUCCESS,
@@ -160,7 +222,9 @@ class PlanningAgent(BaseAgent):
             )
             
         except Exception as e:
-            self.logger.error(f"Planning failed: {e}")
+            self.logger.error(f"Planning failed with exception: {e}", exc_info=True)
+            self.logger.error(f"  Input data: {input_data}")
+            self.logger.error(f"  Context keys: {list(context.keys())}")
             return AgentResult(
                 status=AgentStatus.FAILURE,
                 data=None,

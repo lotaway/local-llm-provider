@@ -83,16 +83,33 @@ class BaseAgent(ABC):
         Returns:
             LLM response text
         """
+        import time
+        
+        # Log input (truncated for readability)
+        self.logger.debug(f"LLM call started with {len(messages)} messages")
+        for i, msg in enumerate(messages):
+            content_preview = msg.get('content', '')[:200] + '...' if len(msg.get('content', '')) > 200 else msg.get('content', '')
+            self.logger.debug(f"  Message {i} [{msg.get('role')}]: {content_preview}")
+        
+        start_time = time.time()
         try:
             if stream_callback:
                 # Use streaming mode
-                return self._call_llm_stream(messages, stream_callback, **kwargs)
+                response = self._call_llm_stream(messages, stream_callback, **kwargs)
             else:
                 # Use non-streaming mode
                 response = self.llm.chat_at_once(messages, **kwargs)
-                return self.llm.extract_after_think(response)
+                response = self.llm.extract_after_think(response)
+            
+            elapsed = time.time() - start_time
+            response_preview = response[:200] + '...' if len(response) > 200 else response
+            self.logger.debug(f"LLM call completed in {elapsed:.2f}s, response length: {len(response)} chars")
+            self.logger.debug(f"  Response preview: {response_preview}")
+            
+            return response
         except Exception as e:
-            self.logger.error(f"LLM call failed: {e}")
+            elapsed = time.time() - start_time
+            self.logger.error(f"LLM call failed after {elapsed:.2f}s: {e}", exc_info=True)
             raise
     
     def _call_llm_stream(self, messages: list[dict], stream_callback, **kwargs) -> str:
@@ -108,19 +125,23 @@ class BaseAgent(ABC):
             Complete LLM response text
         """
         try:
+            self.logger.debug("Starting LLM streaming call")
             streamer = self.llm.chat(messages)
             full_response = ""
+            chunk_count = 0
             
             for chunk in streamer:
                 if chunk:
                     full_response += chunk
+                    chunk_count += 1
                     # Call the callback with the chunk
                     if stream_callback:
                         stream_callback(chunk)
             
+            self.logger.debug(f"LLM streaming completed: {chunk_count} chunks, {len(full_response)} total chars")
             return self.llm.extract_after_think(full_response)
         except Exception as e:
-            self.logger.error(f"LLM streaming call failed: {e}")
+            self.logger.error(f"LLM streaming call failed: {e}", exc_info=True)
             raise
     
     def _parse_json_response(self, response: str) -> Dict[str, Any]:
@@ -173,7 +194,15 @@ class BaseAgent(ABC):
     
     def log_execution(self, input_data: Any, result: AgentResult):
         """Log agent execution for debugging"""
+        # Log basic execution info
         self.logger.info(
             f"Agent: {self.name} | Status: {result.status.value} | "
             f"Next: {result.next_agent or 'None'} | Message: {result.message}"
         )
+        
+        # Log detailed info at debug level
+        if result.metadata:
+            self.logger.debug(f"  Metadata: {result.metadata}")
+        if result.data:
+            data_preview = str(result.data)[:300] + '...' if len(str(result.data)) > 300 else str(result.data)
+            self.logger.debug(f"  Data: {data_preview}")
