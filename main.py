@@ -15,6 +15,7 @@ import httpx
 import logging
 import uuid
 from typing import cast
+import asyncio
 
 # import triton
 # import triton.language as tl
@@ -753,7 +754,7 @@ async def embeddings(req: EmbeddingRequest):
 
 
 @app.post(f"{VERSION}/chat/completions")
-async def chat_completions(req: ChatRequest):
+async def chat_completions(req: ChatRequest, request: Request):
     """openai chat/edit/apply"""
     global local_model
     if local_model is None:
@@ -761,19 +762,31 @@ async def chat_completions(req: ChatRequest):
     if req.stream:
         streamer = local_model.chat([m.model_dump() for m in req.messages])
 
-        def event_stream():
-            for chunk in streamer:
-                data = {
-                    "id": "chatcmpl-1",
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": req.model,
-                    "choices": [
-                        {"delta": {"content": chunk}, "index": 0, "finish_reason": None}
-                    ],
-                }
-                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-            yield "data: [DONE]\n\n"
+        async def event_stream():
+            try:
+                for chunk in streamer:
+                    if await request.is_disconnected():
+                        print("Client disconnected, cancelling generation")
+                        if hasattr(streamer, 'cancel'):
+                            streamer.cancel()
+                        break
+
+                    data = {
+                        "id": "chatcmpl-1",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": req.model,
+                        "choices": [
+                            {"delta": {"content": chunk}, "index": 0, "finish_reason": None}
+                        ],
+                    }
+                    yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            except asyncio.CancelledError:
+                print("Stream cancelled, cancelling generation")
+                if hasattr(streamer, 'cancel'):
+                    streamer.cancel()
+                raise
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
     output = local_model.chat_at_once([m.model_dump() for m in req.messages])

@@ -4,6 +4,8 @@ from transformers import (
     BitsAndBytesConfig,
     AutoConfig,
     TextIteratorStreamer,
+    StoppingCriteria,
+    StoppingCriteriaList,
 )
 from sentence_transformers import SentenceTransformer
 from accelerate import init_empty_weights, infer_auto_device_map
@@ -24,6 +26,25 @@ models = {
         project_root, "..", "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"
     ),
 }
+
+class CancellationStoppingCriteria(StoppingCriteria):
+    def __init__(self):
+        self.cancelled = False
+
+    def __call__(self, input_ids, scores, **kwargs):
+        return self.cancelled
+    
+    def cancel(self):
+        self.cancelled = True
+
+
+class CancellableStreamer(TextIteratorStreamer):
+    def __init__(self, tokenizer, **kwargs):
+        super().__init__(tokenizer, **kwargs)
+        self.stopping_criteria = CancellationStoppingCriteria()
+
+    def cancel(self):
+        self.stopping_criteria.cancel()
 
 
 class LocalLLModel:
@@ -219,14 +240,16 @@ class LocalLLModel:
             prompt += "Assistant:"
         return prompt
 
-    def chat(self, messages: list[dict]):
+    def chat(self, messages: list[dict], **kwargs):
         self.load_model()
         prompt = self.format_prompt(messages)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-        streamer = TextIteratorStreamer(
+        streamer = CancellableStreamer(
             self.tokenizer, skip_prompt=True, skip_special_tokens=True
         )
-        generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=2000)
+        stopping_criteria = StoppingCriteriaList([streamer.stopping_criteria])
+        generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=2000, stopping_criteria=stopping_criteria)
+        generation_kwargs.update(kwargs)
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
         thread.start()
         return streamer
