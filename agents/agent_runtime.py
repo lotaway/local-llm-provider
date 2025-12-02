@@ -155,7 +155,7 @@ class AgentRuntime:
             self.logger.error(f"Failed to load state: {e}")
             return None
     
-    def execute(self, initial_input: Any, start_agent: str = "qa", stream_callback=None) -> RuntimeState:
+    def execute(self, initial_input: Any, start_agent: str = "qa", stream_callback=None, initial_context: Dict[str, Any] = None) -> RuntimeState:
         """
         Execute agent workflow starting from specified agent
         
@@ -163,6 +163,7 @@ class AgentRuntime:
             initial_input: Initial input (usually user query)
             start_agent: Name of starting agent (default: "qa")
             stream_callback: Optional callback for streaming events
+            initial_context: Optional initial context dictionary
             
         Returns:
             Final RuntimeState with results
@@ -177,6 +178,8 @@ class AgentRuntime:
         
         self.state = RuntimeState(max_iterations=self.state.max_iterations)
         self.state.context["initial_input"] = initial_input
+        if initial_context:
+            self.state.context.update(initial_context)
         self.state.current_agent = start_agent
         
         result = self._run_loop(initial_input, stream_callback)

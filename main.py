@@ -1,5 +1,6 @@
 import os
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+import shutil
 from fastapi.responses import (
     JSONResponse,
     StreamingResponse,
@@ -84,6 +85,7 @@ class AgentRequest(BaseModel):
     model: str
     messages: list[str]
     session_id: str = None  # Optional session ID for context persistence
+    files: list[str] = []  # List of file paths to include in context
 
 
 class PromptTokensDetail:
@@ -199,6 +201,30 @@ async def query_rag(request: Request):
         raise HTTPException(status_code=500, detail=error_msg)
 
 
+@app.post(f"{VERSION}/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """Upload a file for agent context"""
+    upload_dir = os.path.join(os.getcwd(), "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    file_id = str(uuid.uuid4())
+    # Save with ID prefix to avoid collisions and allow ID lookup
+    saved_filename = f"{file_id}_{file.filename}"
+    file_path = os.path.join(upload_dir, saved_filename)
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        return {
+            "id": file_id,
+            "filename": file.filename,
+            "message": "File uploaded successfully"
+        }
+    except Exception as e:
+        logger.error(f"File upload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
+
 @app.post(f"{VERSION}/agents/run")
 async def query_agent(request: AgentRequest):
     """Agent-based query endpoint with streaming support"""
@@ -251,6 +277,48 @@ async def query_agent(request: AgentRequest):
             agent_runtime.state = loaded_state
             logger.info(f"Resumed existing session {session_id}")
     
+    # Prepare initial context with files if provided
+    initial_context = {}
+    if request.files:
+        file_map = {}
+        available_files = []
+        upload_dir = os.path.join(os.getcwd(), "uploads")
+        
+        for file_ref in request.files:
+            # Check if it's a full path (legacy/testing) or an ID
+            real_path = None
+            file_name = None
+            file_id = None
+            
+            if os.path.exists(file_ref):
+                real_path = file_ref
+                file_name = os.path.basename(file_ref)
+                file_id = str(uuid.uuid4()) # Generate temp ID for direct paths
+            else:
+                # Assume it's an ID, look for file in uploads
+                # Pattern: {ID}_{filename}
+                if os.path.exists(upload_dir):
+                    for f in os.listdir(upload_dir):
+                        if f.startswith(file_ref + "_"):
+                            real_path = os.path.join(upload_dir, f)
+                            file_name = f[len(file_ref)+1:] # Remove ID_ prefix
+                            file_id = file_ref
+                            break
+            
+            if real_path and os.path.exists(real_path):
+                file_map[file_id] = {
+                    "path": real_path,
+                    "name": file_name
+                }
+                available_files.append(f"File: {file_name} (ID: {file_id})")
+                logger.info(f"Mapped file {file_id}: {file_name}")
+            else:
+                logger.warning(f"File reference not found: {file_ref}")
+        
+        if file_map:
+            initial_context["file_map"] = file_map
+            initial_context["available_files"] = available_files
+
     # Execute through agent system with streaming
     def event_stream():
         """Generate Server-Sent Events for agent execution"""
@@ -269,7 +337,12 @@ async def query_agent(request: AgentRequest):
         def execute_agents():
             """Execute agents in a separate thread"""
             try:
-                state = agent_runtime.execute(query, start_agent="qa", stream_callback=stream_callback)
+                state = agent_runtime.execute(
+                    query, 
+                    start_agent="qa", 
+                    stream_callback=stream_callback,
+                    initial_context=initial_context
+                )
                 final_state["state"] = state
             except Exception as e:
                 final_state["error"] = str(e)

@@ -26,9 +26,49 @@ class MCPTaskAgent(BaseAgent):
     
     def _register_default_tools(self):
         """Register default MCP tools"""
-        # Placeholder for tool registration
-        # Tools will be implemented in mcp_tools package
-        pass
+        # Register default tools
+        self.register_tool(
+            "read_file",
+            self._read_file_tool,
+            permission_name="mcp.read_file"
+        )
+    
+    def _read_file_tool(self, query: str, task: str, context: Dict[str, Any]) -> str:
+        """
+        Tool to read file content
+        
+        Args:
+            query: Original query
+            task: Task description (should contain file_id)
+            context: Runtime context
+            
+        Returns:
+            File content
+        """
+        file_map = context.get("file_map", {})
+        
+        # Extract file_id from task description or context
+        # Simple heuristic: check if any file_id from map is in task description
+        target_file_id = None
+        for file_id in file_map:
+            if file_id in task:
+                target_file_id = file_id
+                break
+        
+        if not target_file_id:
+            return "Error: Could not determine which file to read. Please specify the File ID."
+            
+        file_info = file_map.get(target_file_id)
+        if not file_info:
+            return f"Error: File ID {target_file_id} not found."
+            
+        file_path = file_info["path"]
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            return f"Content of file '{file_info['name']}':\n\n{content}"
+        except Exception as e:
+            return f"Error reading file: {str(e)}"
     
     def get_available_tools(self) -> list:
         """
@@ -79,19 +119,29 @@ class MCPTaskAgent(BaseAgent):
             )
         
         if tool_name not in self.tools:
-            available_tools = self.get_available_tools()
-            available_tools_str = ", ".join(available_tools) if available_tools else "无"
+            available_mcp_tools = self.get_available_tools()
+            # Add read_file if files are available
+            if "file_map" in context and "read_file" not in available_mcp_tools:
+                 available_mcp_tools.append("read_file")
+                 
+            mcp_tools_info = f"可用的MCP工具: {', '.join(available_mcp_tools)}" if available_mcp_tools else "当前没有可用的MCP工具，请只使用LLM和RAG能力"
             
+            # Add available files info
+            available_files = context.get("available_files", [])
+            files_info = ""
+            if available_files:
+                files_info = "\n可用的文件 (使用 'read_file' 工具读取内容):\n" + "\n".join(available_files) + "\n"
+                
             return AgentResult(
                 status=AgentStatus.NEEDS_RETRY,
                 data={
                     "error": "tool_not_found",
                     "requested_tool": tool_name,
-                    "available_mcp_tools": available_tools,
+                    "available_mcp_tools": available_mcp_tools,
                     "original_task": task_description,
-                    "suggestion": f"MCP工具 '{tool_name}' 未注册。可用的MCP工具: {available_tools_str}。建议使用LLM或RAG能力重新规划任务。"
+                    "suggestion": f"MCP工具 '{tool_name}' 未注册。{mcp_tools_info}\n{files_info}\n\n请重新规划任务，只使用可用的工具（LLM、RAG或已注册的MCP工具）。"
                 },
-                message=f"MCP工具 '{tool_name}' 不可用，需要重新规划（可用工具: {available_tools_str}）",
+                message=f"MCP工具 '{tool_name}' 不可用，需要重新规划（{mcp_tools_info}）",
                 next_agent="planning"
             )
         

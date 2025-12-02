@@ -40,10 +40,23 @@ class QAAgent(BaseAgent):
         # Store original query in context
         context["original_query"] = query
         
-        messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
-            {"role": "user", "content": f"用户问题：{query}"}
-        ]
+        # Check for session files and append to query
+        if "session_files" in context:
+            files_content = "\n\n用户提供了以下文件作为上下文：\n"
+            for file_info in context["session_files"]:
+                files_content += f"文件: {file_info['name']}\n内容:\n{file_info['content']}\n\n"
+            
+            # Append files content to the user message for the LLM
+            # We don't change the original query in context, just the message sent to LLM
+            messages = [
+                {"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "user", "content": f"用户问题：{query}{files_content}"}
+            ]
+        else:
+            messages = [
+                {"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "user", "content": f"用户问题：{query}"}
+            ]
         
         try:
             response = self._call_llm(messages, stream_callback=stream_callback, temperature=0.1, max_new_tokens=1000)

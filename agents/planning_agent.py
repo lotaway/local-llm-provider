@@ -64,7 +64,17 @@ class PlanningAgent(BaseAgent):
         
         # Get available MCP tools
         available_mcp_tools = context.get("available_mcp_tools", [])
+        # Add read_file if files are available
+        if "file_map" in context and "read_file" not in available_mcp_tools:
+             available_mcp_tools.append("read_file")
+             
         mcp_tools_info = f"可用的MCP工具: {', '.join(available_mcp_tools)}" if available_mcp_tools else "当前没有可用的MCP工具，请只使用LLM和RAG能力"
+        
+        # Add available files info
+        available_files = context.get("available_files", [])
+        files_info = ""
+        if available_files:
+            files_info = "\n可用的文件 (使用 'read_file' 工具读取内容):\n" + "\n".join(available_files) + "\n"
         
         self.logger.info(f"Planning agent started")
         self.logger.debug(f"  Available MCP tools: {available_mcp_tools}")
@@ -90,6 +100,7 @@ class PlanningAgent(BaseAgent):
 失败原因：{input_data.get('suggestion', '')}
 
 {mcp_tools_info}
+{files_info}
 
 请重新规划任务，只使用可用的工具（LLM、RAG或已注册的MCP工具）。
 """}
@@ -104,6 +115,7 @@ class PlanningAgent(BaseAgent):
 {self._format_task_results(task_results)}
 
 {mcp_tools_info}
+{files_info}
 
 请判断是否已经完成用户的问题，如果完成则输出final_answer，否则规划下一步任务。
 """}
@@ -118,6 +130,7 @@ class PlanningAgent(BaseAgent):
 问题类型：{parsed_query.get('query_type', '')}
 
 {mcp_tools_info}
+{files_info}
 
 请为这个问题创建执行计划。
 """}
