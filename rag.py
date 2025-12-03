@@ -225,19 +225,17 @@ class LocalRAG:
                             with open(file_path, 'r', encoding='utf-8') as f:
                                 data = json.load(f)
                             
-                            # Check for ChatGPT export format
-                            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "mapping" in data[0] and "create_time" in data[0]:
+                            gpt_loader = ChatGPTLoader()
+                            ds_loader = DeepSeekLoader()
+                            if gpt_loader.check(data):
                                 print(f"检测到 ChatGPT 导出格式: {file}")
-                                loader = ChatGPTLoader()
-                                loaded = loader.load(data, file)
+                                loaded = gpt_loader.load(data, file)
                                 print(f"成功解析 ChatGPT 对话，生成 {len(loaded)} 个文档片段")
                                 docs.extend(after_doc_load(loaded, file))
                             
-                            # Check for DeepSeek export format (heuristic based on structure)
-                            elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "mapping" in data[0] and "inserted_at" in data[0]:
+                            elif ds_loader.check(data):
                                 print(f"检测到 DeepSeek 导出格式: {file}")
-                                loader = DeepSeekLoader()
-                                loaded = loader.load(data, file)
+                                loaded = ds_loader.load(data, file)
                                 print(f"成功解析 DeepSeek 对话，生成 {len(loaded)} 个文档片段")
                                 docs.extend(after_doc_load(loaded, file))
                                 

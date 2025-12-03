@@ -4,6 +4,12 @@ from .base_loader import BaseChatLoader
 
 
 class DeepSeekLoader(BaseChatLoader):
+    def check(self, data: Any):
+        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "mapping" in data[0] and "inserted_at" in data[0]:
+            return True
+        return False
+    
+    
     def load(self, data: list, source_file: str) -> List[Document]:
         """解析 DeepSeek 导出的 JSON 数据"""
         docs = []
