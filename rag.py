@@ -24,6 +24,7 @@ from langchain_core.runnables import RunnableLambda, RunnableSequence
 from model_providers import LocalLLModel
 from typing import Any, Callable, List, cast
 from retrievers import ExpandedRetriever, HybridRetriever, Reranker
+from file_loaders import ChatGPTLoader, DeepSeekLoader
 
 
 class LocalRAG:
@@ -40,6 +41,13 @@ class LocalRAG:
 6. 不输出 context 原文（除非问题要求引用）
 7. 问题与 context 无关时回复：`该问题与提供的内容无关`
 
+【特殊处理：关键词查询】
+如果 question 是简短的关键词（1-3个词，无问号），则：
+- 检查 context 中是否包含该关键词
+- 如果包含，提取并总结所有相关信息，按主题分类列出
+- 格式：先说明找到了相关内容，然后分点列出关键信息
+- 示例："关于 [关键词]，找到以下相关信息：\n1. ...\n2. ..."
+
 【context】
 {context}
 
@@ -47,8 +55,9 @@ class LocalRAG:
 {question}
 
 【输出要求】
-有答案：直接回答，保持礼貌用词，无需开场白
-无答案：使用上述规则中的标准回复
+- 完整问题：直接回答，保持礼貌用词，无需开场白
+- 关键词查询：按上述特殊处理方式输出
+- 无相关内容：使用规则2或7的标准回复
             """
 
     def __init__(
@@ -213,19 +222,27 @@ class LocalRAG:
                     elif file_ext == ".json":
                         print(f"加载JSON文件: {file}")
                         try:
-                            # 尝试读取并检测是否为 ChatGPT 导出格式
                             with open(file_path, 'r', encoding='utf-8') as f:
                                 data = json.load(f)
                             
-                            # ChatGPT 导出通常是一个列表，且包含 mapping 和 create_time 等字段
+                            # Check for ChatGPT export format
                             if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "mapping" in data[0] and "create_time" in data[0]:
                                 print(f"检测到 ChatGPT 导出格式: {file}")
-                                loaded = self.load_chatgpt_json(data, file)
+                                loader = ChatGPTLoader()
+                                loaded = loader.load(data, file)
                                 print(f"成功解析 ChatGPT 对话，生成 {len(loaded)} 个文档片段")
                                 docs.extend(after_doc_load(loaded, file))
+                            
+                            # Check for DeepSeek export format (heuristic based on structure)
+                            elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "mapping" in data[0] and "inserted_at" in data[0]:
+                                print(f"检测到 DeepSeek 导出格式: {file}")
+                                loader = DeepSeekLoader()
+                                loaded = loader.load(data, file)
+                                print(f"成功解析 DeepSeek 对话，生成 {len(loaded)} 个文档片段")
+                                docs.extend(after_doc_load(loaded, file))
+                                
                             else:
-                                # 即使不是 ChatGPT 格式，也重新使用 JSONLoader 加载（或者直接利用已读取的 data，但 JSONLoader 封装了 jq 等逻辑，复用较好）
-                                # 注意：JSONLoader 需要文件路径
+                                # Default JSON loading
                                 loader = JSONLoader(
                                     file_path=file_path,
                                     jq_schema=".",
@@ -237,7 +254,7 @@ class LocalRAG:
                                 
                         except Exception as e:
                             print(f"解析 JSON 文件 {file} 失败: {e}")
-                            # 尝试回退到默认加载方式
+                            # Fallback
                             try:
                                 loader = JSONLoader(
                                     file_path=file_path,
@@ -396,87 +413,7 @@ class LocalRAG:
         print("已释放 RAG 相关显存资源")
 
 
-    def load_chatgpt_json(self, data: list, source_file: str) -> List[Document]:
-        """解析 ChatGPT 导出的 JSON 数据"""
-        docs = []
-        for conversation in data:
-            title = conversation.get("title", "Untitled Conversation")
-            mapping = conversation.get("mapping", {})
-            
-            # 寻找根节点 (parent 为 None 的节点)
-            root_id = None
-            for node_id, node in mapping.items():
-                if node.get("parent") is None:
-                    root_id = node_id
-                    break
-            
-            if not root_id:
-                continue
-                
-            # 遍历对话树 (简化处理：只取第一条分支)
-            current_id = root_id
-            messages = []
-            
-            while current_id:
-                node = mapping.get(current_id)
-                if not node:
-                    break
-                
-                message = node.get("message")
-                if message:
-                    author = message.get("author", {})
-                    role = author.get("role")
-                    content_dict = message.get("content", {})
-                    parts = content_dict.get("parts", [])
-                    
-                    text_content = ""
-                    if parts:
-                        # parts 可能包含非字符串内容，需过滤或转换
-                        text_content = "".join([str(p) for p in parts if p is not None])
-                    
-                    if text_content and role in ["user", "assistant"]:
-                        messages.append({"role": role, "content": text_content})
-                
-                # 移动到下一个节点
-                children = node.get("children", [])
-                if children:
-                    current_id = children[0] # 默认走第一个分支
-                else:
-                    current_id = None
-            
-            # 将对话切分为 Q&A 对
-            # 策略：将连续的 User 消息合并，随后跟随的 Assistant 消息合并，形成一个 Document
-            if not messages:
-                continue
 
-            self.current_doc_messages = []
-            
-            for i, msg in enumerate(messages):
-                role = msg["role"]
-                
-                # 如果是 User 消息，且当前 buffer 中已有 Assistant 消息，说明上一轮对话结束，先保存
-                if role == "user":
-                    if self.current_doc_messages and self.current_doc_messages[-1]["role"] == "assistant":
-                        docs.append(self._create_chat_doc(title, self.current_doc_messages, source_file))
-                        self.current_doc_messages = []
-                
-                self.current_doc_messages.append(msg)
-            
-            # 处理剩余的消息
-            if self.current_doc_messages:
-                docs.append(self._create_chat_doc(title, self.current_doc_messages, source_file))
-                self.current_doc_messages = [] 
-        return docs
-
-    def _create_chat_doc(self, title, messages, source):
-        """构建 Document 对象"""
-        content_parts = [f"Title: {title}"]
-        for msg in messages:
-            role_prefix = "Question" if msg["role"] == "user" else "Answer"
-            content_parts.append(f"{role_prefix}: {msg['content']}")
-            
-        full_content = "\n\n".join(content_parts)
-        return Document(page_content=full_content, metadata={"source": source, "title": title})
 
 
 def command_line_rag():
