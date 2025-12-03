@@ -14,6 +14,17 @@ class HybridRetriever(BaseRetriever):
     Uses weighted linear fusion to combine results
     """
     
+    # Declare fields as class attributes for Pydantic
+    vectorstore: Any
+    documents: List[Document]
+    vector_weight: float = 0.7
+    bm25_weight: float = 0.3
+    k: int = 5
+    bm25: Any = None
+    
+    # Allow arbitrary types (for vectorstore and bm25)
+    model_config = {"arbitrary_types_allowed": True}
+    
     def __init__(
         self,
         vectorstore,
@@ -33,12 +44,14 @@ class HybridRetriever(BaseRetriever):
             bm25_weight: Weight for BM25 results (0-1)
             k: Number of documents to retrieve
         """
-        super().__init__(**kwargs)
-        self.vectorstore = vectorstore
-        self.documents = documents
-        self.vector_weight = vector_weight
-        self.bm25_weight = bm25_weight
-        self.k = k
+        super().__init__(
+            vectorstore=vectorstore,
+            documents=documents,
+            vector_weight=vector_weight,
+            bm25_weight=bm25_weight,
+            k=k,
+            **kwargs
+        )
         
         # Build BM25 index
         self._build_bm25_index()
