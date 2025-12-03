@@ -1,0 +1,596 @@
+[
+    {
+        "title": "Torch-directml \u7248\u672c\u8981\u6c42",
+        "create_time": 1757037447.223971,
+        "update_time": 1762622377.914299,
+        "mapping": {
+            "client-created-root": {
+                "id": "client-created-root",
+                "message": null,
+                "parent": null,
+                "children": [
+                    "f43d022a-959c-42df-8206-18f3a6d7721d"
+                ]
+            },
+            "f43d022a-959c-42df-8206-18f3a6d7721d": {
+                "id": "f43d022a-959c-42df-8206-18f3a6d7721d",
+                "message": {
+                    "id": "f43d022a-959c-42df-8206-18f3a6d7721d",
+                    "author": {
+                        "role": "system",
+                        "name": null,
+                        "metadata": {
+                            "attachments": [
+                                {
+                                    "id": "file-3Nw81WrE0f7efwS3hK80ny51",
+                                    "size": 1006829,
+                                    "name": "\u56fe\u5c42-21 2.png",
+                                    "mime_type": "image/png",
+                                    "width": 955,
+                                    "height": 980
+                                }
+                            ],
+                            "request_id": "8a5c24c52ba940a3-SIN",
+                            "message_source": null,
+                            "timestamp_": "absolute",
+                            "message_type": null
+                        },
+                        "recipient": "all",
+                        "channel": null
+                    },
+                    "create_time": null,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            ""
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": true,
+                    "weight": 0.0,
+                    "metadata": {
+                        "is_visually_hidden_from_conversation": true
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "client-created-root",
+                "children": [
+                    "99b33cdd-e7fe-4513-aabd-7152d111f44d"
+                ]
+            },
+            "99b33cdd-e7fe-4513-aabd-7152d111f44d": {
+                "id": "99b33cdd-e7fe-4513-aabd-7152d111f44d",
+                "message": {
+                    "id": "99b33cdd-e7fe-4513-aabd-7152d111f44d",
+                    "author": {
+                        "role": "user",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": null,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "user_editable_context",
+                        "user_profile": "",
+                        "user_instructions": "The user provided the additional info about how they would like you to respond:\n```\u6240\u6709\u5f00\u53d1\u73af\u5883\u76f8\u5173\u7684\u914d\u7f6e\u6216\u8005\u547d\u4ee4\u9ed8\u8ba4\u53ea\u8003\u8651mac\u7cfb\u7edf\uff0c\u4e0d\u8981\u63cf\u8ff0\u4e0e\u95ee\u9898\u95f4\u63a5\u5173\u8054\u7684\u56de\u7b54\u3002\n\u4fee\u6b63\u7b54\u6848\u65f6\u53ea\u4fee\u6b63\u9519\u8bef\u7684\u90e8\u5206\uff0c\u4e0d\u8981\u91cd\u590d\u76f8\u540c\u7684\u56de\u7b54\u3002\n\u5199\u4ee3\u7801\u65f6\u91cc\u9762\u4e0d\u8981\u6709\u6ce8\u91ca\uff0c\u7ed3\u679c\u5141\u8bb8\u7684\u8bdd\u5c31\u4e0d\u8981\u6709\u5206\u53f7\u3002```"
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": null,
+                    "weight": 1.0,
+                    "metadata": {
+                        "is_visually_hidden_from_conversation": true,
+                        "user_context_message_data": {
+                            "about_model_message": "\u6240\u6709\u5f00\u53d1\u73af\u5883\u76f8\u5173\u7684\u914d\u7f6e\u6216\u8005\u547d\u4ee4\u9ed8\u8ba4\u53ea\u8003\u8651mac\u7cfb\u7edf\uff0c\u4e0d\u8981\u63cf\u8ff0\u4e0e\u95ee\u9898\u95f4\u63a5\u5173\u8054\u7684\u56de\u7b54\u3002\n\u4fee\u6b63\u7b54\u6848\u65f6\u53ea\u4fee\u6b63\u9519\u8bef\u7684\u90e8\u5206\uff0c\u4e0d\u8981\u91cd\u590d\u76f8\u540c\u7684\u56de\u7b54\u3002\n\u5199\u4ee3\u7801\u65f6\u91cc\u9762\u4e0d\u8981\u6709\u6ce8\u91ca\uff0c\u7ed3\u679c\u5141\u8bb8\u7684\u8bdd\u5c31\u4e0d\u8981\u6709\u5206\u53f7\u3002"
+                        },
+                        "is_user_system_message": true
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "f43d022a-959c-42df-8206-18f3a6d7721d",
+                "children": [
+                    "cf6cc431-5999-40f1-9fa4-cc93e7b084d2"
+                ]
+            },
+            "cf6cc431-5999-40f1-9fa4-cc93e7b084d2": {
+                "id": "cf6cc431-5999-40f1-9fa4-cc93e7b084d2",
+                "message": {
+                    "id": "cf6cc431-5999-40f1-9fa4-cc93e7b084d2",
+                    "author": {
+                        "role": "user",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": 1757037427.83,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            "ERROR: Ignored the following versions that require a different python version: 2.3.0 Requires-Python >=3.11; 2.3.1 Requ1\r\nERROR: Could not find a version that satisfies the requirement torch-directml>=0.2.5 (from versions: 0.1.13.dev221206, )\r\nERROR: No matching distribution found for torch-directml>=0.2.5\uff0c torch-directml0.2.5\u9700\u8981python2.3\u5417"
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": null,
+                    "weight": 1.0,
+                    "metadata": {
+                        "selected_github_repos": [],
+                        "serialization_metadata": {
+                            "custom_symbol_offsets": []
+                        },
+                        "request_id": "97a21dab5c1bd7a7-LAX",
+                        "message_source": null,
+                        "timestamp_": "absolute"
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "99b33cdd-e7fe-4513-aabd-7152d111f44d",
+                "children": [
+                    "b7a2b8ff-db81-49c5-85c3-dbf62e2893cb"
+                ]
+            },
+            "b7a2b8ff-db81-49c5-85c3-dbf62e2893cb": {
+                "id": "b7a2b8ff-db81-49c5-85c3-dbf62e2893cb",
+                "message": {
+                    "id": "b7a2b8ff-db81-49c5-85c3-dbf62e2893cb",
+                    "author": {
+                        "role": "assistant",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": 1757037447.0903392,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            ""
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": null,
+                    "weight": 1.0,
+                    "metadata": {
+                        "request_id": "97a21dab5c1bd7a7-LAX",
+                        "message_type": "next",
+                        "model_slug": "gpt-5",
+                        "default_model_slug": "auto",
+                        "parent_id": "cf6cc431-5999-40f1-9fa4-cc93e7b084d2",
+                        "timestamp_": "absolute"
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "cf6cc431-5999-40f1-9fa4-cc93e7b084d2",
+                "children": [
+                    "cadd59b1-2bdb-45d7-9e37-701c85daf206"
+                ]
+            },
+            "cadd59b1-2bdb-45d7-9e37-701c85daf206": {
+                "id": "cadd59b1-2bdb-45d7-9e37-701c85daf206",
+                "message": {
+                    "id": "cadd59b1-2bdb-45d7-9e37-701c85daf206",
+                    "author": {
+                        "role": "assistant",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": 1757037447.107215,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            "\u4e0d\u662f\u7684\uff0c\u4f60\u7684\u7406\u89e3\u6709\u70b9\u9519\u3002  \n\n\u62a5\u9519\u91cc\u63d0\u5230\u7684 **2.3.0 / 2.3.1** \u5176\u5b9e\u662f **`torch-directml` \u7684\u7248\u672c\u53f7**\uff0c\u4e0d\u662f Python \u7248\u672c\u3002  \n\u5b83\u8981\u6c42\u7684 Python \u7248\u672c\u662f **>=3.11**\uff0c\u6240\u4ee5\u5982\u679c\u4f60\u73b0\u5728\u7528\u7684\u662f **Python 3.10 \u6216\u66f4\u4f4e**\uff0cpip \u5c31\u4f1a\u5ffd\u7565\u8fd9\u4e9b\u7248\u672c\u3002  \n\n\u603b\u7ed3\uff1a  \n- `torch-directml==0.2.5` \u53ca\u4ee5\u4e0a\u7248\u672c\u9700\u8981 **Python 3.11+**\u3002  \n- \u4f60\u5f53\u524d\u73af\u5883 Python \u7248\u672c\u4f4e\uff0c\u6240\u4ee5 pip \u8bf4 \u201cIgnored the following versions that require a different python version\u201d\u3002  \n\n\u89e3\u51b3\u529e\u6cd5\uff1a  \n1. \u786e\u8ba4\u5f53\u524d Python \u7248\u672c\uff1a  \n   ```bash\n   python3 --version\n   ```  \n\n2. \u5982\u679c\u5c0f\u4e8e 3.11\uff0c\u5c31\u9700\u8981\u5347\u7ea7\uff0c\u6bd4\u5982\u5728 Mac \u4e0a\u53ef\u4ee5\u7528 `brew`\uff1a  \n   ```bash\n   brew install python@3.11\n   brew link python@3.11\n   ```  \n\n3. \u7136\u540e\u91cd\u65b0\u5efa\u4e00\u4e2a\u865a\u62df\u73af\u5883\uff0c\u518d\u88c5 `torch-directml>=0.2.5`\u3002  \n\n\u8981\u4e0d\u8981\u6211\u5e2e\u4f60\u5199\u4e00\u4efd **Mac \u4e0a\u5207\u6362\u5230 Python 3.11 \u5e76\u91cd\u65b0\u5b89\u88c5 torch-directml** \u7684\u5b8c\u6574\u6d41\u7a0b\uff1f"
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": true,
+                    "weight": 1.0,
+                    "metadata": {
+                        "finish_details": {
+                            "type": "stop",
+                            "stop_tokens": [
+                                200002
+                            ]
+                        },
+                        "is_complete": true,
+                        "citations": [],
+                        "content_references": [],
+                        "request_id": "97a21dab5c1bd7a7-LAX",
+                        "message_type": "next",
+                        "model_slug": "gpt-5",
+                        "default_model_slug": "auto",
+                        "parent_id": "b7a2b8ff-db81-49c5-85c3-dbf62e2893cb",
+                        "timestamp_": "absolute"
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "b7a2b8ff-db81-49c5-85c3-dbf62e2893cb",
+                "children": [
+                    "03ceaf5a-a6de-4287-8b98-ea4cd9ad3146"
+                ]
+            },
+            "03ceaf5a-a6de-4287-8b98-ea4cd9ad3146": {
+                "id": "03ceaf5a-a6de-4287-8b98-ea4cd9ad3146",
+                "message": {
+                    "id": "03ceaf5a-a6de-4287-8b98-ea4cd9ad3146",
+                    "author": {
+                        "role": "user",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": 1757037514.396,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            "https://pypi.org/project/torch-directml/  \u770b\u8fd9\u4e2apip\u8bf4\u7684\uff0cdiretml\u6700\u9ad8\u53ea\u52300.2.5"
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": null,
+                    "weight": 1.0,
+                    "metadata": {
+                        "selected_github_repos": [],
+                        "serialization_metadata": {
+                            "custom_symbol_offsets": []
+                        },
+                        "request_id": "97a21fc85bc9d7a7-LAX",
+                        "message_source": null,
+                        "timestamp_": "absolute"
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "cadd59b1-2bdb-45d7-9e37-701c85daf206",
+                "children": [
+                    "ffd689a4-3255-4d58-82d4-48641076d021"
+                ]
+            },
+            "ffd689a4-3255-4d58-82d4-48641076d021": {
+                "id": "ffd689a4-3255-4d58-82d4-48641076d021",
+                "message": {
+                    "id": "ffd689a4-3255-4d58-82d4-48641076d021",
+                    "author": {
+                        "role": "assistant",
+                        "name": null,
+                        "metadata": {}
+                    },
+                    "create_time": 1757037533.7518957,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "code",
+                        "language": "unknown",
+                        "response_format_name": null,
+                        "text": "search(\"https://pypi.org/project/torch-directml/  \\u770b\\u8fd9\\u4e2apip\\u8bf4\\u7684\\uff0cdiretml\\u6700\\u9ad8\\u53ea\\u52300.2.5\")"
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": null,
+                    "weight": 1.0,
+                    "metadata": {
+                        "sonic_classification_result": {
+                            "latency_ms": 0.08440797682851553,
+                            "search_prob": 0.826180599623609,
+                            "complex_search_prob": 0.00301069837327573,
+                            "force_search_threshold": 0.0,
+                            "classifier_config_name": "sonic_classifier_3cls_ev3",
+                            "search_complexity": "simple"
+                        },
+                        "citations": [],
+                        "content_references": [],
+                        "request_id": "97a21fc85bc9d7a7-LAX",
+                        "message_type": "next",
+                        "model_slug": "gpt-5",
+                        "default_model_slug": "auto",
+                        "parent_id": "03ceaf5a-a6de-4287-8b98-ea4cd9ad3146",
+                        "timestamp_": "absolute"
+                    },
+                    "recipient": "web",
+                    "channel": null
+                },
+                "parent": "03ceaf5a-a6de-4287-8b98-ea4cd9ad3146",
+                "children": [
+                    "ce7f3505-6074-4c99-bf15-75025d6943ae"
+                ]
+            },
+            "ce7f3505-6074-4c99-bf15-75025d6943ae": {
+                "id": "ce7f3505-6074-4c99-bf15-75025d6943ae",
+                "message": {
+                    "id": "ce7f3505-6074-4c99-bf15-75025d6943ae",
+                    "author": {
+                        "role": "tool",
+                        "name": "web.run",
+                        "metadata": {
+                            "sonicberry_model_id": "current_sonicberry_unpaid_default",
+                            "real_author": "tool:web",
+                            "source": "sonic_tool"
+                        }
+                    },
+                    "create_time": 1757037534.8094535,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            ""
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": false,
+                    "weight": 1.0,
+                    "metadata": {
+                        "search_result_groups": [
+                            {
+                                "type": "search_result_group",
+                                "domain": "pypi.org",
+                                "entries": [
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://pypi.org/project/torch-directml/",
+                                        "title": "torch-directml - PyPI",
+                                        "snippet": "PyTorch with DirectML enables training and inference of complex machine learning models on a wide range of DirectX 12-compatible hardware.",
+                                        "ref_id": null,
+                                        "pub_date": null,
+                                        "attribution": "pypi.org"
+                                    },
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://pypi.org/project/experimental-torch-directml/",
+                                        "title": "experimental-torch-directml - PyPI",
+                                        "snippet": "PyTorch with DirectML enables training and inference of complex machine learning models on a wide range of DirectX 12-compatible hardware.",
+                                        "ref_id": null,
+                                        "pub_date": 1671753600.0,
+                                        "attribution": "pypi.org"
+                                    },
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://pypi.org/project/torch-directml/",
+                                        "title": "torch-directml \u00b7 PyPI",
+                                        "snippet": "Total lines: 58\n",
+                                        "ref_id": null,
+                                        "pub_date": null,
+                                        "attribution": "pypi.org"
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "search_result_group",
+                                "domain": "github.com",
+                                "entries": [
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://github.com/microsoft/DirectML/releases",
+                                        "title": "Releases \u00b7 microsoft/DirectML - GitHub",
+                                        "snippet": "torch-directml 0.2.4.dev240815 Pre-release. Pre-release. Preview build of torch-directml built on August 15, 2024. The Python packages are available as a PyPI ...",
+                                        "ref_id": null,
+                                        "pub_date": null,
+                                        "attribution": "github.com"
+                                    },
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://github.com/microsoft/DirectML/issues/544",
+                                        "title": "Torch-DirectML installation issues #544 - GitHub",
+                                        "snippet": "torch version 2.0.1+cpu. Is the torch_directml a version behind to where I would need and earlier Python version in order to install it?",
+                                        "ref_id": null,
+                                        "pub_date": 1704931200.0,
+                                        "attribution": "github.com"
+                                    },
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://github.com/microsoft/DirectML",
+                                        "title": "microsoft/DirectML - GitHub",
+                                        "snippet": "torch-directml 0.2.4.dev240815 Pre-release. Pre-release. Preview build of torch-directml built on August 15, 2024. The Python packages are available as a PyPI ...",
+                                        "ref_id": null,
+                                        "pub_date": null,
+                                        "attribution": "github.com"
+                                    },
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://github.com/microsoft/DirectML/issues/544",
+                                        "title": "Torch-DirectML installation issues #544 - GitHub",
+                                        "snippet": "torch version 2.0.1+cpu. Is the torch_directml a version behind to where I would need and earlier Python version in order to install it?",
+                                        "ref_id": null,
+                                        "pub_date": 1704931200.0,
+                                        "attribution": "github.com"
+                                    },
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://github.com/microsoft/DirectML",
+                                        "title": "microsoft/DirectML - GitHub",
+                                        "snippet": "DirectML Python sample code is available under Python/samples. The samples require PyDirectML, an open source Python projection library for DirectML, which ...",
+                                        "ref_id": null,
+                                        "pub_date": null,
+                                        "attribution": "github.com"
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "search_result_group",
+                                "domain": "learn.microsoft.com",
+                                "entries": [
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://learn.microsoft.com/en-us/windows/ai/directml/pytorch-windows",
+                                        "title": "Enable PyTorch with DirectML on Windows - Microsoft Learn",
+                                        "snippet": "Set up Torch-DirectML. We recommend setting up a virtual Python environment inside Windows. There are many tools that you can use to set up a ...",
+                                        "ref_id": null,
+                                        "pub_date": 1739145600.0,
+                                        "attribution": "learn.microsoft.com"
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "search_result_group",
+                                "domain": "www.reddit.com",
+                                "entries": [
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://www.reddit.com/r/pytorch/comments/15zjeo5/could_not_find_a_version_that_satisfies_the/",
+                                        "title": "Could not find a version that satisfies the requirement torch-directml",
+                                        "snippet": "What solved was installing python 3.10 and setting it in the PATH. Apparently, torch-directml isn't supported in next versions of python ...",
+                                        "ref_id": null,
+                                        "pub_date": 1692748800.0,
+                                        "attribution": "www.reddit.com"
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "search_result_group",
+                                "domain": "community.intel.com",
+                                "entries": [
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://community.intel.com/t5/Intel-Distribution-for-Python/Can-torch-directml-be-used-with-Intel-Distribution-for-Python/m-p/1698923",
+                                        "title": "Re: Can torch-directml be used with Intel Distribution for Python?",
+                                        "snippet": "1. Create a conda environment: \u00b7 2. Activate the environment: \u00b7 3. Install torch-directml: \u00b7 4. Open the Python interactive shell: \u00b7 5. Import torch",
+                                        "ref_id": null,
+                                        "pub_date": 1750118400.0,
+                                        "attribution": "community.intel.com"
+                                    },
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://community.intel.com/t5/Intel-Distribution-for-Python/Can-torch-directml-be-used-with-Intel-Distribution-for-Python/m-p/1698641",
+                                        "title": "Re: Can torch-directml be used with Intel Distribution for Python?",
+                                        "snippet": "Can Microsoft's PyTorch with DirectML on Windows be used with Intel Distribution for Python 2025.1? I'm unable to successfully run in such an ...",
+                                        "ref_id": null,
+                                        "pub_date": 1750118400.0,
+                                        "attribution": "community.intel.com"
+                                    },
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://community.intel.com/t5/Intel-Distribution-for-Python/Can-torch-directml-be-used-with-Intel-Distribution-for-Python/m-p/1698705",
+                                        "title": "Re: Can torch-directml be used with Intel Distribution for Python?",
+                                        "snippet": "Can Microsoft's PyTorch with DirectML on Windows be used with Intel Distribution for Python 2025.1? I'm unable to successfully run in such an ...",
+                                        "ref_id": null,
+                                        "pub_date": 1750118400.0,
+                                        "attribution": "community.intel.com"
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "search_result_group",
+                                "domain": "blogs.windows.com",
+                                "entries": [
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://blogs.windows.com/windowsdeveloper/2024/05/24/build-the-next-wave-of-ai-on-windows-with-directml-support-for-pytorch-2-2/",
+                                        "title": "Build the next wave of AI on Windows with DirectML support for ...",
+                                        "snippet": "Try out PyTorch with DirectML today. Trying out this update is truly as simple as running \u201cpip install torch-directml\u201d in your existing Python ...",
+                                        "ref_id": null,
+                                        "pub_date": 1716508800.0,
+                                        "attribution": "blogs.windows.com"
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "search_result_group",
+                                "domain": "medium.com",
+                                "entries": [
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://medium.com/%40ochwada/preparations-for-pytorch-and-directml-on-amd-ryzen-9-6950h-for-ai-projects-15c164d22332",
+                                        "title": "Preparations for PyTorch and DirectML on AMD Ryzen 9 6950H for ...",
+                                        "snippet": "To ensure your code uses DirectML for GPU acceleration, you need to explicitly set DirectML as the device in your Python project using torch- ...",
+                                        "ref_id": null,
+                                        "pub_date": 1736467200.0,
+                                        "attribution": "medium.com"
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "search_result_group",
+                                "domain": "forums.fast.ai",
+                                "entries": [
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://forums.fast.ai/t/pytorch-direct-ml-for-non-nvidia-gpus-on-windows/92010",
+                                        "title": "Pytorch Direct ML for non-Nvidia GPUs on Windows - Fast.ai forums",
+                                        "snippet": "The Windows AI team is excited to announce the first preview of DirectML as a backend to PyTorch for training ML models! This release is our ...",
+                                        "ref_id": null,
+                                        "pub_date": 1635120000.0,
+                                        "attribution": "forums.fast.ai"
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "search_result_group",
+                                "domain": "www.youtube.com",
+                                "entries": [
+                                    {
+                                        "type": "search_result",
+                                        "url": "https://www.youtube.com/watch?v=ZIQ65uBctU8",
+                                        "title": "pip install torch directml - YouTube",
+                                        "snippet": "... torch-directml using the following command: You can verify the installation by opening a Python interpreter and importing torch with torch- ...",
+                                        "ref_id": null,
+                                        "pub_date": 1704067200.0,
+                                        "attribution": "www.youtube.com"
+                                    }
+                                ]
+                            }
+                        ],
+                        "debug_sonic_thread_id": "thread_68ba43ded3648007b5ac8814aa66cc56",
+                        "search_turns_count": 1,
+                        "search_source": "composer_auto",
+                        "client_reported_search_source": "composer_auto",
+                        "request_id": "97a21fc85bc9d7a7-LAX",
+                        "message_type": "next",
+                        "model_slug": "gpt-5",
+                        "default_model_slug": "auto",
+                        "parent_id": "ffd689a4-3255-4d58-82d4-48641076d021",
+                        "timestamp_": "absolute"
+                    },
+                    "recipient": "all",
+                    "channel": null
+                },
+                "parent": "ffd689a4-3255-4d58-82d4-48641076d021",
+                "children": [
+                    "9211ea06-258a-43b9-abd6-9e3ccee448a8"
+                ]
+            },
+            "9211ea06-258a-43b9-abd6-9e3ccee448a8": {
+                "id": "9211ea06-258a-43b9-abd6-9e3ccee448a8",
+                "message": {
+                    "id": "9211ea06-258a-43b9-abd6-9e3ccee448a8",
+                    "author": {
+                        "role": "assistant",
+                        "name": null,
+                        "metadata": {
+                            "sonicberry_model_id": "current_sonicberry_unpaid_default",
+                            "real_author": "tool:web",
+                            "source": "sonic_tool"
+                        }
+                    },
+                    "create_time": 1757037535.959302,
+                    "update_time": null,
+                    "content": {
+                        "content_type": "text",
+                        "parts": [
+                            "\u4f60\u67e5\u770b\u7684 PyPI \u4fe1\u606f\u5b8c\u5168\u6b63\u786e\uff1a\u76ee\u524d `torch-directml` \u7684\u6700\u65b0\u7248\u672c\u786e\u5b9e\u662f **0.2.5.dev240914**\uff0c\u53d1\u5e03\u65e5\u671f\u662f **2024\u5e749\u670815\u65e5**\uff0c\u8fd9\u5df2\u7ecf\u662f\u6700\u65b0\u7684\u9884\u53d1\u5e03\u7248\u672c\u4e86\ue200cite\ue202turn0search0\ue202turn0view0\ue201\u3002\n\n\u56e0\u6b64\uff0cpip \u62a5\u9519\u4fe1\u606f\u4e2d\u8bf4 \u201ctorch-directml \u6700\u9ad8\u53ea\u5230 0.2.5\u201d \u5e76\u4e0d\u662f\u8bf4\u5b83\u53ea\u652f\u6301 Python 2.3\uff0c\u800c\u662f PyPI \u4e0a\u786e\u5b9e\u6ca1\u6709\u66f4\u65b0\u7248\u672c\u2014\u2014**\u8fd9\u91cc\u7684\u201c2.3\u201d\u662f\u6307\u7248\u672c\u53f7 `0.2.3`\uff0c\u800c\u4e0d\u662f Python \u7684\u7248\u672c**\u3002\n\n---\n\n###  \u6838\u5fc3\u7ea0\u6b63\u4e0e\u603b\u7ed3\n\n- **\u4e0d\u662f Python 2.3**\uff1a`torch-directml==0.2.5` \u7684\u7248\u672c\u53f7\u548c Python \u7248\u672c\u65e0\u5173\uff1b\u4f60\u4e0d\u9700\u8981 Python 2.3\u3002\n- **\u6700\u65b0\u7248\u672c\u662f 0.2.5.dev240914**\uff1a\u6700\u65b0\u5df2\u53d1\u5e03\u7248\u672c\u662f\u5728 2024 \u5e74 9 \u6708 15 \u65e5\ue200cite\ue202turn0search0\ue202turn0view0\ue201\u3002\n- **Python \u8981\u6c42\u662f \u2265 3.7**\uff1a\u8be5\u7248\u672c\u652f\u6301 Python 3.7 \u5230 3.10\uff08\u672a\u660e\u786e\u5217\u51fa 3.11+\uff09\ue200cite\ue202turn0search0\ue201\u3002\n\n---\n\n###  \u4e0b\u4e00\u6b65\u5efa\u8bae\uff08\u6309\u7167 macOS \u73af\u5883\uff09\n\n1. \u786e\u8ba4\u5f53\u524d Python \u7248\u672c\uff1a\n   ```bash\n   python3 --version\n   ```\n2. \u5982\u679c\u4f60\u4f7f\u7528\u7684\u662f Python 3.11 \u6216\u66f4\u9ad8\u7248\u672c\uff0c\u76ee\u524d\u53ef\u80fd\u8fd8\u4e0d\u53d7\u652f\u6301\uff0c\u5efa\u8bae\u964d\u7ea7\u5230 Python 3.10\uff1a\n   ```bash\n   brew install python@3.10\n   brew link python@3.10\n   ```\n3. \u521b\u5efa\u4e00\u4e2a\u65b0\u7684\u865a\u62df\u73af\u5883\uff1a\n   ```bash\n   python3.10 -m venv venv\n   source venv/bin/activate\n   ```\n4. \u5b89\u88c5 `torch-directml`\uff1a\n   ```bash\n   pip install torch-directml\n   ```\n\n---\n\n\u5982\u679c\u4f60\u5e0c\u671b\u6211\u7ee7\u7eed\u5199\u4e00\u4efdMac\u4e0a\u5b8c\u6574\u6d41\u7a0b\uff08\u5305\u62ec\u7528 Python 3.10 \u865a\u62df\u73af\u5883\u5b89\u88c5\u7684\u6b65\u9aa4\uff09\uff0c\u6211\u53ef\u4ee5\u76f4\u63a5\u5e2e\u4f60\u8865\u5168\uff0c\u53ea\u6539\u5fc5\u8981\u9519\u8bef\uff0c\u4e0d\u91cd\u590d\u4e4b\u524d\u8bf4\u8fc7\u5185\u5bb9\u3002\u4f60\u89c9\u5f97\u8fd9\u6837\u53ef\u4ee5\u5417\uff1f"
+                        ]
+                    },
+                    "status": "finished_successfully",
+                    "end_turn": true,
+                    "weight": 1.0,
+                    "metadata": {
+                        "content_references": [
+                            {
+                                "matched_text": "\ue200cite\ue202turn0search0\ue202turn0view0\ue201",
+                                "start_idx": 100,
+                                "end_idx": 130,
+                                "safe_urls": [
+                                    "https://pypi.org/project/torch-directml/",
+                                    "https://pypi.org/project/torch-directml/?utm_source=chatgpt.com"
+                                ],
+                                "refs": [],
+                                "alt": "([PyPI](https://pypi.org/project/torch-directml/?utm_source=chatgpt.com))",
+                                "prompt_text": null,
+                                "type": "grouped_webpages"
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+]

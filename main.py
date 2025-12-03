@@ -39,6 +39,7 @@ from permission_manager import PermissionManager, SafetyLevel
 
 # Import agents
 from agents import AgentRuntime
+from agents.agent_runtime import RuntimeStatus
 from agents.qa_agent import QAAgent
 from agents.planning_agent import PlanningAgent
 from agents.router_agent import RouterAgent
@@ -58,11 +59,18 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-VERSION = "/v1"
+DEFAULT_MODEL_INFO = {
+    "name": "unknown",
+    "version": "1.0.0",
+    "object": "model",
+    "owned_by": "lotaway",
+    "api_version": "v1",
+}
+VERSION = DEFAULT_MODEL_INFO["api_version"]
 
 
 class Message(BaseModel):
@@ -201,7 +209,7 @@ async def query_rag(request: Request):
         raise HTTPException(status_code=500, detail=error_msg)
 
 
-@app.post(f"{VERSION}/upload")
+@app.post(f"/{VERSION}/upload")
 async def upload_file(file: UploadFile = File(...)):
     """Upload a file for agent context"""
     upload_dir = os.path.join(os.getcwd(), "uploads")
@@ -225,15 +233,15 @@ async def upload_file(file: UploadFile = File(...)):
         logger.error(f"File upload failed: {e}")
         raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
 
-@app.post(f"{VERSION}/agents/run")
-async def query_agent(request: AgentRequest):
+@app.post(f"/{VERSION}/agents/run")
+async def query_agent(agentRequest: AgentRequest, request: Request):
     """Agent-based query endpoint with streaming support"""
     global local_rag
     global local_model
     global agent_runtime
     global context_storage
     
-    query = request.messages
+    query = agentRequest.messages
     if query is None:
         raise HTTPException(
             status_code=400, detail="Query parameter is required"
@@ -251,7 +259,7 @@ async def query_agent(request: AgentRequest):
             context_storage = MemoryContextStorage()
     
     # Generate session ID if not provided
-    session_id = request.session_id or str(uuid.uuid4())
+    session_id = agentRequest.session_id or str(uuid.uuid4())
     logger.info(f"Processing request for session: {session_id}")
 
     # Initialize agent runtime if needed
@@ -279,12 +287,12 @@ async def query_agent(request: AgentRequest):
     
     # Prepare initial context with files if provided
     initial_context = {}
-    if request.files:
+    if agentRequest.files:
         file_map = {}
         available_files = []
         upload_dir = os.path.join(os.getcwd(), "uploads")
         
-        for file_ref in request.files:
+        for file_ref in agentRequest.files:
             # Check if it's a full path (legacy/testing) or an ID
             real_path = None
             file_name = None
@@ -320,10 +328,11 @@ async def query_agent(request: AgentRequest):
             initial_context["available_files"] = available_files
 
     # Execute through agent system with streaming
-    def event_stream():
+    async def event_stream():
         """Generate Server-Sent Events for agent execution"""
         import queue
         import threading
+        import asyncio
         
         # Create a queue for streaming events
         event_queue = queue.Queue()
@@ -355,9 +364,18 @@ async def query_agent(request: AgentRequest):
         
         # Stream events as they arrive
         while not execution_complete.is_set() or not event_queue.empty():
+            if await request.is_disconnected():
+                logger.info("Client disconnected, cancelling agent execution")
+                # Attempt to stop the agent runtime
+                if agent_runtime and agent_runtime.state:
+                     if agent_runtime.state.status == RuntimeStatus.RUNNING:
+                         agent_runtime.state.status = RuntimeStatus.FAILED
+                         agent_runtime.state.error_message = "Cancelled by user disconnection"
+                break
+
             try:
-                # Get event with timeout to check completion status
-                event_data = event_queue.get(timeout=0.1)
+                # Use non-blocking get
+                event_data = event_queue.get_nowait()
                 
                 event_type = event_data.get("event_type")
                 
@@ -367,7 +385,7 @@ async def query_agent(request: AgentRequest):
                         "id": "agent-run-1",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
-                        "model": request.model,
+                        "model": agentRequest.model,
                         "choices": [{
                             "delta": {},
                             "index": 0,
@@ -389,7 +407,7 @@ async def query_agent(request: AgentRequest):
                             "id": "agent-run-1",
                             "object": "chat.completion.chunk",
                             "created": int(time.time()),
-                            "model": request.model,
+                            "model": agentRequest.model,
                             "choices": [{
                                 "delta": {"content": chunk},
                                 "index": 0,
@@ -408,7 +426,7 @@ async def query_agent(request: AgentRequest):
                         "id": "agent-run-1",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
-                        "model": request.model,
+                        "model": agentRequest.model,
                         "choices": [{
                             "delta": {},
                             "index": 0,
@@ -425,138 +443,142 @@ async def query_agent(request: AgentRequest):
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
                 
             except queue.Empty:
-                # No events available, continue waiting
+                # Wait a bit and continue to check disconnection
+                await asyncio.sleep(0.1)
                 continue
         
-        # Wait for execution thread to complete
-        execution_thread.join()
+        # Wait for execution thread to complete (or timeout if we cancelled)
+        # If cancelled, the thread should stop soon because we set status to FAILED
+        execution_thread.join(timeout=2.0)
         
-        # Send final completion event
-        if final_state["error"]:
-            # Error occurred
-            data = {
-                "id": "agent-run-1",
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": request.model,
-                "choices": [{
-                    "delta": {"content": f"\n\nError: {final_state['error']}"},
-                    "index": 0,
-                    "finish_reason": "error"
-                }],
-                "agent_metadata": {
-                    "event_type": "error",
-                    "error": final_state["error"]
-                }
-            }
-            yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-        elif final_state["state"]:
-            state = final_state["state"]
-            # Send final result summary
-            if state.status.value == "completed":
+        # Send final completion event only if not disconnected
+        if not await request.is_disconnected():
+            if final_state["error"]:
+                # Error occurred
                 data = {
                     "id": "agent-run-1",
                     "object": "chat.completion.chunk",
                     "created": int(time.time()),
-                    "model": request.model,
+                    "model": agentRequest.model,
                     "choices": [{
-                        "delta": {},
+                        "delta": {"content": f"\n\nError: {final_state['error']}"},
                         "index": 0,
-                        "finish_reason": "stop"
+                        "finish_reason": "error"
                     }],
                     "agent_metadata": {
-                        "event_type": "workflow_complete",
-                        "status": state.status.value,
-                        "iterations": state.iteration_count,
-                        "iteration_count_round": state.iteration_count_round,
-                        "history_length": len(state.history)
+                        "event_type": "error",
+                        "error": final_state["error"]
                     }
                 }
                 yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-            elif state.status.value == "waiting_human":
-                # Workflow paused for human intervention
-                data = {
-                    "id": "agent-run-1",
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": request.model,
-                    "choices": [{
-                        "delta": {
-                            "content": f"\n\n⏸️ Workflow paused: Waiting for human decision.\nPlease call POST /v1/agents/decision to continue.",    
-                            "resume_api": "/v1/agents/decision",
-                            "resume_method": "POST",
-                        },
-                        "index": 0,
-                        "finish_reason": "length"
-                    }],
-                    "agent_metadata": {
-                        "event_type": "needs_decision",
-                        "status": state.status.value,
-                        "reason": "waiting_human",
-                        "message": state.error_message or "Human intervention required",
-                        "iterations": state.iteration_count,
-                        "iteration_count_round": state.iteration_count_round,
-                        "action_required": "POST /v1/agents/decision with approved/feedback/data"
+            elif final_state["state"]:
+                state = final_state["state"]
+                # Send final result summary
+                if state.status.value == "completed":
+                    data = {
+                        "id": "agent-run-1",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": agentRequest.model,
+                        "choices": [{
+                            "delta": {},
+                            "index": 0,
+                            "finish_reason": "stop"
+                        }],
+                        "agent_metadata": {
+                            "event_type": "workflow_complete",
+                            "status": state.status.value,
+                            "iterations": state.iteration_count,
+                            "iteration_count_round": state.iteration_count_round,
+                            "history_length": len(state.history)
+                        }
                     }
-                }
-                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-            elif state.status.value == "max_iterations":
-                # Workflow paused due to max iterations
-                data = {
-                    "id": "agent-run-1",
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": request.model,
-                    "choices": [{
-                        "delta": {
-                            "content": f"\n\n⏸️ Workflow paused: Reached maximum iterations ({state.max_iterations}) in round {state.iteration_count_round}.\nPlease call POST /v1/agents/decision to continue or stop.",
-                            "resume_api": "/v1/agents/decision",
-                            "resume_method": "POST",
-                        },
-                        "index": 0,
-                        "finish_reason": "length"
-                    }],
-                    "agent_metadata": {
-                        "event_type": "needs_decision",
-                        "status": state.status.value,
-                        "reason": "max_iterations",
-                        "message": state.error_message,
-                        "iterations": state.iteration_count,
-                        "iteration_count_round": state.iteration_count_round,
-                        "max_iterations": state.max_iterations,
-                        "action_required": "POST /v1/agents/decision with approved=true/false"
+                    yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                elif state.status.value == "waiting_human":
+                    # Workflow paused for human intervention
+                    data = {
+                        "id": "agent-run-1",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": agentRequest.model,
+                        "choices": [{
+                            "delta": {
+                                "content": f"\n\n⏸️ Workflow paused: Waiting for human decision.\nPlease call POST /v1/agents/decision to continue.",    
+                                "resume_api": "/v1/agents/decision",
+                                "resume_method": "POST",
+                            },
+                            "index": 0,
+                            "finish_reason": "length"
+                        }],
+                        "agent_metadata": {
+                            "event_type": "needs_decision",
+                            "status": state.status.value,
+                            "reason": "waiting_human",
+                            "message": state.error_message or "Human intervention required",
+                            "iterations": state.iteration_count,
+                            "iteration_count_round": state.iteration_count_round,
+                            "action_required": "POST /v1/agents/decision with approved/feedback/data"
+                        }
                     }
-                }
-                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-            else:
-                # Workflow ended in other non-completed state (failed, etc.)
-                data = {
-                    "id": "agent-run-1",
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": request.model,
-                    "choices": [{
-                        "delta": {"content": f"\n\nWorkflow {state.status.value}: {state.error_message}"},
-                        "index": 0,
-                        "finish_reason": "stop"
-                    }],
-                    "agent_metadata": {
-                        "event_type": "workflow_end",
-                        "status": state.status.value,
-                        "error_message": state.error_message,
-                        "iterations": state.iteration_count,
-                        "iteration_count_round": state.iteration_count_round
+                    yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                elif state.status.value == "max_iterations":
+                    # Workflow paused due to max iterations
+                    data = {
+                        "id": "agent-run-1",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": agentRequest.model,
+                        "choices": [{
+                            "delta": {
+                                "content": f"\n\n⏸️ Workflow paused: Reached maximum iterations ({state.max_iterations}) in round {state.iteration_count_round}.\nPlease call POST /v1/agents/decision to continue or stop.",
+                                "resume_api": "/v1/agents/decision",
+                                "resume_method": "POST",
+                            },
+                            "index": 0,
+                            "finish_reason": "length"
+                        }],
+                        "agent_metadata": {
+                            "event_type": "needs_decision",
+                            "status": state.status.value,
+                            "reason": "max_iterations",
+                            "message": state.error_message,
+                            "iterations": state.iteration_count,
+                            "iteration_count_round": state.iteration_count_round,
+                            "max_iterations": state.max_iterations,
+                            "action_required": "POST /v1/agents/decision with approved=true/false"
+                        }
                     }
-                }
-                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                else:
+                    # Workflow ended in other non-completed state (failed, etc.)
+                    data = {
+                        "id": "agent-run-1",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": agentRequest.model,
+                        "choices": [{
+                            "delta": {"content": f"\n\nWorkflow {state.status.value}: {state.error_message}"},
+                            "index": 0,
+                            "finish_reason": "stop"
+                        }],
+                        "agent_metadata": {
+                            "event_type": "workflow_end",
+                            "status": state.status.value,
+                            "error_message": state.error_message,
+                            "iterations": state.iteration_count,
+                            "iteration_count_round": state.iteration_count_round
+                        }
+                    }
+                    yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
         
         # Send [DONE] marker
-        yield "data: [DONE]\n\n"
+        if not await request.is_disconnected():
+            yield "data: [DONE]\n\n"
     
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-@app.post(f"{VERSION}/agents/decision")
+@app.post(f"/{VERSION}/agents/decision")
 async def agent_decision(req: AgentDecisionRequest):
     """Handle human decision for paused agent workflow or max iterations continuation"""
     global agent_runtime
@@ -633,7 +655,7 @@ async def agent_decision(req: AgentDecisionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post(f"{VERSION}/agents/chat")
+@app.post(f"/{VERSION}/agents/chat")
 async def agent_chat(req: ChatRequest):
     """Agent-based chat endpoint with full workflow"""
     global local_rag
@@ -702,7 +724,7 @@ async def agent_chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get(f"{VERSION}/agents/status")
+@app.get(f"/{VERSION}/agents/status")
 async def agent_status():
     """Get agent runtime status"""
     global agent_runtime
@@ -779,11 +801,8 @@ async def api_tags():
     for model in LocalLLModel.get_models():
         li.append(
             {
+                **DEFAULT_MODEL_INFO,
                 "name": model,
-                "version": "1.0.0",
-                "object": "model",
-                "owned_by": "lotaway",
-                "api_version": "v1",
             }
         )
     return li
@@ -792,20 +811,14 @@ async def api_tags():
 @app.get("/api/version")
 async def api_version():
     li = await api_tags()
-    if local_model is not None:
-        return {
-            "model_name": "unknown",
-            "version": "1.0.0",
-            "object": "model",
-            "owned_by": "lotaway",
-            "api_version": "v1",
-        }
+    if local_model is None:
+        return DEFAULT_MODEL_INFO
     _local_model = cast(LocalLLModel, local_model)
     cur = next(model for model in li if model["name"] == _local_model.cur_model_name)
     return cur
 
 
-@app.post(f"{VERSION}/embeddings")
+@app.post(f"/{VERSION}/embeddings")
 async def embeddings(req: EmbeddingRequest):
     if isinstance(req.input, str):
         texts = [req.input]
@@ -826,7 +839,7 @@ async def embeddings(req: EmbeddingRequest):
     }
 
 
-@app.post(f"{VERSION}/chat/completions")
+@app.post(f"/{VERSION}/chat/completions")
 async def chat_completions(req: ChatRequest, request: Request):
     """openai chat/edit/apply"""
     global local_model
@@ -894,7 +907,7 @@ async def chat_completions(req: ChatRequest, request: Request):
     return JSONResponse(content=response, headers={"Content-Type": "application/json"})
 
 
-@app.post(f"{VERSION}/completions")
+@app.post(f"/{VERSION}/completions")
 async def completions(req: CompletionRequest):
     """openai autocompletions"""
     global local_model

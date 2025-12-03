@@ -1,4 +1,5 @@
 import os
+import json
 from pymilvus import connections, utility
 import gc
 import torch
@@ -211,15 +212,42 @@ class LocalRAG:
 
                     elif file_ext == ".json":
                         print(f"加载JSON文件: {file}")
-                        # JSONLoader 需要指定 jq_schema 来提取内容
-                        loader = JSONLoader(
-                            file_path=file_path,
-                            jq_schema=".",  # 提取所有内容，根据实际结构调整
-                            text_content=True,  # 确保输出是文本而不是字典
-                        )
-                        loaded = loader.load()
-                        print(f"成功加载 {len(loaded)} 个JSON条目")
-                        docs.extend(after_doc_load(loaded, file))
+                        try:
+                            # 尝试读取并检测是否为 ChatGPT 导出格式
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+                            
+                            # ChatGPT 导出通常是一个列表，且包含 mapping 和 create_time 等字段
+                            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "mapping" in data[0] and "create_time" in data[0]:
+                                print(f"检测到 ChatGPT 导出格式: {file}")
+                                loaded = self.load_chatgpt_json(data, file)
+                                print(f"成功解析 ChatGPT 对话，生成 {len(loaded)} 个文档片段")
+                                docs.extend(after_doc_load(loaded, file))
+                            else:
+                                # 即使不是 ChatGPT 格式，也重新使用 JSONLoader 加载（或者直接利用已读取的 data，但 JSONLoader 封装了 jq 等逻辑，复用较好）
+                                # 注意：JSONLoader 需要文件路径
+                                loader = JSONLoader(
+                                    file_path=file_path,
+                                    jq_schema=".",
+                                    text_content=True,
+                                )
+                                loaded = loader.load()
+                                print(f"成功加载 {len(loaded)} 个JSON条目")
+                                docs.extend(after_doc_load(loaded, file))
+                                
+                        except Exception as e:
+                            print(f"解析 JSON 文件 {file} 失败: {e}")
+                            # 尝试回退到默认加载方式
+                            try:
+                                loader = JSONLoader(
+                                    file_path=file_path,
+                                    jq_schema=".",
+                                    text_content=True,
+                                )
+                                loaded = loader.load()
+                                docs.extend(after_doc_load(loaded, file))
+                            except Exception as e2:
+                                print(f"回退加载也失败: {e2}")
 
                     elif file_ext in [".py", ".java", ".kt", ".rs", ".js", ".ts", ".html", ".css", ".cs", ".swift"]:
                         print(f"加载代码文件: {file}")
@@ -300,6 +328,20 @@ class LocalRAG:
             return self.build_vectorstore(docs)
         else:
             print(f"Collection '{self.collection}' already exists, reusing it.")
+            
+            # Load documents for hybrid search even when reusing vectorstore
+            if self.use_hybrid_search and not self.all_documents:
+                print("Loading documents for hybrid search BM25 index...")
+                docs = self.load_documents()
+                if docs:
+                    text_splitter = RecursiveCharacterTextSplitter(
+                        chunk_size=1000, chunk_overlap=200
+                    )
+                    self.all_documents = text_splitter.split_documents(docs)
+                    print(f"Loaded {len(self.all_documents)} document chunks for BM25 indexing")
+                else:
+                    print("Warning: No documents found for BM25 indexing")
+            
             return Milvus(
                 embedding_function=embeddings,
                 connection_args={"host": self.host, "port": self.port},
@@ -352,6 +394,89 @@ class LocalRAG:
         gc.collect()
         torch.cuda.empty_cache()
         print("已释放 RAG 相关显存资源")
+
+
+    def load_chatgpt_json(self, data: list, source_file: str) -> List[Document]:
+        """解析 ChatGPT 导出的 JSON 数据"""
+        docs = []
+        for conversation in data:
+            title = conversation.get("title", "Untitled Conversation")
+            mapping = conversation.get("mapping", {})
+            
+            # 寻找根节点 (parent 为 None 的节点)
+            root_id = None
+            for node_id, node in mapping.items():
+                if node.get("parent") is None:
+                    root_id = node_id
+                    break
+            
+            if not root_id:
+                continue
+                
+            # 遍历对话树 (简化处理：只取第一条分支)
+            current_id = root_id
+            messages = []
+            
+            while current_id:
+                node = mapping.get(current_id)
+                if not node:
+                    break
+                
+                message = node.get("message")
+                if message:
+                    author = message.get("author", {})
+                    role = author.get("role")
+                    content_dict = message.get("content", {})
+                    parts = content_dict.get("parts", [])
+                    
+                    text_content = ""
+                    if parts:
+                        # parts 可能包含非字符串内容，需过滤或转换
+                        text_content = "".join([str(p) for p in parts if p is not None])
+                    
+                    if text_content and role in ["user", "assistant"]:
+                        messages.append({"role": role, "content": text_content})
+                
+                # 移动到下一个节点
+                children = node.get("children", [])
+                if children:
+                    current_id = children[0] # 默认走第一个分支
+                else:
+                    current_id = None
+            
+            # 将对话切分为 Q&A 对
+            # 策略：将连续的 User 消息合并，随后跟随的 Assistant 消息合并，形成一个 Document
+            if not messages:
+                continue
+
+            self.current_doc_messages = []
+            
+            for i, msg in enumerate(messages):
+                role = msg["role"]
+                
+                # 如果是 User 消息，且当前 buffer 中已有 Assistant 消息，说明上一轮对话结束，先保存
+                if role == "user":
+                    if self.current_doc_messages and self.current_doc_messages[-1]["role"] == "assistant":
+                        docs.append(self._create_chat_doc(title, self.current_doc_messages, source_file))
+                        self.current_doc_messages = []
+                
+                self.current_doc_messages.append(msg)
+            
+            # 处理剩余的消息
+            if self.current_doc_messages:
+                docs.append(self._create_chat_doc(title, self.current_doc_messages, source_file))
+                self.current_doc_messages = [] 
+        return docs
+
+    def _create_chat_doc(self, title, messages, source):
+        """构建 Document 对象"""
+        content_parts = [f"Title: {title}"]
+        for msg in messages:
+            role_prefix = "Question" if msg["role"] == "user" else "Answer"
+            content_parts.append(f"{role_prefix}: {msg['content']}")
+            
+        full_content = "\n\n".join(content_parts)
+        return Document(page_content=full_content, metadata={"source": source, "title": title})
 
 
 def command_line_rag():
