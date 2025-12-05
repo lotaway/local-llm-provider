@@ -27,8 +27,7 @@ def test_agent_system():
     llm = LocalLLModel()
     
     # Initialize RAG
-    data_path = os.getenv("DATA_PATH", "./docs")
-    rag = LocalRAG(llm, data_path=data_path, use_hybrid_search=True, use_reranking=True)
+    rag = LocalRAG(llm, use_hybrid_search=True, use_reranking=True)
     
     # Create runtime
     runtime = AgentRuntime(llm, max_iterations=10)

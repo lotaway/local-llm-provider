@@ -15,6 +15,7 @@ import json
 import httpx
 import logging
 import uuid
+import secrets
 from typing import cast
 import asyncio
 
@@ -72,21 +73,71 @@ DEFAULT_MODEL_INFO = {
 }
 VERSION = DEFAULT_MODEL_INFO["api_version"]
 
+ADMIN_TOKEN = None
+
+def ensure_admin_token():
+    global ADMIN_TOKEN
+    token_file = ".admin"
+    if os.path.exists(token_file):
+        with open(token_file, "r") as f:
+            token = f.read().strip()
+            # Check if token looks valid (starts with sk- and has content)
+            if token and token.startswith("sk-") and len(token) >= 32:
+                ADMIN_TOKEN = token
+                print(f"Loaded admin token from {token_file}")
+                return
+    
+    # Generate new token: sk- + 32 hex chars
+    token = f"sk-{secrets.token_hex(16)}"
+    with open(token_file, "w") as f:
+        f.write(token)
+    ADMIN_TOKEN = token
+    print(f"Generated new admin token and saved to {token_file}: {token}")
+
+# Initialize token on module load
+ensure_admin_token()
+
+@app.middleware("http")
+async def verify_admin_token(request: Request, call_next):
+    # Only check routes starting with /VERSION (e.g. /v1)
+    if request.url.path.startswith(f"/{VERSION}"):
+        # Skip OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+            
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return JSONResponse(status_code=401, content={"detail": "Missing Authorization header"})
+        
+        token = auth_header
+        if token.startswith("Bearer "):
+            token = token[7:]
+            
+        if token != ADMIN_TOKEN:
+            return JSONResponse(status_code=401, content={"detail": "Invalid admin token"})
+            
+    return await call_next(request)
+
 
 class Message(BaseModel):
     role: str
     content: str
 
 
+import queue
+import threading
+
 class ChatRequest(BaseModel):
     model: str
     messages: list[Message]
     stream: bool = False
+    enable_rag: bool = True
 
 
 class CompletionRequest(BaseModel):
     model: str
     prompt: str
+    enable_rag: bool = True
     
     
 class AgentRequest(BaseModel):
@@ -667,8 +718,7 @@ async def agent_chat(req: ChatRequest):
     
     if agent_runtime is None:
         if local_rag is None:
-            data_path = os.getenv("DATA_PATH", "./docs")
-            local_rag = LocalRAG(local_model, data_path=data_path)
+            local_rag = LocalRAG(local_model)
         agent_runtime = AgentRuntime.create_with_all_agents(
             local_model,
             rag_instance=local_rag,
@@ -811,7 +861,7 @@ async def api_tags():
 @app.get("/api/version")
 async def api_version():
     li = await api_tags()
-    if local_model is None:
+    if local_model is None or local_model.cur_model_name == "":
         return DEFAULT_MODEL_INFO
     _local_model = cast(LocalLLModel, local_model)
     cur = next(model for model in li if model["name"] == _local_model.cur_model_name)
@@ -843,8 +893,86 @@ async def embeddings(req: EmbeddingRequest):
 async def chat_completions(req: ChatRequest, request: Request):
     """openai chat/edit/apply"""
     global local_model
+    global local_rag
+    
     if local_model is None:
         local_model = LocalLLModel(req.model)
+        
+    if req.enable_rag:
+        if local_rag is None:
+            local_rag = LocalRAG(local_model)
+            
+        # Extract query from last user message
+        query = ""
+        for m in reversed(req.messages):
+            if m.role == "user":
+                query = m.content
+                break
+        if not query and req.messages:
+            query = req.messages[-1].content
+            
+        if req.stream:
+            event_queue = queue.Queue()
+            
+            def stream_callback(chunk):
+                event_queue.put(chunk)
+                
+            def run_rag():
+                try:
+                    local_rag.generate_answer(query, stream_callback=stream_callback)
+                except Exception as e:
+                    print(f"RAG Error: {e}")
+                finally:
+                    event_queue.put(None)
+                    
+            threading.Thread(target=run_rag).start()
+            
+            async def event_stream():
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        chunk = event_queue.get_nowait()
+                        if chunk is None:
+                            break
+                            
+                        data = {
+                            "id": "chatcmpl-rag",
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": req.model,
+                            "choices": [
+                                {"delta": {"content": chunk}, "index": 0, "finish_reason": None}
+                            ],
+                        }
+                        yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    except queue.Empty:
+                        await asyncio.sleep(0.01)
+                yield "data: [DONE]\n\n"
+                
+            return StreamingResponse(event_stream(), media_type="text/event-stream")
+        else:
+            output = local_rag.generate_answer(query)
+            response = {
+                "id": "chatcmpl-rag",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": req.model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": output},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": len(output.split()),
+                    "total_tokens": len(output.split()),
+                },
+            }
+            return JSONResponse(content=response, headers={"Content-Type": "application/json"})
+
     if req.stream:
         streamer = local_model.chat([m.model_dump() for m in req.messages])
 
@@ -911,9 +1039,20 @@ async def chat_completions(req: ChatRequest, request: Request):
 async def completions(req: CompletionRequest):
     """openai autocompletions"""
     global local_model
+    global local_rag
+
     if local_model is None:
         local_model = LocalLLModel(req.model)
-    output = local_model.complete_at_once(req.prompt)
+    
+    if req.enable_rag:
+        if local_rag is None:
+            local_rag = LocalRAG(local_model)
+            
+        # Use RAG for completion (treating prompt as query)
+        output = local_rag.generate_answer(req.prompt)
+    else:
+        output = local_model.complete_at_once(req.prompt)
+
     return {
         "id": "cmpl-1",
         "object": "text_completion",

@@ -62,7 +62,7 @@ class LocalRAG:
     def __init__(
         self,
         llm: LocalLLModel,
-        data_path="./docs",
+        data_path=os.getenv("DATA_PATH", "./docs"),
         use_hybrid_search: bool = True,
         use_reranking: bool = True,
         retrieval_strategy: str = "adaptive"
@@ -107,9 +107,9 @@ class LocalRAG:
                 docs = retriever.invoke(query)
                 return cast(Reranker, self.reranker).adaptive_rerank(query, docs, top_k=5)
             
-            retrieval_runnable = RunnableLambda(retrieve_and_rerank)
+            self.retrieval_runnable = RunnableLambda(retrieve_and_rerank)
         else:
-            retrieval_runnable = retriever
+            self.retrieval_runnable = retriever
         
         format_messages_runnable = RunnableLambda(self.llm.format_messages)
 
@@ -134,7 +134,7 @@ class LocalRAG:
         prompt_str = ChatPromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
 
         chain = (
-            {"context": retrieval_runnable, "question": lambda x: x}
+            {"context": self.retrieval_runnable, "question": lambda x: x}
             | prompt_str
             | format_messages_runnable
             | chat_runnable
@@ -329,7 +329,6 @@ class LocalRAG:
                 f"Collection '{self.collection}' not found, creating and inserting documents..."
             )
             docs = self.load_documents()
-            # docs = self.load_documents(lambda docs, file : docs.map(lambda doc: doc.metadata["author"] = file)
             if not docs:
                 raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档")
             
@@ -343,18 +342,59 @@ class LocalRAG:
         else:
             print(f"Collection '{self.collection}' already exists, reusing it.")
             
-            # Load documents for hybrid search even when reusing vectorstore
+            # Load documents for hybrid search from Milvus instead of files
             if self.use_hybrid_search and not self.all_documents:
-                print("Loading documents for hybrid search BM25 index...")
-                docs = self.load_documents()
-                if docs:
-                    text_splitter = RecursiveCharacterTextSplitter(
-                        chunk_size=1000, chunk_overlap=200
-                    )
-                    self.all_documents = text_splitter.split_documents(docs)
-                    print(f"Loaded {len(self.all_documents)} document chunks for BM25 indexing")
-                else:
-                    print("Warning: No documents found for BM25 indexing")
+                print("Loading documents from Milvus for hybrid search...")
+                try:
+                    from pymilvus import Collection, DataType
+                    collection = Collection(self.collection)
+                    
+                    # Determine PK field and expression
+                    pk_field = collection.primary_field
+                    expr = ""
+                    if pk_field.dtype == DataType.INT64:
+                        expr = f"{pk_field.name} >= 0"
+                    elif pk_field.dtype == DataType.VARCHAR:
+                        expr = f"{pk_field.name} != ''"
+                    
+                    # Use standard query with pagination to fetch all docs
+                    self.all_documents = []
+                    offset = 0
+                    limit = 1000  # Fetch 1000 at a time
+                    
+                    while True:
+                        res = collection.query(
+                            expr=expr,
+                            output_fields=["text", "metadata"],
+                            offset=offset,
+                            limit=limit
+                        )
+                        
+                        if not res:
+                            break
+                            
+                        for item in res:
+                            content = item.get("text")
+                            if content:
+                                meta = item.get("metadata", {})
+                                # Handle metadata if it's stored as JSON string
+                                if isinstance(meta, str):
+                                    try:
+                                        meta = json.loads(meta)
+                                    except:
+                                        pass
+                                self.all_documents.append(Document(page_content=content, metadata=meta))
+                        
+                        if len(res) < limit:
+                            break
+                            
+                        offset += limit
+                                
+                    print(f"Loaded {len(self.all_documents)} documents from Milvus")
+                    
+                except Exception as e:
+                    print(f"Failed to load from Milvus: {e}")
+                    print("Warning: Hybrid search might be degraded (BM25 index empty)")
             
             return Milvus(
                 embedding_function=embeddings,
@@ -381,7 +421,14 @@ class LocalRAG:
         else:
             # Streaming mode - manually execute chain steps with streaming
             # Step 1: Retrieve context documents
-            retrieval_runnable = cast(RunnableSequence, self.rag_chain).steps[0]["context"]
+            if hasattr(self, "retrieval_runnable"):
+                retrieval_runnable = self.retrieval_runnable
+            else:
+                # Fallback: try to reconstruct or access from chain (risky)
+                # Re-initialize to ensure retrieval_runnable is set
+                self.init_rag_chain()
+                retrieval_runnable = self.retrieval_runnable
+                
             context_docs = retrieval_runnable.invoke(question)
             context = "\n\n".join([doc.page_content for doc in context_docs])
             

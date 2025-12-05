@@ -12,7 +12,7 @@ print("测试关键词查询改进")
 print("=" * 80)
 
 llm = LocalLLModel()
-rag = LocalRAG(llm, data_path="./docs", use_hybrid_search=True, use_reranking=True)
+rag = LocalRAG(llm, use_hybrid_search=True, use_reranking=True)
 
 print("\n初始化 RAG 系统...")
 rag.init_rag_chain()

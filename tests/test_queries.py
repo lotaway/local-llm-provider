@@ -12,7 +12,7 @@ print("测试不同查询方式")
 print("=" * 80)
 
 llm = LocalLLModel()
-rag = LocalRAG(llm, data_path="./docs", use_hybrid_search=True, use_reranking=True)
+rag = LocalRAG(llm, use_hybrid_search=True, use_reranking=True)
 rag.init_rag_chain()
 
 # 测试不同的查询
