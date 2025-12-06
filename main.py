@@ -131,13 +131,13 @@ class ChatRequest(BaseModel):
     model: str
     messages: list[Message]
     stream: bool = False
-    enable_rag: bool = True
+    enable_rag: bool = False
 
 
 class CompletionRequest(BaseModel):
     model: str
     prompt: str
-    enable_rag: bool = True
+    enable_rag: bool = False
     
     
 class AgentRequest(BaseModel):
