@@ -190,6 +190,14 @@ class AgentDecisionRequest(BaseModel):
     data: dict = None
 
 
+class ImportDocumentRequest(BaseModel):
+    title: str
+    source: str
+    content: str
+    contentType: str = 'md'
+
+
+
 @app.get("/")
 async def index():
     return "Hello, Local LLM Provider!"
@@ -887,6 +895,30 @@ async def embeddings(req: EmbeddingRequest):
         "model": req.model,
         "usage": {"prompt_tokens": 0, "total_tokens": 0},
     }
+
+
+@app.post(f"/{VERSION}/rag/document/import")
+async def import_document(req: ImportDocumentRequest):
+    global local_rag
+    global local_model
+    
+    if local_model is None:
+        local_model = LocalLLModel()
+        
+    if local_rag is None:
+        local_rag = LocalRAG(local_model)
+        
+    try:
+        result = local_rag.add_document(
+            title=req.title,
+            content=req.content,
+            source=req.source,
+            content_type=req.contentType
+        )
+        return {"data": result}
+    except Exception as e:
+        logger.error(f"Import failed: {e}")
+        return {"error": str(e)}
 
 
 @app.post(f"/{VERSION}/chat/completions")

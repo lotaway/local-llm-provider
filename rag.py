@@ -143,6 +143,41 @@ class LocalRAG:
         )
         self.rag_chain = RunnableSequence(chain)
 
+    def add_document(self, title: str, content: str, source: str, content_type: str = "md"):
+        """Import a single document"""
+        filename = source if source else f"{title}.{content_type}"
+        filename = os.path.basename(filename) # Basic protection
+        file_path = os.path.join(self.data_path, "upload", filename)
+        
+        # Ensure directory exists
+        os.makedirs(os.path.join(self.data_path, "upload"), exist_ok=True)
+        
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+            
+        print(f"Document saved to {file_path}")
+
+        # Process document
+        doc = Document(page_content=content, metadata={"source": file_path, "title": title})
+        
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000, chunk_overlap=200
+        )
+        chunks = text_splitter.split_documents([doc])
+        
+        # Add to Vector Store
+        vectorstore = self.get_or_create_vectorstore()
+        if vectorstore:
+            vectorstore.add_documents(chunks)
+            print(f"Added {len(chunks)} chunks to Milvus")
+            
+        # Update in-memory documents for hybrid search
+        if self.use_hybrid_search:
+            self.all_documents.extend(chunks)
+             
+        return {"filename": filename, "chunks": len(chunks)}
+
+
 
     def load_base_documents(self):
         docs = []
