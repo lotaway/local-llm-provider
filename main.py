@@ -195,6 +195,13 @@ class ImportDocumentRequest(BaseModel):
     source: str
     content: str
     contentType: str = 'md'
+    bvid: int
+    cid: int
+
+
+class DocumentCheckRequest(BaseModel):
+    bvid: int
+    cid: int
 
 
 
@@ -897,6 +904,21 @@ async def embeddings(req: EmbeddingRequest):
     }
 
 
+@app.get(f"/{VERSION}/rag/document/check")
+async def check_document(req: DocumentCheckRequest):
+    global local_rag
+    global local_model
+    
+    if local_model is None:
+        local_model = LocalLLModel()
+        
+    if local_rag is None:
+        local_rag = LocalRAG(local_model)
+        
+    exists = local_rag.check_document_exists(req.bvid, req.cid)
+    return {"exists": exists}
+
+
 @app.post(f"/{VERSION}/rag/document/import")
 async def import_document(req: ImportDocumentRequest):
     global local_rag
@@ -909,13 +931,18 @@ async def import_document(req: ImportDocumentRequest):
         local_rag = LocalRAG(local_model)
         
     try:
+        if local_rag.check_document_exists(req.bvid, req.cid):
+            return {"data": None, "message": "Document already exists", "exists": True}
+
         result = local_rag.add_document(
             title=req.title,
             content=req.content,
             source=req.source,
-            content_type=req.contentType
+            content_type=req.contentType,
+            bvid=req.bvid,
+            cid=req.cid
         )
-        return {"data": result}
+        return {"data": result, "exists": False}
     except Exception as e:
         logger.error(f"Import failed: {e}")
         return {"error": str(e)}

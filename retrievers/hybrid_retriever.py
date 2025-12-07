@@ -1,34 +1,33 @@
 """Hybrid Retriever - Combines vector and keyword search"""
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
-from rank_bm25 import BM25Okapi
 import numpy as np
 
 
 class HybridRetriever(BaseRetriever):
     """
-    Hybrid retriever combining vector similarity and BM25 keyword search
-    Uses weighted linear fusion to combine results
+    Hybrid retriever combining vector similarity and BM25 keyword search.
+    Uses weighted linear fusion to combine results.
+    Refactored to support external BM25 retrievers (e.g. Elasticsearch).
     """
     
     # Declare fields as class attributes for Pydantic
     vectorstore: Any
-    documents: List[Document]
+    bm25_retriever: Any
     vector_weight: float = 0.7
     bm25_weight: float = 0.3
     k: int = 5
-    bm25: Any = None
     
-    # Allow arbitrary types (for vectorstore and bm25)
+    # Allow arbitrary types (for vectorstore and bm25_retriever)
     model_config = {"arbitrary_types_allowed": True}
     
     def __init__(
         self,
         vectorstore,
-        documents: List[Document],
+        bm25_retriever,
         vector_weight: float = 0.7,
         bm25_weight: float = 0.3,
         k: int = 5,
@@ -39,29 +38,20 @@ class HybridRetriever(BaseRetriever):
         
         Args:
             vectorstore: Vector store for semantic search
-            documents: All documents for BM25 indexing
+            bm25_retriever: Retriever specifically for BM25 (must support get_documents_with_scores)
             vector_weight: Weight for vector search results (0-1)
             bm25_weight: Weight for BM25 results (0-1)
             k: Number of documents to retrieve
         """
         super().__init__(
             vectorstore=vectorstore,
-            documents=documents,
+            bm25_retriever=bm25_retriever,
             vector_weight=vector_weight,
             bm25_weight=bm25_weight,
             k=k,
             **kwargs
         )
-        
-        # Build BM25 index
-        self._build_bm25_index()
-    
-    def _build_bm25_index(self):
-        """Build BM25 index from documents"""
-        # Tokenize documents
-        tokenized_docs = [doc.page_content.split() for doc in self.documents]
-        self.bm25 = BM25Okapi(tokenized_docs)
-    
+            
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun = None
     ) -> List[Document]:
@@ -76,19 +66,33 @@ class HybridRetriever(BaseRetriever):
             List of retrieved documents
         """
         # Vector search
-        vector_docs = self.vectorstore.similarity_search_with_score(query, k=self.k * 2)
+        try:
+             # Fetch more candidates for reranking/fusion
+            vector_docs = self.vectorstore.similarity_search_with_score(query, k=self.k * 2)
+        except Exception as e:
+            print(f"Vector search failed: {e}")
+            vector_docs = []
         
-        # BM25 search
-        tokenized_query = query.split()
-        bm25_scores = self.bm25.get_scores(tokenized_query)
-        
-        # Get top BM25 documents
-        top_bm25_indices = np.argsort(bm25_scores)[::-1][:self.k * 2]
-        bm25_docs = [(self.documents[i], bm25_scores[i]) for i in top_bm25_indices]
+        # BM25 search via external retriever
+        try:
+            # We assume the bm25_retriever has a method to get docs with scores
+            # If standard retriever, we might not get scores, so we'd need to assume a default or adapt.
+            # But our ESBM25Retriever has get_documents_with_scores.
+            if hasattr(self.bm25_retriever, "get_documents_with_scores"):
+                bm25_docs_with_scores = self.bm25_retriever.get_documents_with_scores(query)
+            else:
+                 # Fallback if standard retriever (no scores avail, assume 1.0 or rank-based)
+                 # This is a bit weak for fusion but a fallback.
+                docs = self.bm25_retriever.get_relevant_documents(query)
+                bm25_docs_with_scores = [(d, 1.0 / (i + 1)) for i, d in enumerate(docs)]
+                
+        except Exception as e:
+            print(f"BM25 search failed: {e}")
+            bm25_docs_with_scores = []
         
         # Normalize scores
         vector_scores_norm = self._normalize_scores([score for _, score in vector_docs])
-        bm25_scores_norm = self._normalize_scores([score for _, score in bm25_docs])
+        bm25_scores_norm = self._normalize_scores([score for _, score in bm25_docs_with_scores])
         
         # Combine results with weighted fusion
         doc_scores = {}
@@ -102,7 +106,7 @@ class HybridRetriever(BaseRetriever):
             }
         
         # Add BM25 results
-        for i, (doc, score) in enumerate(bm25_docs):
+        for i, (doc, score) in enumerate(bm25_docs_with_scores):
             doc_id = self._get_doc_id(doc)
             if doc_id in doc_scores:
                 doc_scores[doc_id]["score"] += bm25_scores_norm[i] * self.bm25_weight
@@ -131,5 +135,7 @@ class HybridRetriever(BaseRetriever):
     
     def _get_doc_id(self, doc: Document) -> str:
         """Get unique identifier for document"""
-        # Use content hash as ID
+        # Use content hash as ID. 
+        # Ideally this should match between Vector Store and ES. 
+        # If we use the same content splitting, it should be fine.
         return str(hash(doc.page_content))

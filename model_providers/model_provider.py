@@ -6,9 +6,8 @@ from transformers import (
     TextIteratorStreamer,
     StoppingCriteria,
     StoppingCriteriaList,
-    tokenization_utils_base,
 )
-from tokenization_utils_base import PreTrainedTokenizerBase
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from sentence_transformers import SentenceTransformer
 from accelerate import init_empty_weights, infer_auto_device_map
 import torch
@@ -59,6 +58,7 @@ class LocalLLModel:
     embedding_model_name: str = ""
     embedding_model: SentenceTransformer | None = None
     tokenizer: PreTrainedTokenizerBase | None
+    # mode: _BaseModelWithGenerate | None
 
     @staticmethod
     def get_available_memory():

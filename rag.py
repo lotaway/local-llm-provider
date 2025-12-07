@@ -23,7 +23,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableSequence
 from model_providers import LocalLLModel
 from typing import Any, Callable, List, cast
-from retrievers import ExpandedRetriever, HybridRetriever, Reranker
+from retrievers import ExpandedRetriever, HybridRetriever, Reranker, ESBM25Retriever
 from file_loaders import ChatGPTLoader, DeepSeekLoader
 
 
@@ -79,7 +79,10 @@ class LocalRAG:
         self.use_reranking = use_reranking
         self.retrieval_strategy = retrieval_strategy  # "adaptive", "hybrid", "vector"
         self.reranker = Reranker() if use_reranking else None
-        self.all_documents: List[Document] = []
+        
+        # Initialize ES Retriever
+        self.es_retriever = ESBM25Retriever(index_name="rag_documents") if use_hybrid_search else None
+
 
     def init_rag_chain(self):
         vectorstore = self.get_or_create_vectorstore()
@@ -89,10 +92,10 @@ class LocalRAG:
         # retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
         #retriever = ExpandedRetriever(vectorstore, search_kwargs={"k": 3})
         # Choose retrieval strategy
-        if self.use_hybrid_search and self.all_documents:
+        if self.use_hybrid_search and self.es_retriever:
             retriever = HybridRetriever(
                 vectorstore=vectorstore,
-                documents=self.all_documents,
+                bm25_retriever=self.es_retriever,
                 vector_weight=0.7,
                 bm25_weight=0.3,
                 k=10 if self.use_reranking else 5
@@ -143,7 +146,7 @@ class LocalRAG:
         )
         self.rag_chain = RunnableSequence(chain)
 
-    def add_document(self, title: str, content: str, source: str, content_type: str = "md"):
+    def add_document(self, title: str, content: str, source: str, content_type: str = "md", **kwargs):
         """Import a single document"""
         filename = source if source else f"{title}.{content_type}"
         filename = os.path.basename(filename) # Basic protection
@@ -157,25 +160,54 @@ class LocalRAG:
             
         print(f"Document saved to {file_path}")
 
-        # Process document
-        doc = Document(page_content=content, metadata={"source": file_path, "title": title})
+        metadata = {"source": file_path, "title": title}
+        metadata.update({k: v for k, v in kwargs.items() if v is not None})
+
+        doc = Document(page_content=content, metadata=metadata)
         
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, chunk_overlap=200
         )
         chunks = text_splitter.split_documents([doc])
-        
-        # Add to Vector Store
         vectorstore = self.get_or_create_vectorstore()
         if vectorstore:
             vectorstore.add_documents(chunks)
             print(f"Added {len(chunks)} chunks to Milvus")
             
-        # Update in-memory documents for hybrid search
-        if self.use_hybrid_search:
-            self.all_documents.extend(chunks)
+        # Update External Search Store (Elasticsearch)
+        if self.use_hybrid_search and self.es_retriever:
+            self.es_retriever.index_documents(chunks)
+            print(f"Added {len(chunks)} chunks to Elasticsearch")
              
         return {"filename": filename, "chunks": len(chunks)}
+
+
+    def check_document_exists(self, bvid: int, cid: int) -> bool:
+        """Check if document exists based on bvid and cid using Elasticsearch"""
+        if not self.es_retriever:
+            # If hybrid search is off, we can't easily check unless we query Milvus
+            # For now, let's assume if no ES, we skip check or implement Milvus check if needed.
+            # But the requirement is about avoiding memory usage.
+            return False
+            
+        try:
+            # Search in ES for matching metadata
+            query = {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"match": {"metadata.bvid": bvid}},
+                            {"match": {"metadata.cid": cid}}
+                        ]
+                    }
+                },
+                "size": 1
+            }
+            res = self.es_retriever.es_client.search(index=self.es_retriever.index_name, body=query)
+            return len(res['hits']['hits']) > 0
+        except Exception as e:
+            print(f"Error checking document existence in ES: {e}")
+            return False
 
 
 
@@ -367,70 +399,19 @@ class LocalRAG:
             if not docs:
                 raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档")
             
-            # Store documents for hybrid search
+            # Store documents for hybrid search (Index to ES)
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=1000, chunk_overlap=200
             )
-            self.all_documents = text_splitter.split_documents(docs)
+            chunks = text_splitter.split_documents(docs)
+            
+            if self.use_hybrid_search and self.es_retriever:
+                print("Indexing documents to Elasticsearch...")
+                self.es_retriever.index_documents(chunks)
             
             return self.build_vectorstore(docs)
         else:
             print(f"Collection '{self.collection}' already exists, reusing it.")
-            
-            # Load documents for hybrid search from Milvus instead of files
-            if self.use_hybrid_search and not self.all_documents:
-                print("Loading documents from Milvus for hybrid search...")
-                try:
-                    from pymilvus import Collection, DataType
-                    collection = Collection(self.collection)
-                    
-                    # Determine PK field and expression
-                    pk_field = collection.primary_field
-                    expr = ""
-                    if pk_field.dtype == DataType.INT64:
-                        expr = f"{pk_field.name} >= 0"
-                    elif pk_field.dtype == DataType.VARCHAR:
-                        expr = f"{pk_field.name} != ''"
-                    
-                    # Use standard query with pagination to fetch all docs
-                    self.all_documents = []
-                    offset = 0
-                    limit = 1000  # Fetch 1000 at a time
-                    
-                    while True:
-                        res = collection.query(
-                            expr=expr,
-                            output_fields=["text", "metadata"],
-                            offset=offset,
-                            limit=limit
-                        )
-                        
-                        if not res:
-                            break
-                            
-                        for item in res:
-                            content = item.get("text")
-                            if content:
-                                meta = item.get("metadata", {})
-                                # Handle metadata if it's stored as JSON string
-                                if isinstance(meta, str):
-                                    try:
-                                        meta = json.loads(meta)
-                                    except:
-                                        pass
-                                self.all_documents.append(Document(page_content=content, metadata=meta))
-                        
-                        if len(res) < limit:
-                            break
-                            
-                        offset += limit
-                                
-                    print(f"Loaded {len(self.all_documents)} documents from Milvus")
-                    
-                except Exception as e:
-                    print(f"Failed to load from Milvus: {e}")
-                    print("Warning: Hybrid search might be degraded (BM25 index empty)")
-            
             return Milvus(
                 embedding_function=embeddings,
                 connection_args={"host": self.host, "port": self.port},
