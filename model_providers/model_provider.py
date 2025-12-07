@@ -251,7 +251,7 @@ class LocalLLModel:
         prompt = self.format_prompt(messages)
         inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
         streamer = CancellableStreamer(
-            cast(PreTrainedTokenizerBase, self.tokenizer), skip_prompt=True, skip_special_tokens=True
+            cast(PreTrainedTokenizerBase, self.tokenizer), skip_prompt=True, skip_special_tokens=False
         )
         stopping_criteria = StoppingCriteriaList([streamer.stopping_criteria])
         generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=2000, stopping_criteria=stopping_criteria)
@@ -272,14 +272,18 @@ class LocalLLModel:
             if "max_new_tokens" not in kwargs:
                 kwargs["max_new_tokens"] = 3000
             outputs = self.model.generate(**inputs, **kwargs)
-            response = cast(PreTrainedTokenizerBase, self.tokenizer).decode(outputs[0], skip_special_tokens=True)
+            # transform input_ids to list to get length
+            input_len = inputs.input_ids.shape[1]
+            # slice only generated tokens
+            generated_tokens = outputs[0][input_len:]
+            response = cast(PreTrainedTokenizerBase, self.tokenizer).decode(generated_tokens, skip_special_tokens=False)
             result_queue.put(response)
             
         thread = Thread(target=generate_and_put)
         thread.start()
         thread.join()
         
-        return result_queue.get().split("Assistant:")[-1].strip()
+        return result_queue.get().strip()
 
     def complete(self, prompt: str):
         self.load_model()
