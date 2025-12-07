@@ -6,13 +6,17 @@ from transformers import (
     TextIteratorStreamer,
     StoppingCriteria,
     StoppingCriteriaList,
+    tokenization_utils_base,
 )
+from tokenization_utils_base import PreTrainedTokenizerBase
 from sentence_transformers import SentenceTransformer
 from accelerate import init_empty_weights, infer_auto_device_map
 import torch
 from threading import Thread
 import os
 import psutil
+import gc
+from typing import cast
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils import platform_is_mac
 
@@ -31,9 +35,11 @@ class CancellationStoppingCriteria(StoppingCriteria):
     def __init__(self):
         self.cancelled = False
 
-    def __call__(self, input_ids, scores, **kwargs):
-        return self.cancelled
-    
+    def __call__(self, input_ids, scores, **kwargs) -> torch.BoolTensor:
+        batch_size = input_ids.shape[0]
+        t = torch.tensor([self.cancelled] * batch_size, dtype=torch.bool, device=input_ids.device)
+        return cast(torch.BoolTensor, t)
+
     def cancel(self):
         self.cancelled = True
 
@@ -52,7 +58,7 @@ class LocalLLModel:
     cur_model_name: str = ""
     embedding_model_name: str = ""
     embedding_model: SentenceTransformer | None = None
-    # tokenizer: AutoTokenizer
+    tokenizer: PreTrainedTokenizerBase | None
 
     @staticmethod
     def get_available_memory():
@@ -118,8 +124,8 @@ class LocalLLModel:
         self.tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_model_name, local_files_only=True
         )
-        if self.tokenizer.pad_token_id is None:
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        if hasattr(self.tokenizer, "pad_token_id"):
+            cast(PreTrainedTokenizerBase, self.tokenizer).pad_token_id = cast(PreTrainedTokenizerBase, self.tokenizer).eos_token_id
         is_mac = platform_is_mac()
         if is_mac:
             device_map = "auto"
@@ -225,7 +231,7 @@ class LocalLLModel:
 
     def format_prompt(self, messages: list[dict]):
         if hasattr(self.tokenizer, "apply_chat_template"):
-            prompt = self.tokenizer.apply_chat_template(
+            prompt = cast(PreTrainedTokenizerBase, self.tokenizer).apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
         else:
@@ -243,9 +249,9 @@ class LocalLLModel:
     def chat(self, messages: list[dict], **kwargs):
         self.load_model()
         prompt = self.format_prompt(messages)
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
         streamer = CancellableStreamer(
-            self.tokenizer, skip_prompt=True, skip_special_tokens=True
+            cast(PreTrainedTokenizerBase, self.tokenizer), skip_prompt=True, skip_special_tokens=True
         )
         stopping_criteria = StoppingCriteriaList([streamer.stopping_criteria])
         generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=2000, stopping_criteria=stopping_criteria)
@@ -257,7 +263,7 @@ class LocalLLModel:
     def chat_at_once(self, messages: list[dict], **kwargs) -> str:
         self.load_model()
         prompt = self.format_prompt(messages)
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
         
         from queue import Queue
         result_queue = Queue()
@@ -266,7 +272,7 @@ class LocalLLModel:
             if "max_new_tokens" not in kwargs:
                 kwargs["max_new_tokens"] = 3000
             outputs = self.model.generate(**inputs, **kwargs)
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            response = cast(PreTrainedTokenizerBase, self.tokenizer).decode(outputs[0], skip_special_tokens=True)
             result_queue.put(response)
             
         thread = Thread(target=generate_and_put)
@@ -277,9 +283,9 @@ class LocalLLModel:
 
     def complete(self, prompt: str):
         self.load_model()
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
         streamer = TextIteratorStreamer(
-            self.tokenizer, skip_prompt=True, skip_special_tokens=True
+            cast(PreTrainedTokenizerBase, self.tokenizer), skip_prompt=True, skip_special_tokens=True
         )
         generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=200)
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
@@ -288,9 +294,9 @@ class LocalLLModel:
 
     def complete_at_once(self, prompt: str) -> str:
         self.load_model()
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
         outputs = self.model.generate(**inputs, max_new_tokens=3000)
-        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        return cast(PreTrainedTokenizerBase, self.tokenizer).decode(outputs[0], skip_special_tokens=True)
     
     def extract_after_think(self, text: str) -> str:
         think_pos = text.find("</think>")
