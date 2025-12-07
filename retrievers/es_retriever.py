@@ -29,8 +29,7 @@ class ESBM25Retriever(BaseRetriever):
         index_name: str = "rag_documents",
         host: str = os.getenv("ES_HOST", "localhost"),
         port: int = int(os.getenv("ES_PORT", 9200)),
-        username: Optional[str] = os.getenv("ES_USERNAME"),
-        password: Optional[str] = os.getenv("ES_PASSWORD"),
+        api_key: Optional[str] = os.getenv("ES_API_KEY"),
         k: int = 5, 
         **kwargs
     ):
@@ -41,15 +40,14 @@ class ESBM25Retriever(BaseRetriever):
             index_name: Name of the Elasticsearch index.
             host: Elasticsearch host.
             port: Elasticsearch port.
-            username: Elasticsearch username.
-            password: Elasticsearch password.
+            api_key: Elasticsearch service account token.
             k: Number of documents to retrieve.
         """
         
         hosts = [f"http://{host}:{port}"]
         
         if username and password:
-            es_client = Elasticsearch(hosts, basic_auth=(username, password))
+            es_client = Elasticsearch(hosts, api_key=api_key)
         else:
             es_client = Elasticsearch(hosts)
             
