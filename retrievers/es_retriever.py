@@ -17,7 +17,7 @@ class ESBM25Retriever(BaseRetriever):
     Indexes documents into Elasticsearch and retrieves them using BM25 scoring.
     """
     
-    es_client: Any
+    es_client: Elasticsearch
     index_name: str
     k: int = 5
     
@@ -47,23 +47,23 @@ class ESBM25Retriever(BaseRetriever):
         # Initialize Elasticsearch client compatible with v8.x
         try:
             if api_key:
-                es_client = Elasticsearch(
+                self.es_client = Elasticsearch(
                     f"http://{host}:{port}",
                     api_key=api_key
                 )
             else:
-                es_client = Elasticsearch(
+                self.es_client = Elasticsearch(
                     f"http://{host}:{port}"
                 )
             
             # Test connection
-            info = es_client.info()
+            info = self.es_client.info()
             logger.info(f"Connected to Elasticsearch {info['version']['number']} at {host}:{port}")
         except Exception as e:
             logger.error(f"Failed to connect to Elasticsearch at {host}:{port}: {e}")
             raise
             
-        super().__init__(es_client=es_client, index_name=index_name, k=k, **kwargs)
+        super().__init__(es_client=self.es_client, index_name=index_name, k=k, **kwargs)
         
         self._ensure_index_exists()
 
