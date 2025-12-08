@@ -81,7 +81,7 @@ class LocalRAG:
         self.reranker = Reranker() if use_reranking else None
         
         # Initialize ES Retriever
-        self.es_retriever = ESBM25Retriever(index_name="rag_documents") if use_hybrid_search else None
+        self.es_retriever = ESBM25Retriever() if use_hybrid_search else None
 
 
     def init_rag_chain(self):

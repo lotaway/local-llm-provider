@@ -17,8 +17,8 @@ class ESBM25Retriever(BaseRetriever):
     Indexes documents into Elasticsearch and retrieves them using BM25 scoring.
     """
     
-    es_client: Elasticsearch
-    index_name: str
+    es_client: Optional[Elasticsearch] = None
+    index_name: Optional[str] = None
     k: int = 5
     
     # Allow arbitrary types for es_client
@@ -26,7 +26,7 @@ class ESBM25Retriever(BaseRetriever):
 
     def __init__(
         self,
-        index_name: str = "rag_documents",
+        index_name: str = os.getenv("ES_INDEX_NAME", "rag_docs"),
         host: str = os.getenv("ES_HOST", "localhost"),
         port: int = int(os.getenv("ES_PORT", 9200)),
         api_key: Optional[str] = os.getenv("ES_API_KEY"),
@@ -43,8 +43,9 @@ class ESBM25Retriever(BaseRetriever):
             api_key: Elasticsearch service account token.
             k: Number of documents to retrieve.
         """
-        
-        # Initialize Elasticsearch client compatible with v8.x
+        super().__init__(**kwargs)
+        self.index_name = index_name
+        self.k = k
         try:
             if api_key:
                 self.es_client = Elasticsearch(
@@ -55,16 +56,12 @@ class ESBM25Retriever(BaseRetriever):
                 self.es_client = Elasticsearch(
                     f"http://{host}:{port}"
                 )
-            
-            # Test connection
             info = self.es_client.info()
             logger.info(f"Connected to Elasticsearch {info['version']['number']} at {host}:{port}")
         except Exception as e:
             logger.error(f"Failed to connect to Elasticsearch at {host}:{port}: {e}")
             raise
             
-        super().__init__(es_client=self.es_client, index_name=index_name, k=k, **kwargs)
-        
         self._ensure_index_exists()
 
     def _ensure_index_exists(self):
@@ -135,7 +132,7 @@ class ESBM25Retriever(BaseRetriever):
             logger.error(f"Bulk indexing failed: {e}")
 
     def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun = None
+        self, query: str, *, run_manager: Optional[CallbackManagerForRetrieverRun] = None
     ) -> List[Document]:
         """
         Retrieve documents using BM25 search from Elasticsearch.
