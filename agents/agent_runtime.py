@@ -1,6 +1,7 @@
 """Agent Runtime for managing agent execution flow"""
 
 import os
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -261,6 +262,38 @@ class AgentRuntime:
         
         return result
 
+    def _update_process_file(self, plan: List[Dict[str, Any]], completed_tasks: List[str]):
+        """
+        Update process.md with current execution status
+        
+        Args:
+            plan: List of task definitions from planning agent
+            completed_tasks: List of completed task IDs
+        """
+        try:
+            original_query = self.state.context.get("original_query", "任务清单")
+            # If query is too long, truncate it
+            title = original_query[:50] + "..." if len(original_query) > 50 else original_query
+            
+            content = [f"# {title}"]
+            
+            for task in plan:
+                task_id = task.get("task_id", "")
+                description = task.get("description", "")
+                
+                is_completed = task_id in completed_tasks
+                checkbox = "[x]" if is_completed else "[ ]"
+                
+                content.append(f"- {checkbox} {description}")
+            
+            # Store in context instead of writing to file
+            process_checklist = "\n".join(content)
+            self.state.context["process_checklist"] = process_checklist
+            self.logger.info(f"\nExample process.md content stored in context:\n{process_checklist}")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to update process checklist: {e}")
+
     def _run_loop(self, current_input: Any, stream_callback=None) -> RuntimeState:
         """Internal execution loop"""
         self.logger.debug(f"Entering execution loop with status: {self.state.status.value}")
@@ -333,6 +366,27 @@ class AgentRuntime:
                         "next_agent": result.next_agent,
                         "message": result.message
                     })
+                
+                # Update process.md if critical agents completed
+                if result.status == AgentStatus.SUCCESS:
+                    should_update = False
+                    
+                    if agent_name == "planning":
+                        # Planning agent completed, we should have a plan
+                        # Try to get plan from metadata or context
+                        plan = result.metadata.get("plan") or self.state.context.get("current_plan")
+                        if plan:
+                            should_update = True
+                            
+                    elif agent_name == "verification":
+                        # Verification completed, a task might be done
+                        should_update = True
+                        
+                    if should_update:
+                        plan = self.state.context.get("current_plan", [])
+                        completed_tasks = self.state.context.get("completed_tasks", [])
+                        if plan:
+                            self._update_process_file(plan, completed_tasks)
                 
                 # Handle result status
                 if result.status == AgentStatus.COMPLETE:
