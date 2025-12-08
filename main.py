@@ -195,12 +195,12 @@ class ImportDocumentRequest(BaseModel):
     source: str
     content: str
     contentType: str = 'md'
-    bvid: int
+    bvid: str
     cid: int
 
 
 class DocumentCheckRequest(BaseModel):
-    bvid: int
+    bvid: str
     cid: int
 
 
