@@ -182,7 +182,7 @@ class LocalRAG:
         return {"filename": filename, "chunks": len(chunks)}
 
 
-    def check_document_exists(self, bvid: int, cid: int) -> bool:
+    def check_document_exists(self, bvid: str, cid: int) -> bool:
         """Check if document exists based on bvid and cid using Elasticsearch"""
         if not self.es_retriever:
             # If hybrid search is off, we can't easily check unless we query Milvus

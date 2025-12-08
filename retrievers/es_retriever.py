@@ -44,12 +44,24 @@ class ESBM25Retriever(BaseRetriever):
             k: Number of documents to retrieve.
         """
         
-        hosts = [f"http://{host}:{port}"]
-        
-        if username and password:
-            es_client = Elasticsearch(hosts, api_key=api_key)
-        else:
-            es_client = Elasticsearch(hosts)
+        # Initialize Elasticsearch client compatible with v8.x
+        try:
+            if api_key:
+                es_client = Elasticsearch(
+                    f"http://{host}:{port}",
+                    api_key=api_key
+                )
+            else:
+                es_client = Elasticsearch(
+                    f"http://{host}:{port}"
+                )
+            
+            # Test connection
+            info = es_client.info()
+            logger.info(f"Connected to Elasticsearch {info['version']['number']} at {host}:{port}")
+        except Exception as e:
+            logger.error(f"Failed to connect to Elasticsearch at {host}:{port}: {e}")
+            raise
             
         super().__init__(es_client=es_client, index_name=index_name, k=k, **kwargs)
         
@@ -181,7 +193,12 @@ class ESBM25Retriever(BaseRetriever):
         }
 
         try:
-            response = self.es_client.search(index=self.index_name, body=search_query)
+            # elasticsearch-py 8.x/9.x: use direct parameters instead of body
+            response = self.es_client.search(
+                index=self.index_name,
+                query=search_query["query"],
+                size=search_query["size"]
+            )
             hits = response['hits']['hits']
             
             results = []

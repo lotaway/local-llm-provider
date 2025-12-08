@@ -26,4 +26,4 @@ langchain-milvus>=0.3.0
 redis>=5.0.0
 psycopg2-binary>=2.9.0
 python-multipart>=0.0.20
-elasticsearch>=8.0.0
+elasticsearch>=9.0.0
