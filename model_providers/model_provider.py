@@ -19,6 +19,8 @@ from typing import cast
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils import platform_is_mac
 from enum import Enum
+import asyncio
+from collections import deque
 
 project_root = os.path.abspath(os.path.dirname(__file__))
 models = {
@@ -59,6 +61,42 @@ class CancellableStreamer(TextIteratorStreamer):
 
     def cancel(self):
         self.stopping_criteria.cancel()
+
+class Scheduler:
+    def __init__(self, llm, max_batch=int(os.getenv("MAX_BATCH", 4))):
+        self.llm = llm
+        self.max_batch = max_batch
+        self.waiting = deque()
+        self.running = {}
+        self.lock = asyncio.Lock()
+
+    async def register(self, payload):
+        q = asyncio.Queue()
+        async with self.lock:
+            rid = id(q)
+            self.waiting.append((rid, payload, q))
+            self.running[rid] = q
+        return rid, q
+
+    async def loop(self):
+        while True:
+            await asyncio.sleep(0)
+            batch = []
+            async with self.lock:
+                while self.waiting and len(batch) < self.max_batch:
+                    batch.append(self.waiting.popleft())
+            if not batch:
+                continue
+            out = await self.llm.generate_next_token(batch)
+            for rid, token in out.items():
+                q = self.running.get(rid)
+                if not q:
+                    continue
+                await q.put(token)
+                if token is None:
+                    async with self.lock:
+                        self.running.pop(rid, None)
+
 
 
 class LocalLLModel:
@@ -110,15 +148,17 @@ class LocalLLModel:
         embedding_model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
     ):
         self.embedding_model_name = embedding_model_name
+        self.cur_model_name = model_name
         self.model = None
         self.tokenizer = None
+        self.scheduler = Scheduler(self)
+        self._state = {}
+        asyncio.create_task(self.scheduler.loop())
+        
 
     def load_model(self):
         if self.model is not None and self.tokenizer is not None:
             return
-
-        if self.cur_model_name == "":
-             self.cur_model_name = "deepseek-r1:16b"
 
         model_path = models[self.cur_model_name]
         tokenizer_model_name = models["deepseek-r1:16b"]
@@ -198,7 +238,10 @@ class LocalLLModel:
                         text_parts.append(part.get(ContentType.TEXT.value, ""))
                     # Optional: Add placeholder for images if needed for text models
                     elif part.get("type") == ContentType.IMAGE_URL.value:
-                        text_parts.append(f"[{part.get(ContentType.IMAGE_URL.value, "")}]")
+                        text_parts.append(f"[{part.get(ContentType.IMAGE_URL.value, '')}]")
+                    # Optional: Add placeholder for images if needed for text models
+                    elif part.get("type") == ContentType.INPUT_IMAGE.value:
+                        text_parts.append(f"[{part.get(ContentType.INPUT_IMAGE.value, '')}]")
             return "".join(text_parts)
         return str(content)
 
@@ -287,6 +330,49 @@ class LocalLLModel:
                     prompt += f"Assistant: {content_text}\n"
             prompt += "Assistant:"
         return prompt
+    
+    async def _make_generator(self, request_id, payload):
+        prompt = payload["prompt"]
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
+        generated = inputs
+        while True:
+            with torch.no_grad():
+                out = self.model(**generated)
+            next_token = torch.argmax(out.logits[:, -1], dim=-1).unsqueeze(0)
+            text = cast(PreTrainedTokenizerBase, self.tokenizer).decode(next_token[0])
+            yield text
+            generated = {
+                "input_ids": torch.cat([generated["input_ids"], next_token], dim=1)
+            }
+            if next_token[0].item() == cast(PreTrainedTokenizerBase, self.tokenizer).eos_token_id:
+                break
+            
+            
+    async def generate_next_token(self, batch):
+        out = {}
+        for rid, payload, _ in batch:
+            if rid not in self._state:
+                self._state[rid] = self._make_generator(rid, payload)
+            gen = self._state[rid]
+            try:
+                token = await gen.__anext__()
+                out[rid] = token
+            except StopAsyncIteration:
+                out[rid] = None
+                self._state.pop(rid, None)
+        return out
+
+    
+    async def chat_in_scheduler(self, messages, **kwargs):
+        self.load_model()
+        prompt = self.format_prompt(messages)
+        rid, q = await self.scheduler.register({"prompt": prompt})
+        while True:
+            t = await q.get()
+            if t is None:
+                break
+            yield t
+    
 
     def chat(self, messages: list[dict], **kwargs):
         self.load_model()
