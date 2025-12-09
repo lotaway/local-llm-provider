@@ -18,6 +18,7 @@ import gc
 from typing import cast
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils import platform_is_mac
+from enum import Enum
 
 project_root = os.path.abspath(os.path.dirname(__file__))
 models = {
@@ -29,6 +30,14 @@ models = {
         project_root, "..", "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"
     ),
 }
+
+class ContentType(Enum):
+    TEXT = "text"
+    IMAGE_URL = "image_url"
+    INPUT_IMAGE = "input_url"
+    INPUT_AUDIO = "input_audio"
+    OUTPUT_AUDIO = "output_audio"
+    
 
 class CancellationStoppingCriteria(StoppingCriteria):
     def __init__(self):
@@ -185,11 +194,11 @@ class LocalLLModel:
             text_parts = []
             for part in content:
                 if isinstance(part, dict):
-                    if part.get("type") == "text":
-                        text_parts.append(part.get("text", ""))
+                    if part.get("type") == ContentType.TEXT.value:
+                        text_parts.append(part.get(ContentType.TEXT.value, ""))
                     # Optional: Add placeholder for images if needed for text models
-                    # elif part.get("type") == "image_url":
-                    #     text_parts.append("[Image]")
+                    elif part.get("type") == ContentType.IMAGE_URL.value:
+                        text_parts.append(f"[{part.get(ContentType.IMAGE_URL.value, "")}]")
             return "".join(text_parts)
         return str(content)
 
@@ -296,8 +305,8 @@ class LocalLLModel:
             except Exception as e:
                 print(f"Generation error: {e}")
             finally:
-                streamer.on_finalized_text()
-                # streamer.end()
+                # streamer.on_finalized_text("<|END|>")
+                streamer.end()
 
         thread = Thread(target=safe_generate)
         thread.start()
