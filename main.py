@@ -132,6 +132,7 @@ class ChatRequest(BaseModel):
     messages: list[Message]
     stream: bool = False
     enable_rag: bool = False
+    files: list[str] = []  # List of file IDs from upload endpoint
 
 
 class CompletionRequest(BaseModel):
@@ -277,22 +278,15 @@ async def query_rag(request: Request):
 
 @app.post(f"/{VERSION}/upload")
 async def upload_file(file: UploadFile = File(...)):
-    """Upload a file for agent context"""
-    upload_dir = os.path.join(os.getcwd(), os.getenv("UPLOAD_DIR", "uploads"))
-    os.makedirs(upload_dir, exist_ok=True)
-    
-    file_id = str(uuid.uuid4())
-    # Save with ID prefix to avoid collisions and allow ID lookup
-    saved_filename = f"{file_id}_{file.filename}"
-    file_path = os.path.join(upload_dir, saved_filename)
+    from utils import FileProcessor
     
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        file_processor = FileProcessor()
+        file_id, filename, _ = file_processor.save_uploaded_file(file.file, file.filename)
         
         return {
             "id": file_id,
-            "filename": file.filename,
+            "filename": filename,
             "message": "File uploaded successfully"
         }
     except Exception as e:
@@ -950,12 +944,22 @@ async def import_document(req: ImportDocumentRequest):
 
 @app.post(f"/{VERSION}/chat/completions")
 async def chat_completions(req: ChatRequest, request: Request):
-    """openai chat/edit/apply"""
+    """openai chat/edit/apply with multimodal support"""
     global local_model
     global local_rag
     
     if local_model is None:
         local_model = LocalLLModel(req.model)
+    
+    # Process files if provided using FileProcessor
+    if req.files:
+        from utils import FileProcessor
+        
+        upload_dir = os.path.join(os.getcwd(), os.getenv("UPLOAD_DIR", "uploads"))
+        file_processor = FileProcessor(upload_dir)
+        
+        # Inject file context to messages
+        req.messages = file_processor.inject_file_context_to_messages(req.messages, req.files)
         
     if req.enable_rag:
         if local_rag is None:
