@@ -178,11 +178,27 @@ class LocalLLModel:
         gc.collect()
         torch.cuda.empty_cache()
 
+    def _extract_text_from_content(self, content: str | list) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict):
+                    if part.get("type") == "text":
+                        text_parts.append(part.get("text", ""))
+                    # Optional: Add placeholder for images if needed for text models
+                    # elif part.get("type") == "image_url":
+                    #     text_parts.append("[Image]")
+            return "".join(text_parts)
+        return str(content)
+
     def group_turns(self, messages: list[dict]) -> list[str]:
         turns: list[str] = []
         buf: list[str] = []
         for m in messages:
-            buf.append(f"{m['role']}: {m['content']}")
+            content_text = self._extract_text_from_content(m['content'])
+            buf.append(f"{m['role']}: {content_text}")
             if m["role"] == "assistant":
                 turns.append("\n".join(buf))
                 buf = []
@@ -213,16 +229,18 @@ class LocalLLModel:
         if  hasattr(prompt_content, 'messages'):
             return self.format_messages(prompt_content.messages)
         if isinstance(prompt_content, dict):
-            return prompt_content
-        text = str(prompt_content)
-        prompt_content = [{"role": "user", "content": text}]
-        
-        # 转换为模型需要的 messages 格式
+            prompt_content = [prompt_content]
+        elif not isinstance(prompt_content, list):
+            text = str(prompt_content)
+            prompt_content = [{"role": "user", "content": text}]
         formatted_messages: list[dict] = []
         for msg in prompt_content:
             if hasattr(msg, 'type'):
                 role = "user" if msg.type == "human" else "assistant" if msg.type == "ai" else "system"
                 content = msg.content
+            elif isinstance(msg, dict):
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
             else:
                 role = "user"
                 content = str(msg)
@@ -231,18 +249,33 @@ class LocalLLModel:
 
     def format_prompt(self, messages: list[dict]):
         if hasattr(self.tokenizer, "apply_chat_template"):
-            prompt = cast(PreTrainedTokenizerBase, self.tokenizer).apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
+            # TODO: Handle potential errors if tokenizer doesn't support list content
+            try:
+                # Try handling list content directly (for VLM support)
+                prompt = cast(PreTrainedTokenizerBase, self.tokenizer).apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            except Exception:
+                # Fallback: flatten content to text for text-only tokenizers
+                flattened_messages = []
+                for m in messages:
+                    flattened_messages.append({
+                        "role": m["role"],
+                        "content": self._extract_text_from_content(m["content"])
+                    })
+                prompt = cast(PreTrainedTokenizerBase, self.tokenizer).apply_chat_template(
+                    flattened_messages, tokenize=False, add_generation_prompt=True
+                )
         else:
             prompt = ""
             for msg in messages:
+                content_text = self._extract_text_from_content(msg['content'])
                 if msg["role"] == "system":
-                    prompt += f"System: {msg['content']}\n"
+                    prompt += f"System: {content_text}\n"
                 elif msg["role"] == "user":
-                    prompt += f"User: {msg['content']}\n"
+                    prompt += f"User: {content_text}\n"
                 elif msg["role"] == "assistant":
-                    prompt += f"Assistant: {msg['content']}\n"
+                    prompt += f"Assistant: {content_text}\n"
             prompt += "Assistant:"
         return prompt
 
@@ -256,7 +289,17 @@ class LocalLLModel:
         stopping_criteria = StoppingCriteriaList([streamer.stopping_criteria])
         generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=2000, stopping_criteria=stopping_criteria)
         generation_kwargs.update(kwargs)
-        thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
+        
+        def safe_generate():
+            try:
+                self.model.generate(**generation_kwargs)
+            except Exception as e:
+                print(f"Generation error: {e}")
+            finally:
+                streamer.on_finalized_text()
+                # streamer.end()
+
+        thread = Thread(target=safe_generate)
         thread.start()
         return streamer
 

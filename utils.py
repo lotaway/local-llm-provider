@@ -268,15 +268,9 @@ class FileProcessor:
         
         return file_contents
     
-    def format_file_context(self, file_contents: List[Dict]) -> str:
+    def format_text_context(self, file_contents: List[Dict]) -> str:
         """
-        Format processed file contents into a context string for LLM.
-        
-        Args:
-            file_contents: List of processed file data
-            
-        Returns:
-            Formatted string to append to user message
+        Format text-based file contents into a context string.
         """
         if not file_contents:
             return ""
@@ -284,15 +278,7 @@ class FileProcessor:
         file_context_parts = []
         
         for fc in file_contents:
-            if fc["type"] == "image":
-                # For images, note that we have the image 
-                # (actual multimodal processing depends on model support)
-                file_context_parts.append(
-                    f"\n\n[Image: {fc['name']} - {fc['mime_type']}]"
-                )
-                # Note: Full multimodal image processing would require a vision-capable model
-                
-            elif fc["type"] == "document" and "content" in fc:
+            if fc["type"] == "document" and "content" in fc:
                 # For text documents, include the content
                 file_context_parts.append(
                     f"\n\n--- Document: {fc['name']} ---\n{fc['content']}\n--- End of {fc['name']} ---"
@@ -308,6 +294,7 @@ class FileProcessor:
     def inject_file_context_to_messages(self, messages: List, file_ids: List[str]) -> List:
         """
         Process files and inject their context into the last user message.
+        Supports multimodal (image) content injection.
         
         Args:
             messages: List of message objects with 'role' and 'content' attributes
@@ -318,23 +305,57 @@ class FileProcessor:
         """
         if not file_ids:
             return messages
-        
-        # Process all files
         file_contents = self.process_files(file_ids)
-        
         if not file_contents:
             return messages
-        
-        # Format file context
-        file_context = self.format_file_context(file_contents)
-        
-        if not file_context:
-            return messages
-        
-        # Find the last user message and append file context
+        images = [f for f in file_contents if f["type"] == "image"]
+        others = [f for f in file_contents if f["type"] != "image"]
+        text_context = self.format_text_context(others)
+        target_msg = None
         for i in range(len(messages) - 1, -1, -1):
             if messages[i].role == "user":
-                messages[i].content = messages[i].content + file_context
+                target_msg = messages[i]
                 break
+        if not target_msg:
+            return messages
+        if images:
+            original_content = target_msg.content
+            new_content = []
+            combined_text = ""
+            if isinstance(original_content, str):
+                combined_text = original_content
+            elif isinstance(original_content, list):
+                for part in original_content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                         combined_text += part.get("text", "")
+            if text_context:
+                combined_text += text_context
+            if combined_text:
+                new_content.append({
+                    "type": "text",
+                    "text": combined_text
+                })
+            for img in images:
+                new_content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{img['mime_type']};base64,{img['data']}"
+                    }
+                })
+            target_msg.content = new_content
+        
+        else:
+            if text_context:
+                if isinstance(target_msg.content, str):
+                    target_msg.content += text_context
+                elif isinstance(target_msg.content, list):
+                     found = False
+                     for part in target_msg.content:
+                         if isinstance(part, dict) and part.get("type") == "text":
+                             part["text"] = part.get("text", "") + text_context
+                             found = True
+                             break
+                     if not found:
+                         target_msg.content.append({"type": "text", "text": text_context})
         
         return messages

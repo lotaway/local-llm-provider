@@ -121,7 +121,7 @@ async def verify_admin_token(request: Request, call_next):
 
 class Message(BaseModel):
     role: str
-    content: str
+    content: str | list
 
 
 import queue

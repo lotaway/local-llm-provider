@@ -435,31 +435,34 @@ class LocalRAG:
             # Non-streaming mode - use the existing chain
             return cast(RunnableSequence, self.rag_chain).invoke(question)
         else:
-            # Streaming mode - manually execute chain steps with streaming
-            # Step 1: Retrieve context documents
+            print("Starting RAG generation...")
             if hasattr(self, "retrieval_runnable"):
                 retrieval_runnable = self.retrieval_runnable
             else:
-                # Fallback: try to reconstruct or access from chain (risky)
-                # Re-initialize to ensure retrieval_runnable is set
+                print("Initializing RAG chain for retrieval...")
                 self.init_rag_chain()
                 retrieval_runnable = self.retrieval_runnable
-                
+            print("Retrieving context...")
             context_docs = retrieval_runnable.invoke(question)
+            print(f"Retrieved {len(context_docs)} docs")
             context = "\n\n".join([doc.page_content for doc in context_docs])
-            
-            # Step 2: Format prompt
+            print("Formatting prompt...")
             prompt_str = ChatPromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
             prompt_value = prompt_str.invoke({"context": context, "question": question})
             messages = self.llm.format_messages(prompt_value)
-            
-            # Step 3: Stream LLM response
+            print("Starting LLM chat stream...")
             streamer = self.llm.chat(messages, temperature=0.1, top_p=0.95, top_k=40)
             full_response = ""
-            for chunk in streamer:
-                if chunk:
-                    full_response += chunk
-                    stream_callback(chunk)
+            print("Entering stream loop...")
+            try:
+                for chunk in streamer:
+                    if chunk:
+                        full_response += chunk
+                        stream_callback(chunk)
+            except Exception as e:
+                print(f"Stream error: {e}")
+                raise e
+            print("Stream finished.")
             
             return self.llm.extract_after_think(full_response)
 
