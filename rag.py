@@ -150,17 +150,17 @@ class LocalRAG:
         """Import a single document"""
         filename = source if source else f"{title}.{content_type}"
         filename = os.path.basename(filename) # Basic protection
-        file_path = os.path.join(self.data_path, "upload", filename)
+        file_path = os.path.join(self.data_path, "uploads", filename)
         
         # Ensure directory exists
-        os.makedirs(os.path.join(self.data_path, "upload"), exist_ok=True)
+        os.makedirs(os.path.join(self.data_path, "uploads"), exist_ok=True)
         
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
             
         print(f"Document saved to {file_path}")
 
-        metadata = {"source": file_path, "title": title}
+        metadata = {"source": source, "title": title}
         metadata.update({k: v for k, v in kwargs.items() if v is not None})
 
         doc = Document(page_content=content, metadata=metadata)

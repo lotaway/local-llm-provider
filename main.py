@@ -278,7 +278,7 @@ async def query_rag(request: Request):
 @app.post(f"/{VERSION}/upload")
 async def upload_file(file: UploadFile = File(...)):
     """Upload a file for agent context"""
-    upload_dir = os.path.join(os.getcwd(), "uploads")
+    upload_dir = os.path.join(os.getcwd(), os.getenv("UPLOAD_DIR", "uploads"))
     os.makedirs(upload_dir, exist_ok=True)
     
     file_id = str(uuid.uuid4())
