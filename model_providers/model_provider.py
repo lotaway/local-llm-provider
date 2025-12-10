@@ -31,6 +31,9 @@ models = {
     "deepseek-r1:32b": os.path.join(
         project_root, "..", "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"
     ),
+    "deepseek-janus:7b": os.path.join(
+        project_root, "..", "models", "deepseek-ai", "Janus-Pro-7B"
+    ),
 }
 
 
