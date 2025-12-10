@@ -54,7 +54,7 @@ class JanusModel:
             dtype = torch.float32
 
         self.vl_gpt: MultiModalityCausalLM = AutoModelForCausalLM.from_pretrained(
-            self.model_path, trust_remote_code=True
+            self.model_path, trust_remote_code=False
         )
         self.vl_gpt = self.vl_gpt.to(dtype).to(device).eval()
 
