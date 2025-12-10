@@ -2,20 +2,18 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    AutoConfig,
     TextIteratorStreamer,
     StoppingCriteria,
     StoppingCriteriaList,
 )
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from sentence_transformers import SentenceTransformer
-from accelerate import init_empty_weights, infer_auto_device_map
 import torch
 from threading import Thread
 import os
 import psutil
 import gc
-from typing import cast
+from typing import cast, Callable, Awaitable
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils import platform_is_mac
 from enum import Enum
@@ -33,13 +31,14 @@ models = {
     ),
 }
 
+
 class ContentType(Enum):
     TEXT = "text"
     IMAGE_URL = "image_url"
     INPUT_IMAGE = "input_url"
     INPUT_AUDIO = "input_audio"
     OUTPUT_AUDIO = "output_audio"
-    
+
 
 class CancellationStoppingCriteria(StoppingCriteria):
     def __init__(self):
@@ -47,7 +46,9 @@ class CancellationStoppingCriteria(StoppingCriteria):
 
     def __call__(self, input_ids, scores, **kwargs) -> torch.BoolTensor:
         batch_size = input_ids.shape[0]
-        t = torch.tensor([self.cancelled] * batch_size, dtype=torch.bool, device=input_ids.device)
+        t = torch.tensor(
+            [self.cancelled] * batch_size, dtype=torch.bool, device=input_ids.device
+        )
         return cast(torch.BoolTensor, t)
 
     def cancel(self):
@@ -62,11 +63,12 @@ class CancellableStreamer(TextIteratorStreamer):
     def cancel(self):
         self.stopping_criteria.cancel()
 
-class Scheduler:
-    def __init__(self, llm, max_batch=int(os.getenv("MAX_BATCH", 4))):
-        self.llm = llm
+
+class Scheduler[_T]:
+    def __init__(self, handler: Callable[[list], Awaitable[dict]], max_batch=int(os.getenv("MAX_BATCH", 4))):
+        self.handler = handler
         self.max_batch = max_batch
-        self.waiting = deque()
+        self.waiting = cast(deque[tuple[int, _T, asyncio.Queue[_T]]], deque())
         self.running = {}
         self.lock = asyncio.Lock()
 
@@ -77,6 +79,13 @@ class Scheduler:
             self.waiting.append((rid, payload, q))
             self.running[rid] = q
         return rid, q
+    
+    async def quit(self, rid: int):
+        async with self.lock:
+            for i in self.waiting:
+                if i[0] == rid:
+                    self.waiting.remove(i)
+                    break
 
     async def loop(self):
         while True:
@@ -87,7 +96,7 @@ class Scheduler:
                     batch.append(self.waiting.popleft())
             if not batch:
                 continue
-            out = await self.llm.generate_next_token(batch)
+            out = await self.handler(batch)
             for rid, token in out.items():
                 q = self.running.get(rid)
                 if not q:
@@ -96,7 +105,6 @@ class Scheduler:
                 if token is None:
                     async with self.lock:
                         self.running.pop(rid, None)
-
 
 
 class LocalLLModel:
@@ -115,7 +123,7 @@ class LocalLLModel:
         """
         max_memory = {}
         is_mac = platform_is_mac()
-        
+
         if is_mac:
             total_memory = psutil.virtual_memory().total
             reserved_gb = 4
@@ -135,7 +143,7 @@ class LocalLLModel:
             print("内存检测异常，使用默认配置")
             max_memory[0] = f"{24 - 4}GiB"
             max_memory["cpu"] = f"{60}GiB"
-        
+
         return max_memory
 
     @staticmethod
@@ -151,10 +159,9 @@ class LocalLLModel:
         self.cur_model_name = model_name
         self.model = None
         self.tokenizer = None
-        self.scheduler = Scheduler(self)
+        self.scheduler = Scheduler(self.generate_next_token)
         self._state = {}
-        asyncio.create_task(self.scheduler.loop())
-        
+        self.task = asyncio.create_task(self.scheduler.loop())
 
     def load_model(self):
         if self.model is not None and self.tokenizer is not None:
@@ -162,19 +169,19 @@ class LocalLLModel:
 
         model_path = models[self.cur_model_name]
         tokenizer_model_name = models["deepseek-r1:16b"]
-        
+
         if model_path is None:
             raise ValueError("Model name not found")
         if not os.path.exists(model_path) or not os.listdir(model_path):
-            raise ValueError(
-                f"Model path '{model_path}' does not exist or is empty"
-            )
+            raise ValueError(f"Model path '{model_path}' does not exist or is empty")
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_model_name, local_files_only=True
         )
         if hasattr(self.tokenizer, "pad_token_id"):
-            cast(PreTrainedTokenizerBase, self.tokenizer).pad_token_id = cast(PreTrainedTokenizerBase, self.tokenizer).eos_token_id
+            cast(PreTrainedTokenizerBase, self.tokenizer).pad_token_id = cast(
+                PreTrainedTokenizerBase, self.tokenizer
+            ).eos_token_id
         is_mac = platform_is_mac()
         if is_mac:
             device_map = "auto"
@@ -199,12 +206,16 @@ class LocalLLModel:
                 low_cpu_mem_usage=True,
             )
         else:
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                llm_int8_enable_fp32_cpu_offload=True,
-            ) if is_mac is False else None
+            quantization_config = (
+                BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.float16,
+                    llm_int8_enable_fp32_cpu_offload=True,
+                )
+                if is_mac is False
+                else None
+            )
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_path,
                 local_files_only=True,
@@ -238,10 +249,14 @@ class LocalLLModel:
                         text_parts.append(part.get(ContentType.TEXT.value, ""))
                     # Optional: Add placeholder for images if needed for text models
                     elif part.get("type") == ContentType.IMAGE_URL.value:
-                        text_parts.append(f"[{part.get(ContentType.IMAGE_URL.value, '')}]")
+                        text_parts.append(
+                            f"[{part.get(ContentType.IMAGE_URL.value, '')}]"
+                        )
                     # Optional: Add placeholder for images if needed for text models
                     elif part.get("type") == ContentType.INPUT_IMAGE.value:
-                        text_parts.append(f"[{part.get(ContentType.INPUT_IMAGE.value, '')}]")
+                        text_parts.append(
+                            f"[{part.get(ContentType.INPUT_IMAGE.value, '')}]"
+                        )
             return "".join(text_parts)
         return str(content)
 
@@ -249,7 +264,7 @@ class LocalLLModel:
         turns: list[str] = []
         buf: list[str] = []
         for m in messages:
-            content_text = self._extract_text_from_content(m['content'])
+            content_text = self._extract_text_from_content(m["content"])
             buf.append(f"{m['role']}: {content_text}")
             if m["role"] == "assistant":
                 turns.append("\n".join(buf))
@@ -271,14 +286,14 @@ class LocalLLModel:
             self.embedding_model = SentenceTransformer(
                 self.embedding_model_name,
                 # device="cpu",
-                cache_folder=os.getenv("CACHE_PATH", "./cache")
+                cache_folder=os.getenv("CACHE_PATH", "./cache"),
             )
         return self.embedding_model.encode(text)
-            
-    def format_messages(self, prompt_content):
-        if hasattr(prompt_content, 'to_messages'):
+
+    def format_messages(self, prompt_content) -> list[dict]:
+        if hasattr(prompt_content, "to_messages"):
             return self.format_messages(prompt_content.to_messages())
-        if  hasattr(prompt_content, 'messages'):
+        if hasattr(prompt_content, "messages"):
             return self.format_messages(prompt_content.messages)
         if isinstance(prompt_content, dict):
             prompt_content = [prompt_content]
@@ -287,9 +302,13 @@ class LocalLLModel:
             prompt_content = [{"role": "user", "content": text}]
         formatted_messages: list[dict] = []
         for msg in prompt_content:
-            if hasattr(msg, 'type'):
-                role = "user" if msg.type == "human" else "assistant" if msg.type == "ai" else "system"
-                content = msg.content
+            if hasattr(msg, "type") and hasattr(msg, "content"):
+                role = (
+                    "user"
+                    if msg.get('type') == "human"
+                    else "assistant" if msg.get("type") == "ai" else "system"
+                )
+                content = msg.get("content")
             elif isinstance(msg, dict):
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
@@ -304,24 +323,30 @@ class LocalLLModel:
             # TODO: Handle potential errors if tokenizer doesn't support list content
             try:
                 # Try handling list content directly (for VLM support)
-                prompt = cast(PreTrainedTokenizerBase, self.tokenizer).apply_chat_template(
+                prompt = cast(
+                    PreTrainedTokenizerBase, self.tokenizer
+                ).apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True
                 )
             except Exception:
                 # Fallback: flatten content to text for text-only tokenizers
                 flattened_messages = []
                 for m in messages:
-                    flattened_messages.append({
-                        "role": m["role"],
-                        "content": self._extract_text_from_content(m["content"])
-                    })
-                prompt = cast(PreTrainedTokenizerBase, self.tokenizer).apply_chat_template(
+                    flattened_messages.append(
+                        {
+                            "role": m["role"],
+                            "content": self._extract_text_from_content(m["content"]),
+                        }
+                    )
+                prompt = cast(
+                    PreTrainedTokenizerBase, self.tokenizer
+                ).apply_chat_template(
                     flattened_messages, tokenize=False, add_generation_prompt=True
                 )
         else:
             prompt = ""
             for msg in messages:
-                content_text = self._extract_text_from_content(msg['content'])
+                content_text = self._extract_text_from_content(msg["content"])
                 if msg["role"] == "system":
                     prompt += f"System: {content_text}\n"
                 elif msg["role"] == "user":
@@ -330,10 +355,12 @@ class LocalLLModel:
                     prompt += f"Assistant: {content_text}\n"
             prompt += "Assistant:"
         return prompt
-    
-    async def _make_generator(self, request_id, payload):
+
+    async def _make_generator_example(self, request_id, payload):
         prompt = payload["prompt"]
-        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
+            prompt, return_tensors="pt"
+        ).to(self.model.device)
         generated = inputs
         while True:
             with torch.no_grad():
@@ -344,11 +371,44 @@ class LocalLLModel:
             generated = {
                 "input_ids": torch.cat([generated["input_ids"], next_token], dim=1)
             }
-            if next_token[0].item() == cast(PreTrainedTokenizerBase, self.tokenizer).eos_token_id:
+            if (
+                next_token[0].item()
+                == cast(PreTrainedTokenizerBase, self.tokenizer).eos_token_id
+            ):
                 break
-            
-            
-    async def generate_next_token(self, batch):
+
+    async def _make_generator(self, request_id, payload):
+        prompt = payload["prompt"]
+        kwargs = payload.get("kwargs", {})
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
+            prompt, return_tensors="pt"
+        ).to(self.model.device)
+        streamer = CancellableStreamer(
+            cast(PreTrainedTokenizerBase, self.tokenizer),
+            skip_prompt=True,
+            skip_special_tokens=False,
+        )
+        stopping_criteria = StoppingCriteriaList([streamer.stopping_criteria])
+        generation_kwargs = dict(
+            inputs,
+            streamer=streamer,
+            max_new_tokens=2000,
+            stopping_criteria=stopping_criteria,
+        )
+        generation_kwargs.update(kwargs)
+
+        def safe_generate():
+            try:
+                self.model.generate(**generation_kwargs)
+            except Exception as e:
+                print(f"Generation error: {e}")
+            finally:
+                # streamer.on_finalized_text("<|END|>")
+                streamer.end()
+
+        return streamer
+
+    async def generate_next_token(self, batch: list[tuple[int, dict, asyncio.Queue[dict]]]):
         out = {}
         for rid, payload, _ in batch:
             if rid not in self._state:
@@ -361,30 +421,47 @@ class LocalLLModel:
                 out[rid] = None
                 self._state.pop(rid, None)
         return out
-
     
-    async def chat_in_scheduler(self, messages, **kwargs):
+    async def cancel_scheduler(self, rid: int, reason: str = "unkown reason"):
+        print(f"{reason}, cancelling generation, scheduler id: {rid}")
+        return self.scheduler.quit(rid)
+
+    async def chat_in_scheduler(self, messages: list[dict], **kwargs):
         self.load_model()
         prompt = self.format_prompt(messages)
-        rid, q = await self.scheduler.register({"prompt": prompt})
+        rid, q = await self.scheduler.register(
+            {
+                "prompt": prompt,
+                "kwargs": kwargs,
+            }
+        )
+        yield rid
         while True:
             t = await q.get()
             if t is None:
                 break
             yield t
-    
 
     def chat(self, messages: list[dict], **kwargs):
         self.load_model()
         prompt = self.format_prompt(messages)
-        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
+            prompt, return_tensors="pt"
+        ).to(self.model.device)
         streamer = CancellableStreamer(
-            cast(PreTrainedTokenizerBase, self.tokenizer), skip_prompt=True, skip_special_tokens=False
+            cast(PreTrainedTokenizerBase, self.tokenizer),
+            skip_prompt=True,
+            skip_special_tokens=False,
         )
         stopping_criteria = StoppingCriteriaList([streamer.stopping_criteria])
-        generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=2000, stopping_criteria=stopping_criteria)
+        generation_kwargs = dict(
+            inputs,
+            streamer=streamer,
+            max_new_tokens=2000,
+            stopping_criteria=stopping_criteria,
+        )
         generation_kwargs.update(kwargs)
-        
+
         def safe_generate():
             try:
                 self.model.generate(**generation_kwargs)
@@ -401,11 +478,12 @@ class LocalLLModel:
     def chat_at_once(self, messages: list[dict], **kwargs) -> str:
         self.load_model()
         prompt = self.format_prompt(messages)
-        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
-        
-        from queue import Queue
-        result_queue = Queue()
-        
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
+            prompt, return_tensors="pt"
+        ).to(self.model.device)
+
+        result_queue = asyncio.Queue()
+
         def generate_and_put():
             if "max_new_tokens" not in kwargs:
                 kwargs["max_new_tokens"] = 3000
@@ -414,20 +492,26 @@ class LocalLLModel:
             input_len = inputs.input_ids.shape[1]
             # slice only generated tokens
             generated_tokens = outputs[0][input_len:]
-            response = cast(PreTrainedTokenizerBase, self.tokenizer).decode(generated_tokens, skip_special_tokens=False)
+            response = cast(PreTrainedTokenizerBase, self.tokenizer).decode(
+                generated_tokens, skip_special_tokens=False
+            )
             result_queue.put(response)
-            
+
         thread = Thread(target=generate_and_put)
         thread.start()
         thread.join()
-        
+
         return result_queue.get().strip()
 
     def complete(self, prompt: str):
         self.load_model()
-        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
+            prompt, return_tensors="pt"
+        ).to(self.model.device)
         streamer = TextIteratorStreamer(
-            cast(PreTrainedTokenizerBase, self.tokenizer), skip_prompt=True, skip_special_tokens=True
+            cast(PreTrainedTokenizerBase, self.tokenizer),
+            skip_prompt=True,
+            skip_special_tokens=True,
         )
         generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=200)
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
@@ -436,12 +520,16 @@ class LocalLLModel:
 
     def complete_at_once(self, prompt: str) -> str:
         self.load_model()
-        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(prompt, return_tensors="pt").to(self.model.device)
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
+            prompt, return_tensors="pt"
+        ).to(self.model.device)
         outputs = self.model.generate(**inputs, max_new_tokens=3000)
-        return cast(PreTrainedTokenizerBase, self.tokenizer).decode(outputs[0], skip_special_tokens=True)
-    
+        return cast(PreTrainedTokenizerBase, self.tokenizer).decode(
+            outputs[0], skip_special_tokens=True
+        )
+
     def extract_after_think(self, text: str) -> str:
         think_pos = text.find("</think>")
         if think_pos != -1:
-            return text[think_pos + len("</think>"):].strip()
+            return text[think_pos + len("</think>") :].strip()
         return text.strip()

@@ -131,6 +131,7 @@ class ChatRequest(BaseModel):
     model: str
     messages: list[Message]
     stream: bool = False
+    use_single: bool = False
     enable_rag: bool = False
     files: list[str] = []  # List of file IDs from upload endpoint
 
@@ -442,7 +443,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                 if event_type == "agent_start":
                     # Agent start event
                     data = {
-                        "id": "agent-run-1",
+                        "id": f"agent-run-{uuid.uuid4().hex}",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
@@ -464,7 +465,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                     chunk = event_data.get("chunk", "")
                     if chunk:
                         data = {
-                            "id": "agent-run-1",
+                            "id": f"agent-run-{uuid.uuid4().hex}",
                             "object": "chat.completion.chunk",
                             "created": int(time.time()),
                             "model": agentRequest.model,
@@ -483,7 +484,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                 elif event_type == "agent_complete":
                     # Agent complete event
                     data = {
-                        "id": "agent-run-1",
+                        "id": f"agent-run-{uuid.uuid4().hex}",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
@@ -516,7 +517,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
             if final_state["error"]:
                 # Error occurred
                 data = {
-                    "id": "agent-run-1",
+                    "id": f"agent-run-{uuid.uuid4().hex}",
                     "object": "chat.completion.chunk",
                     "created": int(time.time()),
                     "model": agentRequest.model,
@@ -536,7 +537,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                 # Send final result summary
                 if state.status.value == "completed":
                     data = {
-                        "id": "agent-run-1",
+                        "id": f"agent-run-{uuid.uuid4().hex}",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
@@ -557,7 +558,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                 elif state.status.value == "waiting_human":
                     # Workflow paused for human intervention
                     data = {
-                        "id": "agent-run-1",
+                        "id": f"agent-run-{uuid.uuid4().hex}",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
@@ -584,7 +585,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                 elif state.status.value == "max_iterations":
                     # Workflow paused due to max iterations
                     data = {
-                        "id": "agent-run-1",
+                        "id": f"agent-run-{uuid.uuid4().hex}",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
@@ -612,7 +613,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                 else:
                     # Workflow ended in other non-completed state (failed, etc.)
                     data = {
-                        "id": "agent-run-1",
+                        "id": f"agent-run-{uuid.uuid4().hex}",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
@@ -683,7 +684,7 @@ async def agent_decision(req: AgentDecisionRequest):
             status = state.status.value
         
         response = {
-            "id": "agent-decision-1",
+            "id": f"agent-decision-{uuid.uuid4().hex}",
             "object": "chat.completion",
             "created": int(time.time()),
             "model": "agent-decision",
@@ -754,7 +755,7 @@ async def agent_chat(req: ChatRequest):
             status = state.status.value
         
         response = {
-            "id": "agent-chat-1",
+            "id": f"agent-chat-{uuid.uuid4().hex}",
             "object": "chat.completion",
             "created": int(time.time()),
             "model": req.model,
@@ -886,7 +887,11 @@ async def embeddings(req: EmbeddingRequest):
     global local_model
     if local_model is None:
         local_model = LocalLLModel(embedding_model_name=req.model)
-    vectors = local_model.tokenizer.encode(texts).tolist()
+    from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+    
+    vectors = cast(PreTrainedTokenizerBase, local_model.tokenizer).encode(texts)
+    if not isinstance(vectors, list) and hasattr(vectors, "tolist"):
+        vectors = vectors.tolist()
     return {
         "object": "list",
         "data": [
@@ -982,7 +987,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                 
             def run_rag():
                 try:
-                    local_rag.generate_answer(query, stream_callback=stream_callback)
+                    cast(LocalRAG, local_rag).generate_answer(query, stream_callback=stream_callback)
                 except Exception as e:
                     print(f"RAG Error: {e}")
                 finally:
@@ -1000,7 +1005,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                             break
                             
                         data = {
-                            "id": "chatcmpl-rag",
+                            "id": f"chatcmpl-rag-{uuid.uuid4().hex}",
                             "object": "chat.completion.chunk",
                             "created": int(time.time()),
                             "model": req.model,
@@ -1017,7 +1022,7 @@ async def chat_completions(req: ChatRequest, request: Request):
         else:
             output = local_rag.generate_answer(query)
             response = {
-                "id": "chatcmpl-rag",
+                "id": f"chatcmpl-rag-{uuid.uuid4().hex}",
                 "object": "chat.completion",
                 "created": int(time.time()),
                 "model": req.model,
@@ -1037,38 +1042,66 @@ async def chat_completions(req: ChatRequest, request: Request):
             return JSONResponse(content=response, headers={"Content-Type": "application/json"})
 
     if req.stream:
-        streamer = local_model.chat([m.model_dump() for m in req.messages])
+        if req.use_single:
+            streamer = local_model.chat([m.model_dump() for m in req.messages])
 
+            async def event_stream():
+                try:
+                    for chunk in streamer:
+                        if await request.is_disconnected():
+                            print("Client disconnected, cancelling generation")
+                            if hasattr(streamer, 'cancel'):
+                                streamer.cancel()
+                            break
+
+                        data = {
+                            "id": f"chatcmpl-{uuid.uuid4().hex}",
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": req.model,
+                            "choices": [
+                                {"delta": {"content": chunk}, "index": 0, "finish_reason": None}
+                            ],
+                        }
+                        yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                except asyncio.CancelledError:
+                    print("Stream cancelled, cancelling generation")
+                    if hasattr(streamer, 'cancel'):
+                        streamer.cancel()
+                    raise
+
+            return StreamingResponse(event_stream(), media_type="text/event-stream")
+        
+        generator = local_model.chat_in_scheduler([m.model_dump() for m in req.messages])
+        rid = await generator.__anext__()
         async def event_stream():
             try:
-                for chunk in streamer:
+                async for output_chunk in generator:
                     if await request.is_disconnected():
-                        print("Client disconnected, cancelling generation")
-                        if hasattr(streamer, 'cancel'):
-                            streamer.cancel()
+                        if isinstance(rid, int):
+                            await cast(LocalLLModel, local_model).cancel_scheduler(rid, "client disconnected")
                         break
-
                     data = {
-                        "id": "chatcmpl-1",
+                        "id": f"chatcmpl-{uuid.uuid4().hex}",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": req.model,
                         "choices": [
-                            {"delta": {"content": chunk}, "index": 0, "finish_reason": None}
+                            {"delta": {"content": output_chunk}, "index": 0, "finish_reason": None}
                         ],
                     }
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
                 yield "data: [DONE]\n\n"
             except asyncio.CancelledError:
-                print("Stream cancelled, cancelling generation")
-                if hasattr(streamer, 'cancel'):
-                    streamer.cancel()
+                print("Stream cancelled")
                 raise
-
+            
         return StreamingResponse(event_stream(), media_type="text/event-stream")
+        
     output = local_model.chat_at_once([m.model_dump() for m in req.messages])
     response = {
-        "id": "chatcmpl-1",
+        "id": f"chatcmpl-{uuid.uuid4().hex}",
         "object": "chat.completion",
         "created": int(time.time()),
         "model": req.model,
@@ -1117,7 +1150,7 @@ async def completions(req: CompletionRequest):
         output = local_model.complete_at_once(req.prompt)
 
     return {
-        "id": "cmpl-1",
+        "id": f"cmpl-{uuid.uuid4().hex}",
         "object": "text_completion",
         "created": int(time.time()),
         "model": req.model,
