@@ -29,8 +29,8 @@ load_dotenv()
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=getattr(logging, log_level, logging.INFO),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ VERSION = DEFAULT_MODEL_INFO["api_version"]
 
 ADMIN_TOKEN = None
 
+
 def ensure_admin_token():
     global ADMIN_TOKEN
     token_file = ".admin"
@@ -86,7 +87,7 @@ def ensure_admin_token():
                 ADMIN_TOKEN = token
                 print(f"Loaded admin token from {token_file}")
                 return
-    
+
     # Generate new token: sk- + 32 hex chars
     token = f"sk-{secrets.token_hex(16)}"
     with open(token_file, "w") as f:
@@ -94,8 +95,10 @@ def ensure_admin_token():
     ADMIN_TOKEN = token
     print(f"Generated new admin token and saved to {token_file}: {token}")
 
+
 # Initialize token on module load
 ensure_admin_token()
+
 
 @app.middleware("http")
 async def verify_admin_token(request: Request, call_next):
@@ -104,18 +107,22 @@ async def verify_admin_token(request: Request, call_next):
         # Skip OPTIONS requests (CORS preflight)
         if request.method == "OPTIONS":
             return await call_next(request)
-            
+
         auth_header = request.headers.get("Authorization")
         if not auth_header:
-            return JSONResponse(status_code=401, content={"detail": "Missing Authorization header"})
-        
+            return JSONResponse(
+                status_code=401, content={"detail": "Missing Authorization header"}
+            )
+
         token = auth_header
         if token.startswith("Bearer "):
             token = token[7:]
-            
+
         if token != ADMIN_TOKEN:
-            return JSONResponse(status_code=401, content={"detail": "Invalid admin token"})
-            
+            return JSONResponse(
+                status_code=401, content={"detail": "Invalid admin token"}
+            )
+
     return await call_next(request)
 
 
@@ -126,6 +133,7 @@ class Message(BaseModel):
 
 import queue
 import threading
+
 
 class ChatRequest(BaseModel):
     model: str
@@ -140,8 +148,8 @@ class CompletionRequest(BaseModel):
     model: str
     prompt: str
     enable_rag: bool = False
-    
-    
+
+
 class AgentRequest(BaseModel):
     model: str
     messages: list[str]
@@ -196,7 +204,7 @@ class ImportDocumentRequest(BaseModel):
     title: str
     source: str
     content: str
-    contentType: str = 'md'
+    contentType: str = "md"
     bvid: str
     cid: int
 
@@ -204,7 +212,6 @@ class ImportDocumentRequest(BaseModel):
 class DocumentCheckRequest(BaseModel):
     bvid: str
     cid: int
-
 
 
 @app.get("/")
@@ -244,7 +251,7 @@ async def query_rag(request: Request):
             yield f"data: [DONE]{result}\n\n"
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
-        
+
     except json.JSONDecodeError as e:
         error_msg = (
             f"模型配置文件解析失败: {str(e)}\n\n"
@@ -258,21 +265,22 @@ async def query_rag(request: Request):
         )
         print(f"错误: {error_msg}")
         raise HTTPException(status_code=500, detail=error_msg)
-        
+
     except ValueError as e:
         error_msg = f"配置错误: {str(e)}"
         print(f"错误: {error_msg}")
         raise HTTPException(status_code=400, detail=error_msg)
-        
+
     except RuntimeError as e:
         error_msg = f"运行时错误: {str(e)}"
         print(f"错误: {error_msg}")
         raise HTTPException(status_code=500, detail=error_msg)
-        
+
     except Exception as e:
         error_msg = f"未知错误: {type(e).__name__} - {str(e)}"
         print(f"错误: {error_msg}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_msg)
 
@@ -280,19 +288,22 @@ async def query_rag(request: Request):
 @app.post(f"/{VERSION}/upload")
 async def upload_file(file: UploadFile = File(...)):
     from utils import FileProcessor
-    
+
     try:
         file_processor = FileProcessor()
-        file_id, filename, _ = file_processor.save_uploaded_file(file.file, file.filename)
-        
+        file_id, filename, _ = file_processor.save_uploaded_file(
+            file.file, file.filename
+        )
+
         return {
             "id": file_id,
             "filename": filename,
-            "message": "File uploaded successfully"
+            "message": "File uploaded successfully",
         }
     except Exception as e:
         logger.error(f"File upload failed: {e}")
         raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
+
 
 @app.post(f"/{VERSION}/agents/run")
 async def query_agent(agentRequest: AgentRequest, request: Request):
@@ -301,24 +312,25 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
     global local_model
     global agent_runtime
     global context_storage
-    
+
     query = agentRequest.messages
     if query is None:
-        raise HTTPException(
-            status_code=400, detail="Query parameter is required"
-        )
-    
+        raise HTTPException(status_code=400, detail="Query parameter is required")
+
     # Initialize context storage if not already done
     if context_storage is None:
         try:
             context_storage = create_context_storage()
-            logger.info(f"Initialized context storage: {type(context_storage).__name__}")
+            logger.info(
+                f"Initialized context storage: {type(context_storage).__name__}"
+            )
         except Exception as e:
             logger.error(f"Failed to initialize context storage: {e}")
             # Fall back to memory storage
             from agents.context_storage import MemoryContextStorage
+
             context_storage = MemoryContextStorage()
-    
+
     # Generate session ID if not provided
     session_id = agentRequest.session_id or str(uuid.uuid4())
     logger.info(f"Processing request for session: {session_id}")
@@ -331,11 +343,11 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
             data_path = os.getenv("DATA_PATH", "./docs")
             local_rag = LocalRAG(local_model, data_path=data_path)
         agent_runtime = AgentRuntime.create_with_all_agents(
-            local_model, 
+            local_model,
             rag_instance=local_rag,
             permission_manager=permission_manager,
             context_storage=context_storage,
-            session_id=session_id
+            session_id=session_id,
         )
     else:
         # Update session ID for existing runtime
@@ -345,24 +357,24 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
         if loaded_state:
             agent_runtime.state = loaded_state
             logger.info(f"Resumed existing session {session_id}")
-    
+
     # Prepare initial context with files if provided
     initial_context = {}
     if agentRequest.files:
         file_map = {}
         available_files = []
         upload_dir = os.path.join(os.getcwd(), "uploads")
-        
+
         for file_ref in agentRequest.files:
             # Check if it's a full path (legacy/testing) or an ID
             real_path = None
             file_name = None
             file_id = None
-            
+
             if os.path.exists(file_ref):
                 real_path = file_ref
                 file_name = os.path.basename(file_ref)
-                file_id = str(uuid.uuid4()) # Generate temp ID for direct paths
+                file_id = str(uuid.uuid4())  # Generate temp ID for direct paths
             else:
                 # Assume it's an ID, look for file in uploads
                 # Pattern: {ID}_{filename}
@@ -370,20 +382,17 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                     for f in os.listdir(upload_dir):
                         if f.startswith(file_ref + "_"):
                             real_path = os.path.join(upload_dir, f)
-                            file_name = f[len(file_ref)+1:] # Remove ID_ prefix
+                            file_name = f[len(file_ref) + 1 :]  # Remove ID_ prefix
                             file_id = file_ref
                             break
-            
+
             if real_path and os.path.exists(real_path):
-                file_map[file_id] = {
-                    "path": real_path,
-                    "name": file_name
-                }
+                file_map[file_id] = {"path": real_path, "name": file_name}
                 available_files.append(f"File: {file_name} (ID: {file_id})")
                 logger.info(f"Mapped file {file_id}: {file_name}")
             else:
                 logger.warning(f"File reference not found: {file_ref}")
-        
+
         if file_map:
             initial_context["file_map"] = file_map
             initial_context["available_files"] = available_files
@@ -394,52 +403,54 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
         import queue
         import threading
         import asyncio
-        
+
         # Create a queue for streaming events
         event_queue = queue.Queue()
         execution_complete = threading.Event()
         final_state = {"state": None, "error": None}
-        
+
         def stream_callback(event_data):
             """Callback to receive streaming events from agents"""
             event_queue.put(event_data)
-        
+
         def execute_agents():
             """Execute agents in a separate thread"""
             try:
                 state = agent_runtime.execute(
-                    query, 
-                    start_agent="qa", 
+                    query,
+                    start_agent="qa",
                     stream_callback=stream_callback,
-                    initial_context=initial_context
+                    initial_context=initial_context,
                 )
                 final_state["state"] = state
             except Exception as e:
                 final_state["error"] = str(e)
             finally:
                 execution_complete.set()
-        
+
         # Start agent execution in background thread
         execution_thread = threading.Thread(target=execute_agents)
         execution_thread.start()
-        
+
         # Stream events as they arrive
         while not execution_complete.is_set() or not event_queue.empty():
             if await request.is_disconnected():
                 logger.info("Client disconnected, cancelling agent execution")
                 # Attempt to stop the agent runtime
                 if agent_runtime and agent_runtime.state:
-                     if agent_runtime.state.status == RuntimeStatus.RUNNING:
-                         agent_runtime.state.status = RuntimeStatus.FAILED
-                         agent_runtime.state.error_message = "Cancelled by user disconnection"
+                    if agent_runtime.state.status == RuntimeStatus.RUNNING:
+                        agent_runtime.state.status = RuntimeStatus.FAILED
+                        agent_runtime.state.error_message = (
+                            "Cancelled by user disconnection"
+                        )
                 break
 
             try:
                 # Use non-blocking get
                 event_data = event_queue.get_nowait()
-                
+
                 event_type = event_data.get("event_type")
-                
+
                 if event_type == "agent_start":
                     # Agent start event
                     data = {
@@ -447,19 +458,15 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
-                        "choices": [{
-                            "delta": {},
-                            "index": 0,
-                            "finish_reason": None
-                        }],
+                        "choices": [{"delta": {}, "index": 0, "finish_reason": None}],
                         "agent_metadata": {
                             "event_type": "agent_start",
                             "current_agent": event_data.get("agent_name"),
-                            "iteration": event_data.get("iteration")
-                        }
+                            "iteration": event_data.get("iteration"),
+                        },
                     }
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-                
+
                 elif event_type == "llm_chunk":
                     # LLM chunk event
                     chunk = event_data.get("chunk", "")
@@ -469,18 +476,20 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                             "object": "chat.completion.chunk",
                             "created": int(time.time()),
                             "model": agentRequest.model,
-                            "choices": [{
-                                "delta": {"content": chunk},
-                                "index": 0,
-                                "finish_reason": None
-                            }],
+                            "choices": [
+                                {
+                                    "delta": {"content": chunk},
+                                    "index": 0,
+                                    "finish_reason": None,
+                                }
+                            ],
                             "agent_metadata": {
                                 "event_type": "llm_chunk",
-                                "current_agent": event_data.get("agent_name")
-                            }
+                                "current_agent": event_data.get("agent_name"),
+                            },
                         }
                         yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-                
+
                 elif event_type == "agent_complete":
                     # Agent complete event
                     data = {
@@ -488,30 +497,26 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
-                        "choices": [{
-                            "delta": {},
-                            "index": 0,
-                            "finish_reason": None
-                        }],
+                        "choices": [{"delta": {}, "index": 0, "finish_reason": None}],
                         "agent_metadata": {
                             "event_type": "agent_complete",
                             "current_agent": event_data.get("agent_name"),
                             "status": event_data.get("status"),
                             "next_agent": event_data.get("next_agent"),
-                            "message": event_data.get("message")
-                        }
+                            "message": event_data.get("message"),
+                        },
                     }
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-                
+
             except queue.Empty:
                 # Wait a bit and continue to check disconnection
                 await asyncio.sleep(0.1)
                 continue
-        
+
         # Wait for execution thread to complete (or timeout if we cancelled)
         # If cancelled, the thread should stop soon because we set status to FAILED
         execution_thread.join(timeout=2.0)
-        
+
         # Send final completion event only if not disconnected
         if not await request.is_disconnected():
             if final_state["error"]:
@@ -521,15 +526,17 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                     "object": "chat.completion.chunk",
                     "created": int(time.time()),
                     "model": agentRequest.model,
-                    "choices": [{
-                        "delta": {"content": f"\n\nError: {final_state['error']}"},
-                        "index": 0,
-                        "finish_reason": "error"
-                    }],
+                    "choices": [
+                        {
+                            "delta": {"content": f"\n\nError: {final_state['error']}"},
+                            "index": 0,
+                            "finish_reason": "error",
+                        }
+                    ],
                     "agent_metadata": {
                         "event_type": "error",
-                        "error": final_state["error"]
-                    }
+                        "error": final_state["error"],
+                    },
                 }
                 yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
             elif final_state["state"]:
@@ -541,18 +548,14 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
-                        "choices": [{
-                            "delta": {},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }],
+                        "choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}],
                         "agent_metadata": {
                             "event_type": "workflow_complete",
                             "status": state.status.value,
                             "iterations": state.iteration_count,
                             "iteration_count_round": state.iteration_count_round,
-                            "history_length": len(state.history)
-                        }
+                            "history_length": len(state.history),
+                        },
                     }
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
                 elif state.status.value == "waiting_human":
@@ -562,24 +565,27 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
-                        "choices": [{
-                            "delta": {
-                                "content": f"\n\n⏸️ Workflow paused: Waiting for human decision.\nPlease call POST /v1/agents/decision to continue.",    
-                                "resume_api": "/v1/agents/decision",
-                                "resume_method": "POST",
-                            },
-                            "index": 0,
-                            "finish_reason": "length"
-                        }],
+                        "choices": [
+                            {
+                                "delta": {
+                                    "content": f"\n\n⏸️ Workflow paused: Waiting for human decision.\nPlease call POST /v1/agents/decision to continue.",
+                                    "resume_api": "/v1/agents/decision",
+                                    "resume_method": "POST",
+                                },
+                                "index": 0,
+                                "finish_reason": "length",
+                            }
+                        ],
                         "agent_metadata": {
                             "event_type": "needs_decision",
                             "status": state.status.value,
                             "reason": "waiting_human",
-                            "message": state.error_message or "Human intervention required",
+                            "message": state.error_message
+                            or "Human intervention required",
                             "iterations": state.iteration_count,
                             "iteration_count_round": state.iteration_count_round,
-                            "action_required": "POST /v1/agents/decision with approved/feedback/data"
-                        }
+                            "action_required": "POST /v1/agents/decision with approved/feedback/data",
+                        },
                     }
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
                 elif state.status.value == "max_iterations":
@@ -589,15 +595,17 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
-                        "choices": [{
-                            "delta": {
-                                "content": f"\n\n⏸️ Workflow paused: Reached maximum iterations ({state.max_iterations}) in round {state.iteration_count_round}.\nPlease call POST /v1/agents/decision to continue or stop.",
-                                "resume_api": "/v1/agents/decision",
-                                "resume_method": "POST",
-                            },
-                            "index": 0,
-                            "finish_reason": "length"
-                        }],
+                        "choices": [
+                            {
+                                "delta": {
+                                    "content": f"\n\n⏸️ Workflow paused: Reached maximum iterations ({state.max_iterations}) in round {state.iteration_count_round}.\nPlease call POST /v1/agents/decision to continue or stop.",
+                                    "resume_api": "/v1/agents/decision",
+                                    "resume_method": "POST",
+                                },
+                                "index": 0,
+                                "finish_reason": "length",
+                            }
+                        ],
                         "agent_metadata": {
                             "event_type": "needs_decision",
                             "status": state.status.value,
@@ -606,8 +614,8 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                             "iterations": state.iteration_count,
                             "iteration_count_round": state.iteration_count_round,
                             "max_iterations": state.max_iterations,
-                            "action_required": "POST /v1/agents/decision with approved=true/false"
-                        }
+                            "action_required": "POST /v1/agents/decision with approved=true/false",
+                        },
                     }
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
                 else:
@@ -617,25 +625,29 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": agentRequest.model,
-                        "choices": [{
-                            "delta": {"content": f"\n\nWorkflow {state.status.value}: {state.error_message}"},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }],
+                        "choices": [
+                            {
+                                "delta": {
+                                    "content": f"\n\nWorkflow {state.status.value}: {state.error_message}"
+                                },
+                                "index": 0,
+                                "finish_reason": "stop",
+                            }
+                        ],
                         "agent_metadata": {
                             "event_type": "workflow_end",
                             "status": state.status.value,
                             "error_message": state.error_message,
                             "iterations": state.iteration_count,
-                            "iteration_count_round": state.iteration_count_round
-                        }
+                            "iteration_count_round": state.iteration_count_round,
+                        },
                     }
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-        
+
         # Send [DONE] marker
         if not await request.is_disconnected():
             yield "data: [DONE]\n\n"
-    
+
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
@@ -643,13 +655,13 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
 async def agent_decision(req: AgentDecisionRequest):
     """Handle human decision for paused agent workflow or max iterations continuation"""
     global agent_runtime
-    
+
     if agent_runtime is None:
         raise HTTPException(status_code=400, detail="Agent runtime not initialized")
-    
+
     try:
         current_state = agent_runtime.get_state()
-        
+
         # Check current runtime status and call appropriate resume method
         if current_state.status.value == "max_iterations":
             # Handle max_iterations: only continue if approved
@@ -665,10 +677,10 @@ async def agent_decision(req: AgentDecisionRequest):
             state = agent_runtime.resume(req.model_dump())
         else:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Cannot make decision: Runtime is in {current_state.status.value} state, expected 'waiting_human' or 'max_iterations'"
+                status_code=400,
+                detail=f"Cannot make decision: Runtime is in {current_state.status.value} state, expected 'waiting_human' or 'max_iterations'",
             )
-        
+
         # Format response similar to chat completion
         if state.status.value == "completed":
             answer = state.final_result
@@ -682,7 +694,7 @@ async def agent_decision(req: AgentDecisionRequest):
         else:
             answer = f"Workflow {state.status.value}: {state.error_message}"
             status = state.status.value
-        
+
         response = {
             "id": f"agent-decision-{uuid.uuid4().hex}",
             "object": "chat.completion",
@@ -704,12 +716,12 @@ async def agent_decision(req: AgentDecisionRequest):
                 "status": status,
                 "iterations": state.iteration_count,
                 "iteration_count_round": state.iteration_count_round,
-                "history_length": len(state.history)
-            }
+                "history_length": len(state.history),
+            },
         }
-        
+
         return JSONResponse(content=response)
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -722,30 +734,28 @@ async def agent_chat(req: ChatRequest):
     global local_rag
     global local_model
     global agent_runtime
-    
+
     if local_model is None:
         local_model = LocalLLModel(req.model)
-    
+
     if agent_runtime is None:
         if local_rag is None:
             local_rag = LocalRAG(local_model)
         agent_runtime = AgentRuntime.create_with_all_agents(
-            local_model,
-            rag_instance=local_rag,
-            permission_manager=permission_manager
+            local_model, rag_instance=local_rag, permission_manager=permission_manager
         )
-    
+
     # Extract user query from messages
     user_messages = [m for m in req.messages if m.role == "user"]
     if not user_messages:
         raise HTTPException(status_code=400, detail="No user message found")
-    
+
     query = user_messages[-1].content
-    
+
     try:
         # Execute agent workflow
         state = agent_runtime.execute(query, start_agent="qa")
-        
+
         # Format response
         if state.status.value == "completed":
             answer = state.final_result
@@ -753,7 +763,7 @@ async def agent_chat(req: ChatRequest):
         else:
             answer = f"Workflow {state.status.value}: {state.error_message}"
             status = state.status.value
-        
+
         response = {
             "id": f"agent-chat-{uuid.uuid4().hex}",
             "object": "chat.completion",
@@ -774,12 +784,12 @@ async def agent_chat(req: ChatRequest):
             "agent_metadata": {
                 "status": status,
                 "iterations": state.iteration_count,
-                "history_length": len(state.history)
-            }
+                "history_length": len(state.history),
+            },
         }
-        
+
         return JSONResponse(content=response)
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -788,12 +798,12 @@ async def agent_chat(req: ChatRequest):
 async def agent_status():
     """Get agent runtime status"""
     global agent_runtime
-    
+
     if agent_runtime is None:
         return {"status": "not_initialized"}
-    
+
     state = agent_runtime.get_state()
-    
+
     return {
         "status": state.status.value,
         "current_agent": state.current_agent,
@@ -801,7 +811,7 @@ async def agent_status():
         "iteration_count_round": state.iteration_count_round,
         "max_iterations": state.max_iterations,
         "history_length": len(state.history),
-        "context_keys": list(state.context.keys())
+        "context_keys": list(state.context.keys()),
     }
 
 
@@ -888,7 +898,7 @@ async def embeddings(req: EmbeddingRequest):
     if local_model is None:
         local_model = LocalLLModel(embedding_model_name=req.model)
     from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-    
+
     vectors = cast(PreTrainedTokenizerBase, local_model.tokenizer).encode(texts)
     if not isinstance(vectors, list) and hasattr(vectors, "tolist"):
         vectors = vectors.tolist()
@@ -907,13 +917,13 @@ async def embeddings(req: EmbeddingRequest):
 async def check_document(req: DocumentCheckRequest):
     global local_rag
     global local_model
-    
+
     if local_model is None:
         local_model = LocalLLModel()
-        
+
     if local_rag is None:
         local_rag = LocalRAG(local_model)
-        
+
     exists = local_rag.check_document_exists(req.bvid, req.cid)
     return {"exists": exists}
 
@@ -922,13 +932,13 @@ async def check_document(req: DocumentCheckRequest):
 async def import_document(req: ImportDocumentRequest):
     global local_rag
     global local_model
-    
+
     if local_model is None:
         local_model = LocalLLModel()
-        
+
     if local_rag is None:
         local_rag = LocalRAG(local_model)
-        
+
     try:
         if local_rag.check_document_exists(req.bvid, req.cid):
             return {"data": None, "message": "Document already exists", "exists": True}
@@ -939,7 +949,7 @@ async def import_document(req: ImportDocumentRequest):
             source=req.source,
             content_type=req.contentType,
             bvid=req.bvid,
-            cid=req.cid
+            cid=req.cid,
         )
         return {"data": result, "exists": False}
     except Exception as e:
@@ -952,24 +962,26 @@ async def chat_completions(req: ChatRequest, request: Request):
     """openai chat/edit/apply with multimodal support"""
     global local_model
     global local_rag
-    
+
     if local_model is None:
         local_model = LocalLLModel(req.model)
-    
+
     # Process files if provided using FileProcessor
     if req.files:
         from utils import FileProcessor
-        
+
         upload_dir = os.path.join(os.getcwd(), os.getenv("UPLOAD_DIR", "uploads"))
         file_processor = FileProcessor(upload_dir)
-        
+
         # Inject file context to messages
-        req.messages = file_processor.inject_file_context_to_messages(req.messages, req.files)
-        
+        req.messages = file_processor.inject_file_context_to_messages(
+            req.messages, req.files
+        )
+
     if req.enable_rag:
         if local_rag is None:
             local_rag = LocalRAG(local_model)
-            
+
         # Extract query from last user message
         query = ""
         for m in reversed(req.messages):
@@ -978,23 +990,27 @@ async def chat_completions(req: ChatRequest, request: Request):
                 break
         if not query and req.messages:
             query = req.messages[-1].content
-            
+
         if req.stream:
-            event_queue = queue.Queue()
-            
+            from queue import Queue
+
+            event_queue = Queue()
+
             def stream_callback(chunk):
                 event_queue.put(chunk)
-                
+
             def run_rag():
                 try:
-                    cast(LocalRAG, local_rag).generate_answer(query, stream_callback=stream_callback)
+                    cast(LocalRAG, local_rag).generate_answer(
+                        query, stream_callback=stream_callback
+                    )
                 except Exception as e:
                     print(f"RAG Error: {e}")
                 finally:
                     event_queue.put(None)
-                    
+
             threading.Thread(target=run_rag).start()
-            
+
             async def event_stream():
                 while True:
                     if await request.is_disconnected():
@@ -1003,21 +1019,25 @@ async def chat_completions(req: ChatRequest, request: Request):
                         chunk = event_queue.get_nowait()
                         if chunk is None:
                             break
-                            
+
                         data = {
                             "id": f"chatcmpl-rag-{uuid.uuid4().hex}",
                             "object": "chat.completion.chunk",
                             "created": int(time.time()),
                             "model": req.model,
                             "choices": [
-                                {"delta": {"content": chunk}, "index": 0, "finish_reason": None}
+                                {
+                                    "delta": {"content": chunk},
+                                    "index": 0,
+                                    "finish_reason": None,
+                                }
                             ],
                         }
                         yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
                     except queue.Empty:
                         await asyncio.sleep(0.01)
                 yield "data: [DONE]\n\n"
-                
+
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         else:
             output = local_rag.generate_answer(query)
@@ -1039,7 +1059,9 @@ async def chat_completions(req: ChatRequest, request: Request):
                     "total_tokens": len(output.split()),
                 },
             }
-            return JSONResponse(content=response, headers={"Content-Type": "application/json"})
+            return JSONResponse(
+                content=response, headers={"Content-Type": "application/json"}
+            )
 
     if req.stream:
         if req.use_single:
@@ -1050,7 +1072,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                     for chunk in streamer:
                         if await request.is_disconnected():
                             print("Client disconnected, cancelling generation")
-                            if hasattr(streamer, 'cancel'):
+                            if hasattr(streamer, "cancel"):
                                 streamer.cancel()
                             break
 
@@ -1060,35 +1082,54 @@ async def chat_completions(req: ChatRequest, request: Request):
                             "created": int(time.time()),
                             "model": req.model,
                             "choices": [
-                                {"delta": {"content": chunk}, "index": 0, "finish_reason": None}
+                                {
+                                    "delta": {"content": chunk},
+                                    "index": 0,
+                                    "finish_reason": None,
+                                }
                             ],
                         }
                         yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
                 except asyncio.CancelledError:
                     print("Stream cancelled, cancelling generation")
-                    if hasattr(streamer, 'cancel'):
+                    if hasattr(streamer, "cancel"):
                         streamer.cancel()
                     raise
 
             return StreamingResponse(event_stream(), media_type="text/event-stream")
-        
-        generator = local_model.chat_in_scheduler([m.model_dump() for m in req.messages])
-        rid = await generator.__anext__()
+
+        generator = local_model.chat_in_scheduler(
+            [m.model_dump() for m in req.messages]
+        )
+        client_data = {
+            "rid": await generator.__anext__(),
+            "last_check_time": time.time(),
+        }
+
         async def event_stream():
             try:
                 async for output_chunk in generator:
-                    if await request.is_disconnected():
-                        if isinstance(rid, int):
-                            await cast(LocalLLModel, local_model).cancel_scheduler(rid, "client disconnected")
-                        break
+                    now = time.time()
+                    if now - client_data["last_check_time"] > 5:
+                        client_data["last_check_time"] = now
+                        if await request.is_disconnected():
+                            if isinstance(client_data["rid"], int):
+                                await cast(LocalLLModel, local_model).cancel_scheduler(
+                                    client_data["rid"], "client disconnected"
+                                )
+                            break
                     data = {
                         "id": f"chatcmpl-{uuid.uuid4().hex}",
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": req.model,
                         "choices": [
-                            {"delta": {"content": output_chunk}, "index": 0, "finish_reason": None}
+                            {
+                                "delta": {"content": output_chunk},
+                                "index": 0,
+                                "finish_reason": None,
+                            }
                         ],
                     }
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -1096,9 +1137,9 @@ async def chat_completions(req: ChatRequest, request: Request):
             except asyncio.CancelledError:
                 print("Stream cancelled")
                 raise
-            
+
         return StreamingResponse(event_stream(), media_type="text/event-stream")
-        
+
     output = local_model.chat_at_once([m.model_dump() for m in req.messages])
     response = {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
@@ -1139,11 +1180,11 @@ async def completions(req: CompletionRequest):
 
     if local_model is None:
         local_model = LocalLLModel(req.model)
-    
+
     if req.enable_rag:
         if local_rag is None:
             local_rag = LocalRAG(local_model)
-            
+
         # Use RAG for completion (treating prompt as query)
         output = local_rag.generate_answer(req.prompt)
     else:

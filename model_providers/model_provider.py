@@ -13,12 +13,11 @@ from threading import Thread
 import os
 import psutil
 import gc
-from typing import cast, Callable, Awaitable
+from typing import cast
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from utils import platform_is_mac
+from utils import platform_is_mac, Scheduler
 from enum import Enum
 import asyncio
-from collections import deque
 
 project_root = os.path.abspath(os.path.dirname(__file__))
 models = {
@@ -62,49 +61,6 @@ class CancellableStreamer(TextIteratorStreamer):
 
     def cancel(self):
         self.stopping_criteria.cancel()
-
-
-class Scheduler[_T]:
-    def __init__(self, handler: Callable[[list], Awaitable[dict]], max_batch=int(os.getenv("MAX_BATCH", 4))):
-        self.handler = handler
-        self.max_batch = max_batch
-        self.waiting = cast(deque[tuple[int, _T, asyncio.Queue[_T]]], deque())
-        self.running = {}
-        self.lock = asyncio.Lock()
-
-    async def register(self, payload):
-        q = asyncio.Queue()
-        async with self.lock:
-            rid = id(q)
-            self.waiting.append((rid, payload, q))
-            self.running[rid] = q
-        return rid, q
-    
-    async def quit(self, rid: int):
-        async with self.lock:
-            for i in self.waiting:
-                if i[0] == rid:
-                    self.waiting.remove(i)
-                    break
-
-    async def loop(self):
-        while True:
-            await asyncio.sleep(0)
-            batch = []
-            async with self.lock:
-                while self.waiting and len(batch) < self.max_batch:
-                    batch.append(self.waiting.popleft())
-            if not batch:
-                continue
-            out = await self.handler(batch)
-            for rid, token in out.items():
-                q = self.running.get(rid)
-                if not q:
-                    continue
-                await q.put(token)
-                if token is None:
-                    async with self.lock:
-                        self.running.pop(rid, None)
 
 
 class LocalLLModel:
@@ -159,7 +115,7 @@ class LocalLLModel:
         self.cur_model_name = model_name
         self.model = None
         self.tokenizer = None
-        self.scheduler = Scheduler(self.generate_next_token)
+        self.scheduler = Scheduler(handler=self.generate_next_token)
         self._state = {}
         self.task = asyncio.create_task(self.scheduler.loop())
 
@@ -305,7 +261,7 @@ class LocalLLModel:
             if hasattr(msg, "type") and hasattr(msg, "content"):
                 role = (
                     "user"
-                    if msg.get('type') == "human"
+                    if msg.get("type") == "human"
                     else "assistant" if msg.get("type") == "ai" else "system"
                 )
                 content = msg.get("content")
@@ -356,59 +312,63 @@ class LocalLLModel:
             prompt += "Assistant:"
         return prompt
 
-    async def _make_generator_example(self, request_id, payload):
-        prompt = payload["prompt"]
-        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
-            prompt, return_tensors="pt"
-        ).to(self.model.device)
-        generated = inputs
-        while True:
-            with torch.no_grad():
-                out = self.model(**generated)
-            next_token = torch.argmax(out.logits[:, -1], dim=-1).unsqueeze(0)
-            text = cast(PreTrainedTokenizerBase, self.tokenizer).decode(next_token[0])
-            yield text
-            generated = {
-                "input_ids": torch.cat([generated["input_ids"], next_token], dim=1)
-            }
-            if (
-                next_token[0].item()
-                == cast(PreTrainedTokenizerBase, self.tokenizer).eos_token_id
-            ):
-                break
-
     async def _make_generator(self, request_id, payload):
         prompt = payload["prompt"]
         kwargs = payload.get("kwargs", {})
         inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
             prompt, return_tensors="pt"
         ).to(self.model.device)
-        streamer = CancellableStreamer(
-            cast(PreTrainedTokenizerBase, self.tokenizer),
-            skip_prompt=True,
-            skip_special_tokens=False,
-        )
-        stopping_criteria = StoppingCriteriaList([streamer.stopping_criteria])
-        generation_kwargs = dict(
-            inputs,
-            streamer=streamer,
-            max_new_tokens=2000,
-            stopping_criteria=stopping_criteria,
-        )
-        generation_kwargs.update(kwargs)
 
-        def safe_generate():
-            try:
-                self.model.generate(**generation_kwargs)
-            except Exception as e:
-                print(f"Generation error: {e}")
-            finally:
-                # streamer.on_finalized_text("<|END|>")
-                streamer.end()
+        # Prepare initial inputs
+        curr_input_ids = inputs.input_ids
+        curr_attention_mask = inputs.get("attention_mask")
+        past_key_values = None
 
-        return streamer
+        while True:
+            model_inputs = {"input_ids": curr_input_ids}
+            if past_key_values is not None:
+                model_inputs["past_key_values"] = past_key_values
 
-    async def generate_next_token(self, batch: list[tuple[int, dict, asyncio.Queue[dict]]]):
+            if curr_attention_mask is not None:
+                model_inputs["attention_mask"] = curr_attention_mask
+
+            with torch.no_grad():
+                out = self.model(**model_inputs, use_cache=True, **kwargs)
+
+            past_key_values = out.past_key_values
+            next_token = torch.argmax(out.logits[:, -1], dim=-1).unsqueeze(0)
+
+            text = cast(PreTrainedTokenizerBase, self.tokenizer).decode(
+                next_token[0], skip_special_tokens=False
+            )
+            yield text
+
+            # Update inputs for next iteration: only pass the new token
+            curr_input_ids = next_token
+
+            # Update attention mask if it exists
+            if curr_attention_mask is not None:
+                curr_attention_mask = torch.cat(
+                    [
+                        curr_attention_mask,
+                        torch.ones(
+                            (curr_attention_mask.shape[0], 1),
+                            device=curr_attention_mask.device,
+                            dtype=curr_attention_mask.dtype,
+                        ),
+                    ],
+                    dim=1,
+                )
+
+            if (
+                next_token[0].item()
+                == cast(PreTrainedTokenizerBase, self.tokenizer).eos_token_id
+            ):
+                break
+
+    async def generate_next_token(
+        self, batch: list[tuple[int, dict, asyncio.Queue[dict]]]
+    ):
         out = {}
         for rid, payload, _ in batch:
             if rid not in self._state:
@@ -421,9 +381,10 @@ class LocalLLModel:
                 out[rid] = None
                 self._state.pop(rid, None)
         return out
-    
+
     async def cancel_scheduler(self, rid: int, reason: str = "unkown reason"):
         print(f"{reason}, cancelling generation, scheduler id: {rid}")
+        self._state.pop(rid, None)
         return self.scheduler.quit(rid)
 
     async def chat_in_scheduler(self, messages: list[dict], **kwargs):
@@ -440,7 +401,7 @@ class LocalLLModel:
             t = await q.get()
             if t is None:
                 break
-            yield t
+            yield cast(str, t)
 
     def chat(self, messages: list[dict], **kwargs):
         self.load_model()
