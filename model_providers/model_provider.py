@@ -3,7 +3,6 @@ from transformers import (
     AutoTokenizer,
     BitsAndBytesConfig,
     TextIteratorStreamer,
-    StoppingCriteria,
     StoppingCriteriaList,
 )
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -15,8 +14,12 @@ import psutil
 import gc
 from typing import cast
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from utils import platform_is_mac, Scheduler
-from enum import Enum
+from utils import (
+    platform_is_mac,
+    Scheduler,
+    CancellableStreamer,
+    ContentType,
+)
 import asyncio
 
 project_root = os.path.abspath(os.path.dirname(__file__))
@@ -31,36 +34,15 @@ models = {
 }
 
 
-class ContentType(Enum):
-    TEXT = "text"
-    IMAGE_URL = "image_url"
-    INPUT_IMAGE = "input_url"
-    INPUT_AUDIO = "input_audio"
-    OUTPUT_AUDIO = "output_audio"
-
-
-class CancellationStoppingCriteria(StoppingCriteria):
+class GenerateHelper:
     def __init__(self):
-        self.cancelled = False
+        self.token_cache = []
 
-    def __call__(self, input_ids, scores, **kwargs) -> torch.BoolTensor:
-        batch_size = input_ids.shape[0]
-        t = torch.tensor(
-            [self.cancelled] * batch_size, dtype=torch.bool, device=input_ids.device
-        )
-        return cast(torch.BoolTensor, t)
+    def save(self, inputs):
+        self.token_cache.append(inputs)
 
-    def cancel(self):
-        self.cancelled = True
-
-
-class CancellableStreamer(TextIteratorStreamer):
-    def __init__(self, tokenizer, **kwargs):
-        super().__init__(tokenizer, **kwargs)
-        self.stopping_criteria = CancellationStoppingCriteria()
-
-    def cancel(self):
-        self.stopping_criteria.cancel()
+    def clear(self):
+        self.token_cache = []
 
 
 class LocalLLModel:
@@ -86,7 +68,7 @@ class LocalLLModel:
             available_memory_gb = max(1, (total_memory / (1024**3)) - reserved_gb)
             max_memory["cpu"] = f"{int(available_memory_gb)}GiB"
             if torch.backends.mps.is_available():
-                print(f"MPS 加速可用")
+                print("MPS 加速可用")
         else:
             if torch.cuda.is_available():
                 gpu_memory = torch.cuda.get_device_properties(0).total_memory
@@ -324,6 +306,8 @@ class LocalLLModel:
         curr_attention_mask = inputs.get("attention_mask")
         past_key_values = None
 
+        generate_helper = GenerateHelper()
+
         while True:
             model_inputs = {"input_ids": curr_input_ids}
             if past_key_values is not None:
@@ -338,10 +322,26 @@ class LocalLLModel:
             past_key_values = out.past_key_values
             next_token = torch.argmax(out.logits[:, -1], dim=-1).unsqueeze(0)
 
+            token_id = next_token[0].item()
+            generate_helper.save(token_id)
+
             text = cast(PreTrainedTokenizerBase, self.tokenizer).decode(
-                next_token[0], skip_special_tokens=False
+                generate_helper.token_cache, skip_special_tokens=False
             )
-            yield text
+
+            is_eos = (
+                token_id == cast(PreTrainedTokenizerBase, self.tokenizer).eos_token_id
+            )
+
+            if is_eos:
+                yield text
+                break
+
+            if text.endswith("\ufffd") and len(generate_helper.token_cache) < 10:
+                yield ""
+            else:
+                yield text
+                generate_helper.clear()
 
             # Update inputs for next iteration: only pass the new token
             curr_input_ids = next_token
@@ -359,12 +359,6 @@ class LocalLLModel:
                     ],
                     dim=1,
                 )
-
-            if (
-                next_token[0].item()
-                == cast(PreTrainedTokenizerBase, self.tokenizer).eos_token_id
-            ):
-                break
 
     async def generate_next_token(
         self, batch: list[tuple[int, dict, asyncio.Queue[dict]]]
@@ -387,7 +381,7 @@ class LocalLLModel:
         self._state.pop(rid, None)
         return self.scheduler.quit(rid)
 
-    async def chat_in_scheduler(self, messages: list[dict], **kwargs):
+    async def chat(self, messages: list[dict], **kwargs):
         self.load_model()
         prompt = self.format_prompt(messages)
         rid, q = await self.scheduler.register(
@@ -403,7 +397,7 @@ class LocalLLModel:
                 break
             yield cast(str, t)
 
-    def chat(self, messages: list[dict], **kwargs):
+    def chat_in_exclusive(self, messages: list[dict], **kwargs):
         self.load_model()
         prompt = self.format_prompt(messages)
         inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(

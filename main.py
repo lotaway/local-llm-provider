@@ -139,7 +139,7 @@ class ChatRequest(BaseModel):
     model: str
     messages: list[Message]
     stream: bool = False
-    use_single: bool = False
+    exclusive: bool = False  # exclusive required admin token
     enable_rag: bool = False
     files: list[str] = []  # List of file IDs from upload endpoint
 
@@ -1064,8 +1064,10 @@ async def chat_completions(req: ChatRequest, request: Request):
             )
 
     if req.stream:
-        if req.use_single:
-            streamer = local_model.chat([m.model_dump() for m in req.messages])
+        if req.exclusive:
+            streamer = local_model.chat_in_exclusive(
+                [m.model_dump() for m in req.messages]
+            )
 
             async def event_stream():
                 try:
@@ -1099,9 +1101,7 @@ async def chat_completions(req: ChatRequest, request: Request):
 
             return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-        generator = local_model.chat_in_scheduler(
-            [m.model_dump() for m in req.messages]
-        )
+        generator = local_model.chat([m.model_dump() for m in req.messages])
         client_data = {
             "rid": await generator.__anext__(),
             "last_check_time": time.time(),
