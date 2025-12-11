@@ -17,6 +17,7 @@ import uuid
 import secrets
 from typing import cast
 import asyncio
+from contextlib import asynccontextmanager
 from utils import ContentType
 
 # import triton
@@ -87,7 +88,16 @@ async def check_multimodal_health():
         await asyncio.sleep(10)
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    if MULTIMODAL_PROVIDER_URL:
+        asyncio.create_task(check_multimodal_health())
+    yield
+    # Shutdown (if needed in the future)
+
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -95,12 +105,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-async def startup_event():
-    if MULTIMODAL_PROVIDER_URL:
-        asyncio.create_task(check_multimodal_health())
 
 
 DEFAULT_MODEL_INFO = {
