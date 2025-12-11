@@ -82,3 +82,7 @@ Take `libbitsandbytes_rocm64.so` file to `/home/{user}/miniforge3/envs/python{ve
 Notice: I use miniforge3 as python environment here, if you use other python environment, you should change the directory accordingly. Such as if you're using `anaconda`, directory prefix are `/home/{user}/canda/`
 
 Done all process, now you can use `bitsandbytes` in your python code.
+
+## For Multiple Mac (Apple silicon) devices
+
+You can use [exo](https://github.com/exo-explore/exo) to start the mac device as node, multiple devices as clusters, and let data flow between them to use both gpu.
