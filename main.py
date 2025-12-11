@@ -1106,10 +1106,10 @@ async def chat_completions(req: ChatRequest, request: Request):
                 payload = req.model_dump()
                 payload["messages"] = multimodal_messages
 
-                async with httpx.AsyncClient() as client:
-                    if req.stream:
+                if req.stream:
 
-                        async def remote_stream():
+                    async def remote_stream():
+                        async with httpx.AsyncClient() as client:
                             async with client.stream(
                                 "POST",
                                 f"{MULTIMODAL_PROVIDER_URL}/{VERSION}/chat/completions",
@@ -1120,10 +1120,11 @@ async def chat_completions(req: ChatRequest, request: Request):
                                 async for chunk in resp.aiter_text():
                                     yield chunk
 
-                        return StreamingResponse(
-                            remote_stream(), media_type="text/event-stream"
-                        )
-                    else:
+                    return StreamingResponse(
+                        remote_stream(), media_type="text/event-stream"
+                    )
+                else:
+                    async with httpx.AsyncClient() as client:
                         resp = await client.post(
                             f"{MULTIMODAL_PROVIDER_URL}/{VERSION}/chat/completions",
                             json=payload,
