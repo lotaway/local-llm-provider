@@ -1,6 +1,7 @@
 import torch
 from transformers import AutoModelForCausalLM
 import os
+from utils import ContentType
 
 try:
     from janus.models import MultiModalityCausalLM, VLChatProcessor
@@ -25,6 +26,10 @@ class JanusModel:
         self.vl_chat_processor = None
         self.tokenizer = None
         self.vl_gpt = None
+
+    @staticmethod
+    def get_models():
+        return list(models.keys())
 
     def load_model(self):
         if self.vl_gpt is not None:
@@ -66,19 +71,22 @@ class JanusModel:
         images = []
 
         for msg in messages:
-            role = "<|User|>" if msg["role"] == "user" else "<|Assistant|>"
+            if msg["role"] == "user" or msg["role"] == "system":
+                role = "<|User|>"
+            else:
+                role = "<|Assistant|>"
             content = msg["content"]
 
             if isinstance(content, list):
                 # Handle multimodal content
                 text_parts = []
                 for part in content:
-                    if part.get("type") == "text":
-                        text_parts.append(part["text"])
-                    elif part.get("type") == "image_url":
+                    if part.get("type") == ContentType.TEXT.value:
+                        text_parts.append(part[ContentType.TEXT.value])
+                    elif part.get("type") == ContentType.IMAGE_URL.value:
                         # Assuming image_url is a local path or we need to download it
                         # The snippet expects 'images' list in the dict to contain PIL images or paths
-                        image_path = part["image_url"]
+                        image_path = part[ContentType.IMAGE_URL.value]
                         images.append(image_path)
                         text_parts.append("<image_placeholder>")
 

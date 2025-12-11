@@ -10,12 +10,11 @@ from sentence_transformers import SentenceTransformer
 import torch
 from threading import Thread
 import os
-import psutil
 import gc
 from typing import cast
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils import (
-    platform_is_mac,
+    DeviceUtils,
     Scheduler,
     CancellableStreamer,
     ContentType,
@@ -54,37 +53,6 @@ class LocalLLModel:
     # mode: _BaseModelWithGenerate | None
 
     @staticmethod
-    def get_available_memory():
-        """
-        自动检测系统可用内存配置
-        返回格式: {0: "20GiB", "cpu": "60GiB"}
-        """
-        max_memory = {}
-        is_mac = platform_is_mac()
-
-        if is_mac:
-            total_memory = psutil.virtual_memory().total
-            reserved_gb = 4
-            available_memory_gb = max(1, (total_memory / (1024**3)) - reserved_gb)
-            max_memory["cpu"] = f"{int(available_memory_gb)}GiB"
-            if torch.backends.mps.is_available():
-                print("MPS 加速可用")
-        else:
-            if torch.cuda.is_available():
-                gpu_memory = torch.cuda.get_device_properties(0).total_memory
-                available_gpu_gb = max(1, (gpu_memory / (1024**3)) - 4)
-                max_memory[0] = f"{int(available_gpu_gb)}GiB"
-            total_memory = psutil.virtual_memory().total
-            available_cpu_gb = max(1, (total_memory / (1024**3)) - 8)
-            max_memory["cpu"] = f"{int(available_cpu_gb)}GiB"
-        if max_memory.get("cpu") == "0GiB" and max_memory.get(0) == "0GiB":
-            print("内存检测异常，使用默认配置")
-            max_memory[0] = f"{24 - 4}GiB"
-            max_memory["cpu"] = f"{60}GiB"
-
-        return max_memory
-
-    @staticmethod
     def get_models():
         return list(models.keys())
 
@@ -120,7 +88,7 @@ class LocalLLModel:
             cast(PreTrainedTokenizerBase, self.tokenizer).pad_token_id = cast(
                 PreTrainedTokenizerBase, self.tokenizer
             ).eos_token_id
-        is_mac = platform_is_mac()
+        is_mac = DeviceUtils.platform_is_mac()
         if is_mac:
             device_map = "auto"
         else:

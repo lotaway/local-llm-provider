@@ -18,6 +18,7 @@ import uuid
 import secrets
 from typing import cast
 import asyncio
+from utils import ContentType
 
 # import triton
 # import triton.language as tl
@@ -34,7 +35,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from model_providers import LocalLLModel, PoeModelProvider, ComfyUIProvider
+from model_providers import LocalLLModel, PoeModelProvider, ComfyUIProvider, JanusModel
 from rag import LocalRAG
 
 # Import agents
@@ -47,6 +48,34 @@ agent_runtime = None
 permission_manager = None
 context_storage = None  # Global context storage instance
 
+# Multimodal Configuration
+MULTIMODAL_PROVIDER_URL = os.getenv("MULTIMODAL_PROVIDER_URL")
+remote_multimodal_status = False
+janus_model = None
+
+
+async def check_multimodal_health():
+    """Background task to check external multimodal provider health"""
+    global remote_multimodal_status
+    if not MULTIMODAL_PROVIDER_URL:
+        return
+
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{MULTIMODAL_PROVIDER_URL}/api/show", timeout=5
+                )
+                if resp.status_code == 200 and resp.json().get("ok"):
+                    remote_multimodal_status = True
+                else:
+                    remote_multimodal_status = False
+        except Exception:
+            remote_multimodal_status = False
+
+        await asyncio.sleep(10)
+
+
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -55,6 +84,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    if MULTIMODAL_PROVIDER_URL:
+        asyncio.create_task(check_multimodal_health())
+
+
 DEFAULT_MODEL_INFO = {
     "name": "unknown",
     "version": "1.0.0",
@@ -741,13 +778,69 @@ async def agent_chat(req: ChatRequest):
     if not user_messages:
         raise HTTPException(status_code=400, detail="No user message found")
 
-    query = user_messages[-1].content
+    last_user_msg = user_messages[-1]
+    query = last_user_msg.content
+
+    if isinstance(query, list):
+        has_images = False
+        for part in query:
+            if isinstance(part, dict) and (
+                part.get("type") == ContentType.IMAGE_URL.value
+                or part.get("type") == ContentType.INPUT_IMAGE.value
+            ):
+                has_images = True
+                break
+
+        if has_images:
+            multimodal_prompt = "请分析所提供的图像，并返回一个包含视觉内容详细描述的 JSON 对象，内容涵盖物体、文字、颜色以及空间位置关系。如果图像中主体信息包含大量文字，请提取出文字内容。"
+            system_msg = {"role": "system", "content": multimodal_prompt}
+            msgs_dicts = [
+                m.model_dump() if hasattr(m, "model_dump") else m for m in req.messages
+            ]
+            multimodal_messages = [system_msg] + msgs_dicts
+
+            description = ""
+            if remote_multimodal_status and MULTIMODAL_PROVIDER_URL:
+                try:
+                    payload = req.model_dump()
+                    payload["messages"] = multimodal_messages
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.post(
+                            f"{MULTIMODAL_PROVIDER_URL}/{VERSION}/chat/completions",
+                            json=payload,
+                            timeout=60.0,
+                        )
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if "choices" in data and len(data["choices"]) > 0:
+                                description = data["choices"][0]["message"]["content"]
+                except Exception as e:
+                    logger.error(f"Remote multimodal failed in agent_chat: {e}")
+
+            if not description:
+                global janus_model
+                if janus_model is None:
+                    from model_providers import JanusModel
+
+                    janus_model = JanusModel()
+
+                def run_janus():
+                    return janus_model.chat(multimodal_messages)
+
+                description = await asyncio.to_thread(run_janus)
+            text_query = ""
+            for part in query:
+                if (
+                    isinstance(part, dict)
+                    and part.get("type") == ContentType.TEXT.value
+                ):
+                    text_query += part.get(ContentType.TEXT.value, "") + "\n"
+
+            query = f"{text_query}\n\n[Image Analysis]: {description}"
 
     try:
-        # Execute agent workflow
         state = agent_runtime.execute(query, start_agent="qa")
 
-        # Format response
         if state.status.value == "completed":
             answer = state.final_result
             status = "success"
@@ -953,6 +1046,7 @@ async def chat_completions(req: ChatRequest, request: Request):
     """openai chat/edit/apply with multimodal support"""
     global local_model
     global local_rag
+    global janus_model
 
     if local_model is None:
         local_model = LocalLLModel(req.model)
@@ -968,6 +1062,91 @@ async def chat_completions(req: ChatRequest, request: Request):
         req.messages = file_processor.inject_file_context_to_messages(
             req.messages, req.files
         )
+
+    has_images = False
+    for m in req.messages:
+        if isinstance(m.content, list):
+            for part in m.content:
+                if isinstance(part, dict) and (
+                    part.get("type") != ContentType.TEXT.value
+                ):
+                    has_images = True
+                    break
+        if has_images:
+            break
+
+    if has_images:
+        multimodal_prompt = "请分析所提供的图像，并返回一个包含视觉内容详细描述的 JSON 对象，内容涵盖物体、文字、颜色以及空间位置关系。如果图像中主体信息包含大量文字，请提取出文字内容。"
+
+        system_msg = {"role": "system", "content": multimodal_prompt}
+        msgs_dicts = [
+            m.model_dump() if hasattr(m, "model_dump") else m for m in req.messages
+        ]
+        multimodal_messages = [system_msg] + msgs_dicts
+
+        if remote_multimodal_status and MULTIMODAL_PROVIDER_URL:
+            try:
+                payload = req.model_dump()
+                payload["messages"] = multimodal_messages
+
+                async with httpx.AsyncClient() as client:
+                    if req.stream:
+
+                        async def remote_stream():
+                            async with client.stream(
+                                "POST",
+                                f"{MULTIMODAL_PROVIDER_URL}/{VERSION}/chat/completions",
+                                json=payload,
+                                timeout=60.0,
+                            ) as resp:
+                                async for chunk in resp.aiter_text():
+                                    yield chunk
+
+                        return StreamingResponse(
+                            remote_stream(), media_type="text/event-stream"
+                        )
+                    else:
+                        resp = await client.post(
+                            f"{MULTIMODAL_PROVIDER_URL}/{VERSION}/chat/completions",
+                            json=payload,
+                            timeout=60.0,
+                        )
+                        return JSONResponse(
+                            content=resp.json(), status_code=resp.status_code
+                        )
+
+            except Exception as e:
+                logger.error(
+                    f"Remote multimodal failed: {e}, falling back to local if available"
+                )
+
+        if janus_model is None:
+            janus_model = JanusModel()
+
+        def run_janus():
+            return janus_model.chat(multimodal_messages)
+
+        output = await asyncio.to_thread(run_janus)
+
+        response = {
+            "id": f"chatcmpl-janus-{uuid.uuid4().hex}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": req.model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": output},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": len(str(output).split()),
+                "total_tokens": len(str(output).split()),
+            },
+        }
+        return JSONResponse(content=response)
 
     if req.enable_rag:
         if local_rag is None:
