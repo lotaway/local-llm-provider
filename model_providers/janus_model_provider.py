@@ -45,21 +45,63 @@ class JanusModel:
         )
         self.tokenizer = self.vl_chat_processor.tokenizer
 
-        # Determine device and dtype
-        if torch.backends.mps.is_available():
-            device = "mps"
-            dtype = torch.float16  # MPS supports float16, bfloat16 support varies
-        elif torch.cuda.is_available():
-            device = "cuda"
-            dtype = torch.bfloat16
-        else:
-            device = "cpu"
-            dtype = torch.float32
+        # Determine device and dtype for Mac M4 optimization
+        is_mps = torch.backends.mps.is_available()
+        is_cuda = torch.cuda.is_available()
 
-        self.vl_gpt: MultiModalityCausalLM = AutoModelForCausalLM.from_pretrained(
-            self.model_path, trust_remote_code=False
-        )
-        self.vl_gpt = self.vl_gpt.to(dtype).to(device).eval()
+        # Optimize for Mac M4 16GB: use 8-bit quantization to reduce memory
+        load_in_8bit = os.getenv("JANUS_LOAD_IN_8BIT", "true").lower() == "true"
+
+        if is_mps:
+            # Mac M4 with MPS
+            # Note: MPS doesn't support load_in_8bit directly, so we use float16
+            print("Loading Janus model optimized for Mac M4 (MPS)...")
+            self.vl_gpt: MultiModalityCausalLM = AutoModelForCausalLM.from_pretrained(
+                self.model_path,
+                trust_remote_code=False,
+                torch_dtype=torch.float16,
+                low_cpu_mem_usage=True,
+                device_map="auto",  # Let transformers handle device placement
+            )
+            # MPS doesn't need explicit .to(device) with device_map="auto"
+            self.vl_gpt.eval()
+
+        elif is_cuda:
+            # CUDA GPU
+            print("Loading Janus model for CUDA...")
+            if load_in_8bit:
+                # Use 8-bit quantization for memory efficiency
+                self.vl_gpt: MultiModalityCausalLM = (
+                    AutoModelForCausalLM.from_pretrained(
+                        self.model_path,
+                        trust_remote_code=False,
+                        load_in_8bit=True,
+                        device_map="auto",
+                        low_cpu_mem_usage=True,
+                    )
+                )
+            else:
+                self.vl_gpt: MultiModalityCausalLM = (
+                    AutoModelForCausalLM.from_pretrained(
+                        self.model_path,
+                        trust_remote_code=False,
+                        torch_dtype=torch.bfloat16,
+                        device_map="auto",
+                        low_cpu_mem_usage=True,
+                    )
+                )
+            self.vl_gpt.eval()
+
+        else:
+            # CPU fallback
+            print("Loading Janus model for CPU (this may be slow)...")
+            self.vl_gpt: MultiModalityCausalLM = AutoModelForCausalLM.from_pretrained(
+                self.model_path,
+                trust_remote_code=False,
+                torch_dtype=torch.float32,
+                low_cpu_mem_usage=True,
+            )
+            self.vl_gpt = self.vl_gpt.to("cpu").eval()
 
     def chat(self, messages: list[dict], **kwargs):
         self.load_model()
@@ -125,6 +167,8 @@ class JanusModel:
         ).to(self.vl_gpt.device)
 
         inputs_embeds = self.vl_gpt.prepare_inputs_embeds(**prepare_inputs)
+        # Reduce max_new_tokens default to save memory
+        max_new_tokens = kwargs.get("max_new_tokens", 256)  # Reduced from 512
 
         outputs = self.vl_gpt.language_model.generate(
             inputs_embeds=inputs_embeds,
@@ -132,9 +176,11 @@ class JanusModel:
             pad_token_id=self.tokenizer.eos_token_id,
             bos_token_id=self.tokenizer.bos_token_id,
             eos_token_id=self.tokenizer.eos_token_id,
-            max_new_tokens=kwargs.get("max_new_tokens", 512),
+            max_new_tokens=max_new_tokens,
             do_sample=kwargs.get("do_sample", False),
             use_cache=True,
+            # Memory optimization: reduce batch size if needed
+            num_beams=kwargs.get("num_beams", 1),  # Beam search uses more memory
         )
 
         answer = self.tokenizer.decode(
