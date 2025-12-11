@@ -54,6 +54,16 @@ remote_multimodal_status = False
 janus_model = None
 
 
+def get_multimodal_headers():
+    """Get headers for multimodal provider API calls with Authorization"""
+    headers = {"Content-Type": "application/json"}
+    MULTIMODAL_ADMIN_TOKEN = os.getenv("MULTIMODAL_ADMIN_TOKEN", ADMIN_TOKEN)
+    if MULTIMODAL_ADMIN_TOKEN is None:
+        raise ValueError("MULTIMODAL_ADMIN_TOKEN is not set")
+    headers["Authorization"] = f"Bearer {MULTIMODAL_ADMIN_TOKEN}"
+    return headers
+
+
 async def check_multimodal_health():
     """Background task to check external multimodal provider health"""
     global remote_multimodal_status
@@ -64,7 +74,9 @@ async def check_multimodal_health():
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
-                    f"{MULTIMODAL_PROVIDER_URL}/api/show", timeout=5
+                    f"{MULTIMODAL_PROVIDER_URL}/api/show",
+                    headers=get_multimodal_headers(),
+                    timeout=5,
                 )
                 if resp.status_code == 200 and resp.json().get("ok"):
                     remote_multimodal_status = True
@@ -808,6 +820,7 @@ async def agent_chat(req: ChatRequest):
                         resp = await client.post(
                             f"{MULTIMODAL_PROVIDER_URL}/{VERSION}/chat/completions",
                             json=payload,
+                            headers=get_multimodal_headers(),
                             timeout=60.0,
                         )
                         if resp.status_code == 200:
@@ -1097,6 +1110,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                                 "POST",
                                 f"{MULTIMODAL_PROVIDER_URL}/{VERSION}/chat/completions",
                                 json=payload,
+                                headers=get_multimodal_headers(),
                                 timeout=60.0,
                             ) as resp:
                                 async for chunk in resp.aiter_text():
@@ -1109,6 +1123,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                         resp = await client.post(
                             f"{MULTIMODAL_PROVIDER_URL}/{VERSION}/chat/completions",
                             json=payload,
+                            headers=get_multimodal_headers(),
                             timeout=60.0,
                         )
                         return JSONResponse(
