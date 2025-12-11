@@ -1,6 +1,5 @@
 import os
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
-import shutil
 from fastapi.responses import (
     JSONResponse,
     StreamingResponse,

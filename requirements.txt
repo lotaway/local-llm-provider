@@ -18,6 +18,7 @@ pymilvus>=2.6.3
 sentence_transformers>=5.1.2
 unstructured>=0.18.20
 langchain-huggingface>=1.0.1
+langchain_milvus>=0.3.0
 # For Agent
 rank-bm25==0.2.2
 sentence-transformers>=2.2.0
