@@ -1,6 +1,7 @@
 import torch
 from transformers import AutoModelForCausalLM
 import os
+import time
 from utils import ContentType
 
 
@@ -39,10 +40,10 @@ class JanusModel:
                 "Please install it from source: git clone https://github.com/deepseek-ai/Janus.git\n"
                 "Note: 'pip install janus' installs an unrelated library."
             )
-
         self.vl_chat_processor: VLChatProcessor = VLChatProcessor.from_pretrained(
             self.model_path
         )
+        
         self.tokenizer = self.vl_chat_processor.tokenizer
 
         # Determine device and dtype for Mac M4 optimization
@@ -52,6 +53,9 @@ class JanusModel:
         # Optimize for Mac M4 16GB: use 8-bit quantization to reduce memory
         load_in_8bit = os.getenv("JANUS_LOAD_IN_8BIT", "true").lower() == "true"
 
+        start_time = time.time()
+        print("Loading VLChatProcessor...")
+        
         if is_mps:
             # Mac M4 with MPS
             # MPS doesn't support BFloat16 well, use Float16 instead
@@ -60,9 +64,10 @@ class JanusModel:
             self.vl_gpt: MultiModalityCausalLM = AutoModelForCausalLM.from_pretrained(
                 self.model_path,
                 trust_remote_code=False,
-                torch_dtype=self.target_dtype,
+                dtype=self.target_dtype,
                 low_cpu_mem_usage=True,
                 device_map="auto",
+                offload_folder="./offload",
             )
             self.vl_gpt.eval()
 
@@ -87,7 +92,7 @@ class JanusModel:
                     AutoModelForCausalLM.from_pretrained(
                         self.model_path,
                         trust_remote_code=False,
-                        torch_dtype=self.target_dtype,
+                        dtype=self.target_dtype,
                         device_map="auto",
                         low_cpu_mem_usage=True,
                     )
@@ -101,10 +106,14 @@ class JanusModel:
             self.vl_gpt: MultiModalityCausalLM = AutoModelForCausalLM.from_pretrained(
                 self.model_path,
                 trust_remote_code=False,
-                torch_dtype=self.target_dtype,
+                dtype=self.target_dtype,
                 low_cpu_mem_usage=True,
             )
             self.vl_gpt = self.vl_gpt.to("cpu").eval()
+            
+        end_time = time.time()
+        loading_time = end_time - start_time
+        print(f"VLChatProcessor loaded in {loading_time:.2f} seconds")
 
     def chat(self, messages: list[dict], **kwargs):
         self.load_model()
