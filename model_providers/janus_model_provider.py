@@ -3,14 +3,6 @@ from transformers import AutoModelForCausalLM
 import os
 from utils import ContentType
 
-try:
-    from janus.models import MultiModalityCausalLM, VLChatProcessor
-    from janus.utils.io import load_pil_images
-except ImportError:
-    MultiModalityCausalLM = None
-    VLChatProcessor = None
-    load_pil_images = None
-
 
 project_root = os.path.abspath(os.path.dirname(__file__))
 models = {
@@ -34,6 +26,12 @@ class JanusModel:
     def load_model(self):
         if self.vl_gpt is not None:
             return
+
+        try:
+            from janus.models import MultiModalityCausalLM, VLChatProcessor
+        except ImportError:
+            MultiModalityCausalLM = None
+            VLChatProcessor = None
 
         if MultiModalityCausalLM is None:
             raise ImportError(
@@ -65,6 +63,11 @@ class JanusModel:
 
     def chat(self, messages: list[dict], **kwargs):
         self.load_model()
+
+        try:
+            from janus.utils.io import load_pil_images
+        except ImportError:
+            load_pil_images = None
 
         # Convert standard messages to Janus format
         conversation = []

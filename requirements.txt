@@ -28,4 +28,4 @@ psycopg2-binary>=2.9.0
 python-multipart>=0.0.20
 elasticsearch>=9.0.0
 # Mutiple-Model
-janus>=2.0.0
+# Install [janus](https://github.com/deepseek-ai/Janus.git) manually.
