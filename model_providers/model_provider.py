@@ -101,7 +101,7 @@ class LocalLLModel:
                 "model.norm": 0,
                 "lm_head": 0,
             }
-        max_memory = self.get_available_memory()
+        max_memory = DeviceUtils.get_available_memory()
         if self.cur_model_name.startswith("gpt"):
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_path,
