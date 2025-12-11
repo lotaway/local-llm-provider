@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 class DeviceUtils:
+    
+    @staticmethod
     def platform_is_mac():
         return os.sys.platform == "darwin"
 
