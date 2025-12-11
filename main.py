@@ -53,7 +53,7 @@ MULTIMODAL_PROVIDER_URL = os.getenv("MULTIMODAL_PROVIDER_URL")
 remote_multimodal_status = False
 janus_model = None
 
-if os.getenv("PRELOAD_MULTIONDAL", False):
+if os.getenv("PRELOAD_MULTIONDAL", "False").lower() == "true":
     janus_model = JanusModel()
     janus_model.load_model()
 
