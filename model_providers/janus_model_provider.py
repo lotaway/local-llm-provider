@@ -54,16 +54,16 @@ class JanusModel:
 
         if is_mps:
             # Mac M4 with MPS
-            # Note: MPS doesn't support load_in_8bit directly, so we use float16
+            # MPS doesn't support BFloat16 well, use Float16 instead
             print("Loading Janus model optimized for Mac M4 (MPS)...")
+            self.target_dtype = torch.float16
             self.vl_gpt: MultiModalityCausalLM = AutoModelForCausalLM.from_pretrained(
                 self.model_path,
                 trust_remote_code=False,
-                torch_dtype=torch.float16,
+                torch_dtype=self.target_dtype,
                 low_cpu_mem_usage=True,
-                device_map="auto",  # Let transformers handle device placement
+                device_map="auto",
             )
-            # MPS doesn't need explicit .to(device) with device_map="auto"
             self.vl_gpt.eval()
 
         elif is_cuda:
@@ -71,6 +71,7 @@ class JanusModel:
             print("Loading Janus model for CUDA...")
             if load_in_8bit:
                 # Use 8-bit quantization for memory efficiency
+                self.target_dtype = torch.float16  # 8-bit uses float16 for computation
                 self.vl_gpt: MultiModalityCausalLM = (
                     AutoModelForCausalLM.from_pretrained(
                         self.model_path,
@@ -81,11 +82,12 @@ class JanusModel:
                     )
                 )
             else:
+                self.target_dtype = torch.bfloat16
                 self.vl_gpt: MultiModalityCausalLM = (
                     AutoModelForCausalLM.from_pretrained(
                         self.model_path,
                         trust_remote_code=False,
-                        torch_dtype=torch.bfloat16,
+                        torch_dtype=self.target_dtype,
                         device_map="auto",
                         low_cpu_mem_usage=True,
                     )
@@ -95,10 +97,11 @@ class JanusModel:
         else:
             # CPU fallback
             print("Loading Janus model for CPU (this may be slow)...")
+            self.target_dtype = torch.float32
             self.vl_gpt: MultiModalityCausalLM = AutoModelForCausalLM.from_pretrained(
                 self.model_path,
                 trust_remote_code=False,
-                torch_dtype=torch.float32,
+                torch_dtype=self.target_dtype,
                 low_cpu_mem_usage=True,
             )
             self.vl_gpt = self.vl_gpt.to("cpu").eval()
@@ -165,6 +168,16 @@ class JanusModel:
         prepare_inputs = self.vl_chat_processor(
             conversations=conversation, images=pil_images, force_batchify=True
         ).to(self.vl_gpt.device)
+
+        # Ensure all inputs use the same dtype as the model to avoid dtype mismatch
+        # Convert input tensors to target dtype
+        if (
+            hasattr(prepare_inputs, "pixel_values")
+            and prepare_inputs.pixel_values is not None
+        ):
+            prepare_inputs.pixel_values = prepare_inputs.pixel_values.to(
+                self.target_dtype
+            )
 
         inputs_embeds = self.vl_gpt.prepare_inputs_embeds(**prepare_inputs)
         # Reduce max_new_tokens default to save memory
