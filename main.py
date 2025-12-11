@@ -53,6 +53,10 @@ MULTIMODAL_PROVIDER_URL = os.getenv("MULTIMODAL_PROVIDER_URL")
 remote_multimodal_status = False
 janus_model = None
 
+if os.getenv("PRELOAD_MULTIONDAL", False):
+    janus_model = JanusModel()
+    janus_model.load_model()
+
 
 def get_multimodal_headers():
     """Get headers for multimodal provider API calls with Authorization"""
@@ -1142,7 +1146,7 @@ async def chat_completions(req: ChatRequest, request: Request):
             janus_model = JanusModel()
 
         def run_janus():
-            return janus_model.chat(multimodal_messages)
+            return cast(JanusModel, janus_model).chat(multimodal_messages)
 
         output = await asyncio.to_thread(run_janus)
 
