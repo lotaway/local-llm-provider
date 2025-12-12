@@ -6,7 +6,7 @@ from .agent_base import BaseAgent, AgentResult, AgentStatus
 
 class QAAgent(BaseAgent):
     """Agent for parsing and understanding user queries"""
-    
+
     SYSTEM_PROMPT = """你是一个问答理解助手。你的任务是：
 1. 解析用户输入，提取核心意图
 2. 识别问题类型（事实查询、操作请求、分析任务等）
@@ -22,72 +22,79 @@ class QAAgent(BaseAgent):
     "clarification": "如果需要澄清，说明需要澄清什么",
     "processed_query": "处理后的清晰问题"
 }"""
-    
-    def execute(self, input_data: Any, context: Dict[str, Any], stream_callback=None) -> AgentResult:
+
+    async def execute(
+        self, input_data: Any, context: Dict[str, Any], stream_callback=None
+    ) -> AgentResult:
         """
         Parse and understand user query
-        
+
         Args:
             input_data: User query string
             context: Runtime context
             stream_callback: Optional callback for streaming LLM outputs
-            
+
         Returns:
             AgentResult with parsed query information
         """
         query = str(input_data)
-        
+
         # Store original query in context
         context["original_query"] = query
-        
+
         # Check for session files and append to query
         if "session_files" in context:
             files_content = "\n\n用户提供了以下文件作为上下文：\n"
             for file_info in context["session_files"]:
-                files_content += f"文件: {file_info['name']}\n内容:\n{file_info['content']}\n\n"
-            
+                files_content += (
+                    f"文件: {file_info['name']}\n内容:\n{file_info['content']}\n\n"
+                )
+
             # Append files content to the user message for the LLM
             # We don't change the original query in context, just the message sent to LLM
             messages = [
                 {"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": f"用户问题：{query}{files_content}"}
+                {"role": "user", "content": f"用户问题：{query}{files_content}"},
             ]
         else:
             messages = [
                 {"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": f"用户问题：{query}"}
+                {"role": "user", "content": f"用户问题：{query}"},
             ]
-        
+
         try:
-            response = self._call_llm(messages, stream_callback=stream_callback, temperature=0.1, max_new_tokens=1000)
+            response = await self._call_llm(
+                messages,
+                stream_callback=stream_callback,
+                temperature=0.1,
+                max_new_tokens=1000,
+            )
             parsed = self._parse_json_response(response)
-            
+
             # Check if clarification needed
             if parsed.get("query_type") == "clarification_needed":
                 return AgentResult(
                     status=AgentStatus.NEEDS_HUMAN,
                     data={
                         "question": parsed.get("clarification", "请提供更多信息"),
-                        "original_query": query
+                        "original_query": query,
                     },
                     message="需要用户澄清问题",
-                    next_agent="qa"
+                    next_agent="qa",
                 )
-            
+
             # Store parsed query in context
             context["parsed_query"] = parsed
-            
+
             return AgentResult(
                 status=AgentStatus.SUCCESS,
                 data=parsed,
                 message=f"成功解析查询: {parsed.get('intent', 'unknown')}",
-                next_agent="planning"
+                next_agent="planning",
             )
-            
+
         except Exception as e:
             self.logger.error(f"Query parsing failed: {e}")
             return AgentResult(
-                status=AgentStatus.FAILURE,
-                data=None,
-                message=f"查询解析失败: {str(e)}"
+                status=AgentStatus.FAILURE, data=None, message=f"查询解析失败: {str(e)}"
             )
