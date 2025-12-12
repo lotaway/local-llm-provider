@@ -1083,8 +1083,7 @@ async def chat_completions(req: ChatRequest, request: Request):
     if req.files:
         from utils import FileProcessor
 
-        upload_dir = os.path.join(os.getcwd(), os.getenv("UPLOAD_DIR", "uploads"))
-        file_processor = FileProcessor(upload_dir)
+        file_processor = FileProcessor()
 
         # Inject file context to messages
         req.messages = file_processor.inject_file_context_to_messages(
