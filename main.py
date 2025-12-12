@@ -35,7 +35,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from model_providers import LocalLLModel, PoeModelProvider, ComfyUIProvider, JanusModel
+from model_providers import LocalLLModel, PoeModelProvider, ComfyUIProvider
+from model_providers.multimodal_provider import MultimodalFactory, models as vlm_models
 from rag import LocalRAG
 
 # Import agents
@@ -51,11 +52,12 @@ context_storage = None  # Global context storage instance
 # Multimodal Configuration
 MULTIMODAL_PROVIDER_URL = os.getenv("MULTIMODAL_PROVIDER_URL")
 remote_multimodal_status = False
-janus_model = None
+multimodal_model = None
+default_vlm = os.getenv("DEFAULT_MULTIMODAL_MODEL", "deepseek-janus:7b")
 
 if os.getenv("PRELOAD_MULTIONDAL", "False").lower() == "true":
-    janus_model = JanusModel()
-    janus_model.load_model()
+    multimodal_model = MultimodalFactory.get_model(default_vlm)
+    multimodal_model.load_model()
 
 
 def get_multimodal_headers():
@@ -838,16 +840,22 @@ async def agent_chat(req: ChatRequest):
                     logger.error(f"Remote multimodal failed in agent_chat: {e}")
 
             if not description:
-                global janus_model
-                if janus_model is None:
-                    from model_providers import JanusModel
+                global multimodal_model
 
-                    janus_model = JanusModel()
+                # Determine which model to use for description
+                # If specific VLM requested, use it, otherwise default
+                target_vlm_name = default_vlm
 
-                def run_janus():
-                    return janus_model.chat(multimodal_messages)
+                if (
+                    multimodal_model is None
+                    or multimodal_model.model_name != target_vlm_name
+                ):
+                    multimodal_model = MultimodalFactory.get_model(target_vlm_name)
 
-                description = await asyncio.to_thread(run_janus)
+                def run_multimodal():
+                    return multimodal_model.chat(multimodal_messages)
+
+                description = await asyncio.to_thread(run_multimodal)
             text_query = ""
             for part in query:
                 if (
@@ -1066,7 +1074,7 @@ async def chat_completions(req: ChatRequest, request: Request):
     """openai chat/edit/apply with multimodal support"""
     global local_model
     global local_rag
-    global janus_model
+    global multimodal_model
 
     if local_model is None:
         local_model = LocalLLModel(req.model)
@@ -1143,13 +1151,23 @@ async def chat_completions(req: ChatRequest, request: Request):
                     f"Remote multimodal failed: {e}, falling back to local if available"
                 )
 
-        if janus_model is None:
-            janus_model = JanusModel()
+        # Determine target VLM
+        is_vlm_request = (
+            req.model in vlm_models
+            or "janus" in req.model.lower()
+            or "llava" in req.model.lower()
+            or "vl" in req.model.lower()
+        )
 
-        def run_janus():
-            return cast(JanusModel, janus_model).chat(multimodal_messages)
+        target_model_name = req.model if is_vlm_request else default_vlm
 
-        output = await asyncio.to_thread(run_janus)
+        if multimodal_model is None or multimodal_model.model_name != target_model_name:
+            multimodal_model = MultimodalFactory.get_model(target_model_name)
+
+        def run_multimodal():
+            return multimodal_model.chat(multimodal_messages)
+
+        output = await asyncio.to_thread(run_multimodal)
 
         response = {
             "id": f"chatcmpl-janus-{uuid.uuid4().hex}",
