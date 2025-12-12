@@ -20,15 +20,15 @@ from utils import (
     ContentType,
 )
 import asyncio
+from constants import PROJECT_ROOT, MODEL_DIR
 
-project_root = os.path.abspath(os.path.dirname(__file__))
 models = {
-    "gpt-oss:20b": os.path.join(project_root, "..", "models", "openai", "gpt-oss-20b"),
+    "gpt-oss:20b": os.path.join(PROJECT_ROOT, MODEL_DIR, "openai", "gpt-oss-20b"),
     "deepseek-r1:16b": os.path.join(
-        project_root, "..", "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-16B"
+        PROJECT_ROOT, MODEL_DIR, "deepseek-ai", "DeepSeek-R1-Distill-Qwen-16B"
     ),
     "deepseek-r1:32b": os.path.join(
-        project_root, "..", "models", "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"
+        PROJECT_ROOT, MODEL_DIR, "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"
     ),
 }
 

@@ -8,27 +8,23 @@ from PIL import Image
 import requests
 from io import BytesIO
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor
+from constants import PROJECT_ROOT, MODEL_DIR
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-project_root = os.path.abspath(os.path.dirname(__file__))
-
-# Define model paths
 models = {
     "deepseek-janus:7b": os.path.join(
-        project_root, "..", "models", "deepseek-ai", "Janus-Pro-7B"
+        PROJECT_ROOT, MODEL_DIR, "deepseek-ai", "Janus-Pro-7B"
     ),
     "llava-1.5-7b-hf": os.path.join(
-        project_root, "..", "models", "llava-hf", "llava-1.5-7b-hf"
+        PROJECT_ROOT, MODEL_DIR, "llava-hf", "llava-1.5-7b-hf"
     ),
     "Qwen/Qwen2.5-VL-7B-Instruct": os.path.join(
-        project_root, "..", "models", "Qwen", "Qwen2.5-VL-7B-Instruct"
+        PROJECT_ROOT, MODEL_DIR, "Qwen", "Qwen2.5-VL-7B-Instruct"
     ),
-    # User mentioned Qwen3-VL-4B-Instruct, mapping it here.
-    # Adjust path if different in reality.
     "qwen3-vl-4b-instruct": os.path.join(
-        project_root, "..", "models", "Qwen", "Qwen3-VL-4B-Instruct"
+        PROJECT_ROOT, MODEL_DIR, "Qwen", "Qwen3-VL-4B-Instruct"
     ),
 }
 
