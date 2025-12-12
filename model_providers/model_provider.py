@@ -211,13 +211,13 @@ class LocalLLModel:
             if hasattr(msg, "type") and hasattr(msg, "content"):
                 role = (
                     "user"
-                    if msg.get("type") == "human"
-                    else "assistant" if msg.get("type") == "ai" else "system"
+                    if msg.type == "human"
+                    else "assistant" if msg.type == "ai" else "system"
                 )
-                content = msg.get("content")
+                content = msg.content
             elif isinstance(msg, dict):
                 role = msg.get("role", "user")
-                content = msg.get("content", "")
+                content = msg.content if msg.content is not None else ""
             else:
                 role = "user"
                 content = str(msg)
