@@ -69,6 +69,88 @@ class LocalLLModel:
         self._state = {}
         self.task = asyncio.create_task(self.scheduler.loop())
 
+    def get_token_usage(self, messages: list[dict]) -> tuple[int, int]:
+        self.load_model()
+        if self.tokenizer is None:
+            return 0, 4096
+
+        prompt = self.format_prompt(messages)
+        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
+            prompt, return_tensors="pt"
+        )
+        input_len = inputs.input_ids.shape[1]
+        if hasattr(self.model, "config") and hasattr(
+            self.model.config, "max_position_embeddings"
+        ):
+            max_len = self.model.config.max_position_embeddings
+        else:
+            max_len = getattr(self.tokenizer, "model_max_length", 4096)
+            if max_len > 1_000_000:
+                max_len = 32768
+
+        return input_len, max_len
+
+    def smart_truncate_messages(
+        self, messages: list[dict], max_tokens: int = None
+    ) -> list[dict]:
+        current_tokens, limit = self.get_token_usage(messages)
+        if max_tokens is None:
+            max_tokens = limit - 1024
+        if current_tokens <= max_tokens:
+            return messages
+        if not messages:
+            return []
+        print(f"Truncating context: {current_tokens} > {max_tokens}")
+        system_msg = None
+        start_idx = 0
+        if messages[0].get("role") == "system":
+            system_msg = messages[0]
+            start_idx = 1
+        history_messages = messages[start_idx:]
+
+        # Phase 1: Drop history messages
+        while len(history_messages) > 1:
+            temp_msgs = []
+            if system_msg:
+                temp_msgs.append(system_msg)
+            temp_msgs.extend(history_messages)
+
+            curr, _ = self.get_token_usage(temp_msgs)
+            if curr <= max_tokens:
+                break
+
+            history_messages.pop(0)
+
+        final_msgs = []
+        if system_msg:
+            final_msgs.append(system_msg)
+        final_msgs.extend(history_messages)
+
+        current_tokens, _ = self.get_token_usage(final_msgs)
+        if current_tokens > max_tokens and final_msgs:
+            target_msg = final_msgs[-1]
+            content = self._extract_text_from_content(target_msg["content"])
+            rest_tokens = 0
+            if len(final_msgs) > 1:
+                rest_msgs = final_msgs[:-1]
+                rest_tokens, _ = self.get_token_usage(rest_msgs)
+
+            available_tokens = max_tokens - rest_tokens - 100
+            if available_tokens < 100:
+                available_tokens = 100
+            tokenizer = cast(PreTrainedTokenizerBase, self.tokenizer)
+            tokenized_content = tokenizer.encode(content, add_special_tokens=False)
+            if len(tokenized_content) > available_tokens:
+                print(
+                    f"Content truncation: {len(tokenized_content)} -> {available_tokens}"
+                )
+                truncated_ids = tokenized_content[:available_tokens]
+                new_content = tokenizer.decode(truncated_ids, skip_special_tokens=False)
+                new_content += "\n...[Context Truncated due to length limit]..."
+                target_msg["content"] = new_content
+
+        return final_msgs
+
     def load_model(self):
         if self.model is not None and self.tokenizer is not None:
             return

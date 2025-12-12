@@ -1188,6 +1188,21 @@ async def chat_completions(req: ChatRequest, request: Request):
         }
         return JSONResponse(content=response)
 
+    try:
+        msgs_dicts = [
+            m.model_dump() if hasattr(m, "model_dump") else m for m in req.messages
+        ]
+        truncated_dicts = local_model.smart_truncate_messages(msgs_dicts)
+        if len(truncated_dicts) < len(msgs_dicts) or (
+            len(truncated_dicts) > 0
+            and len(msgs_dicts) > 0
+            and truncated_dicts[0]["content"] != msgs_dicts[0]["content"]
+        ):
+            req.messages = [Message(**m) for m in truncated_dicts]
+
+    except Exception as e:
+        logger.warning(f"Context truncation process failed: {e}")
+
     if req.enable_rag:
         if local_rag is None:
             local_rag = LocalRAG(local_model)
