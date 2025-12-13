@@ -20,6 +20,9 @@ from constants import PROJECT_ROOT, MODEL_DIR
 
 models = {
     "gpt-oss:20b": os.path.join(PROJECT_ROOT, MODEL_DIR, "openai", "gpt-oss-20b"),
+    "deepseek-r1:14b-6bit": os.path.join(
+        PROJECT_ROOT, MODEL_DIR, "mlx-community", "DeepSeek-R1-Distill-Qwen-14B-6bit"
+    ),
     "deepseek-r1:16b": os.path.join(
         PROJECT_ROOT, MODEL_DIR, "deepseek-ai", "DeepSeek-R1-Distill-Qwen-16B"
     ),

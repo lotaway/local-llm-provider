@@ -44,12 +44,15 @@ from agents import AgentRuntime
 from agents.agent_runtime import RuntimeStatus
 from agents.context_storage import create_context_storage
 
+comfyui_provider = ComfyUIProvider()
+poe_model_provider = None
+local_model = None
+
 local_rag = None
 agent_runtime = None
 permission_manager = None
-context_storage = None  # Global context storage instance
+context_storage = None
 
-# Multimodal Configuration
 MULTIMODAL_PROVIDER_URL = os.getenv("MULTIMODAL_PROVIDER_URL")
 remote_multimodal_status = False
 multimodal_model = None
@@ -61,7 +64,6 @@ if os.getenv("PRELOAD_MULTIONDAL", "False").lower() == "true":
 
 
 def get_multimodal_headers():
-    """Get headers for multimodal provider API calls with Authorization"""
     headers = {"Content-Type": "application/json"}
     MULTIMODAL_ADMIN_TOKEN = os.getenv("MULTIMODAL_ADMIN_TOKEN", ADMIN_TOKEN)
     if MULTIMODAL_ADMIN_TOKEN is None:
@@ -271,9 +273,8 @@ async def manifest():
 
 @app.get("/mcp")
 async def query_rag(request: Request):
-    """Direct RAG query endpoint (original functionality)"""
     global local_rag
-    global local_model
+
     query = request.query_params.get("query")
     if query is None:
         raise HTTPException(
@@ -282,8 +283,7 @@ async def query_rag(request: Request):
 
     try:
         if local_rag is None:
-            if local_model is None:
-                local_model = LocalLLModel()
+            init_local_model()
             data_path = os.getenv("DATA_PATH", "./docs")
             print(f"初始化 RAG 系统，数据路径: {data_path}")
             local_rag = LocalRAG(local_model, data_path=data_path)
@@ -352,9 +352,7 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post(f"/{VERSION}/agents/run")
 async def query_agent(agentRequest: AgentRequest, request: Request):
-    """Agent-based query endpoint with streaming support"""
     global local_rag
-    global local_model
     global agent_runtime
     global context_storage
 
@@ -362,7 +360,6 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
     if query is None:
         raise HTTPException(status_code=400, detail="Query parameter is required")
 
-    # Initialize context storage if not already done
     if context_storage is None:
         try:
             context_storage = create_context_storage()
@@ -371,19 +368,15 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
             )
         except Exception as e:
             logger.error(f"Failed to initialize context storage: {e}")
-            # Fall back to memory storage
             from agents.context_storage import MemoryContextStorage
 
             context_storage = MemoryContextStorage()
 
-    # Generate session ID if not provided
     session_id = agentRequest.session_id or str(uuid.uuid4())
     logger.info(f"Processing request for session: {session_id}")
 
-    # Initialize agent runtime if needed
     if agent_runtime is None:
-        if local_model is None:
-            local_model = LocalLLModel()
+        init_local_model()
         if local_rag is None:
             data_path = os.getenv("DATA_PATH", "./docs")
             local_rag = LocalRAG(local_model, data_path=data_path)
@@ -395,15 +388,12 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
             session_id=session_id,
         )
     else:
-        # Update session ID for existing runtime
         agent_runtime.session_id = session_id
-        # Try to load existing state
         loaded_state = agent_runtime._load_state()
         if loaded_state:
             agent_runtime.state = loaded_state
             logger.info(f"Resumed existing session {session_id}")
 
-    # Prepare initial context with files if provided
     initial_context = {}
     if agentRequest.files:
         file_map = {}
@@ -411,7 +401,6 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
         upload_dir = os.path.join(os.getcwd(), "uploads")
 
         for file_ref in agentRequest.files:
-            # Check if it's a full path (legacy/testing) or an ID
             real_path = None
             file_name = None
             file_id = None
@@ -419,15 +408,13 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
             if os.path.exists(file_ref):
                 real_path = file_ref
                 file_name = os.path.basename(file_ref)
-                file_id = str(uuid.uuid4())  # Generate temp ID for direct paths
+                file_id = str(uuid.uuid4())
             else:
-                # Assume it's an ID, look for file in uploads
-                # Pattern: {ID}_{filename}
                 if os.path.exists(upload_dir):
                     for f in os.listdir(upload_dir):
                         if f.startswith(file_ref + "_"):
                             real_path = os.path.join(upload_dir, f)
-                            file_name = f[len(file_ref) + 1 :]  # Remove ID_ prefix
+                            file_name = f[len(file_ref) + 1 :]
                             file_id = file_ref
                             break
 
@@ -442,21 +429,15 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
             initial_context["file_map"] = file_map
             initial_context["available_files"] = available_files
 
-    # Execute through agent system with streaming
     async def event_stream():
-        """Generate Server-Sent Events for agent execution"""
-
-        # Create a queue for streaming events
         event_queue = asyncio.Queue()
         execution_complete = asyncio.Event()
         final_state = {"state": None, "error": None}
 
         async def stream_callback(event_data):
-            """Callback to receive streaming events from agents"""
             await event_queue.put(event_data)
 
         async def execute_agents():
-            """Execute agents in a separate task"""
             try:
                 state = await agent_runtime.execute(
                     query,
@@ -470,14 +451,11 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
             finally:
                 execution_complete.set()
 
-        # Start agent execution in background task
         asyncio.create_task(execute_agents())
 
-        # Stream events as they arrive
         while not execution_complete.is_set() or not event_queue.empty():
             if await request.is_disconnected():
                 logger.info("Client disconnected, cancelling agent execution")
-                # Attempt to stop the agent runtime
                 if agent_runtime and agent_runtime.state:
                     if agent_runtime.state.status == RuntimeStatus.RUNNING:
                         agent_runtime.state.status = RuntimeStatus.FAILED
@@ -487,7 +465,6 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                 break
 
             try:
-                # Use non-blocking get with timeout logic or wait
                 try:
                     event_data = await asyncio.wait_for(event_queue.get(), timeout=0.1)
                 except asyncio.TimeoutError:
@@ -496,7 +473,6 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                 event_type = event_data.get("event_type")
 
                 if event_type == "agent_start":
-                    # Agent start event
                     data = {
                         "id": f"agent-run-{uuid.uuid4().hex}",
                         "object": "chat.completion.chunk",
@@ -512,7 +488,6 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
                 elif event_type == "llm_chunk":
-                    # LLM chunk event
                     chunk = event_data.get("chunk", "")
                     if chunk:
                         data = {
@@ -553,13 +528,8 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
             except Exception:
-                # Should not happen with wait_for above
                 continue
 
-        # Wait for execution task logic to complete?
-        # Actually loop above handles it. execution_complete is set in finally block.
-
-        # Send final completion event only if not disconnected
         if not await request.is_disconnected():
             if final_state["error"]:
                 # Error occurred
@@ -772,13 +742,10 @@ async def agent_decision(req: AgentDecisionRequest):
 
 @app.post(f"/{VERSION}/agents/chat")
 async def agent_chat(req: ChatRequest):
-    """Agent-based chat endpoint with full workflow"""
     global local_rag
-    global local_model
     global agent_runtime
 
-    if local_model is None:
-        local_model = LocalLLModel(req.model)
+    init_local_model()
 
     if agent_runtime is None:
         if local_rag is None:
@@ -787,7 +754,6 @@ async def agent_chat(req: ChatRequest):
             local_model, rag_instance=local_rag, permission_manager=permission_manager
         )
 
-    # Extract user query from messages
     user_messages = [m for m in req.messages if m.role == "user"]
     if not user_messages:
         raise HTTPException(status_code=400, detail="No user message found")
@@ -920,17 +886,11 @@ async def agent_status():
     }
 
 
-comfyui_provider = ComfyUIProvider()
-
-
 @app.api_route(
     "/comfyui/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
 async def comfyui(request: Request, path: str):
     return await comfyui_provider.proxy_request(request)
-
-
-poe_model_provider = None
 
 
 @app.post("/poe/v1/{path:path}")
@@ -960,9 +920,6 @@ async def poe(request: Request, path: str):
         )
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-
-local_model = None
 
 
 @app.post("/api/show")
@@ -1002,6 +959,7 @@ async def embeddings(req: EmbeddingRequest):
     global local_model
     if local_model is None:
         local_model = LocalLLModel(embedding_model_name=req.model)
+
     from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
     vectors = cast(PreTrainedTokenizerBase, local_model.tokenizer).encode(texts)
@@ -1018,13 +976,20 @@ async def embeddings(req: EmbeddingRequest):
     }
 
 
-@app.get(f"/{VERSION}/rag/document/check")
-async def check_document(req: DocumentCheckRequest):
-    global local_rag
+def init_local_model(model_name: str | None = None):
     global local_model
 
     if local_model is None:
         local_model = LocalLLModel()
+    elif model_name is not None and local_model.cur_model_name != model_name:
+        local_model.unload_model()
+
+
+@app.get(f"/{VERSION}/rag/document/check")
+async def check_document(req: DocumentCheckRequest):
+    global local_rag
+
+    init_local_model(req.model)
 
     if local_rag is None:
         local_rag = LocalRAG(local_model)
@@ -1036,10 +1001,8 @@ async def check_document(req: DocumentCheckRequest):
 @app.post(f"/{VERSION}/rag/document/import")
 async def import_document(req: ImportDocumentRequest):
     global local_rag
-    global local_model
 
-    if local_model is None:
-        local_model = LocalLLModel()
+    init_local_model()
 
     if local_rag is None:
         local_rag = LocalRAG(local_model)
@@ -1064,21 +1027,13 @@ async def import_document(req: ImportDocumentRequest):
 
 @app.post(f"/{VERSION}/chat/completions")
 async def chat_completions(req: ChatRequest, request: Request):
-    """openai chat/edit/apply with multimodal support"""
-    global local_model
     global local_rag
     global multimodal_model
 
-    if local_model is None:
-        local_model = LocalLLModel(req.model)
-
-    # Process files if provided using FileProcessor
     if req.files:
         from utils import FileProcessor
 
         file_processor = FileProcessor()
-
-        # Inject file context to messages
         req.messages = file_processor.inject_file_context_to_messages(
             req.messages, req.files
         )
@@ -1180,6 +1135,8 @@ async def chat_completions(req: ChatRequest, request: Request):
         }
         return JSONResponse(content=response)
 
+    init_local_model(req.model)
+
     try:
         msgs_dicts = [
             m.model_dump() if hasattr(m, "model_dump") else m for m in req.messages
@@ -1199,7 +1156,6 @@ async def chat_completions(req: ChatRequest, request: Request):
         if local_rag is None:
             local_rag = LocalRAG(local_model)
 
-        # Extract query from last user message
         query = ""
         for m in reversed(req.messages):
             if m.role == "user":
@@ -1212,9 +1168,6 @@ async def chat_completions(req: ChatRequest, request: Request):
             event_queue = asyncio.Queue()
 
             async def stream_callback(chunk):
-                # Ensure we strictly put strings or None here.
-                # If chunk is a coroutine or other object, it might fail?
-                # Usually chunk is str.
                 await event_queue.put(chunk)
 
             async def run_rag():
@@ -1234,7 +1187,6 @@ async def chat_completions(req: ChatRequest, request: Request):
                     if await request.is_disconnected():
                         break
                     try:
-                        # Non-blocking get with wait_for or similar
                         try:
                             chunk = await asyncio.wait_for(
                                 event_queue.get(), timeout=0.1
@@ -1399,12 +1351,9 @@ async def chat_completions(req: ChatRequest, request: Request):
 
 @app.post(f"/{VERSION}/completions")
 async def completions(req: CompletionRequest):
-    """openai autocompletions"""
-    global local_model
     global local_rag
 
-    if local_model is None:
-        local_model = LocalLLModel(req.model)
+    init_local_model(req.model)
 
     if req.enable_rag:
         if local_rag is None:
