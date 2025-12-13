@@ -2,13 +2,10 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    TextIteratorStreamer,
-    StoppingCriteriaList,
 )
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from sentence_transformers import SentenceTransformer
 import torch
-from threading import Thread
 import os
 import gc
 from typing import cast
@@ -16,7 +13,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils import (
     DeviceUtils,
     Scheduler,
-    CancellableStreamer,
     ContentType,
 )
 import asyncio
@@ -426,14 +422,9 @@ class LocalLLModel:
                 self._state.pop(rid, None)
         return out
 
-    async def cancel_scheduler(self, rid: int, reason: str = "unkown reason"):
-        print(f"{reason}, cancelling generation, scheduler id: {rid}")
-        self._state.pop(rid, None)
-        return self.scheduler.quit(rid)
-
-    async def chat(self, messages: list[dict], **kwargs):
+    async def _generate_stream(self, prompt: str, **kwargs):
+        """Generic async generator using scheduler"""
         self.load_model()
-        prompt = self.format_prompt(messages)
         rid, q = await self.scheduler.register(
             {
                 "prompt": prompt,
@@ -447,91 +438,40 @@ class LocalLLModel:
                 break
             yield cast(str, t)
 
-    def chat_in_exclusive(self, messages: list[dict], **kwargs):
+    async def chat(self, messages: list[dict], **kwargs):
         self.load_model()
         prompt = self.format_prompt(messages)
-        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
-            prompt, return_tensors="pt"
-        ).to(self.model.device)
-        streamer = CancellableStreamer(
-            cast(PreTrainedTokenizerBase, self.tokenizer),
-            skip_prompt=True,
-            skip_special_tokens=False,
-        )
-        stopping_criteria = StoppingCriteriaList([streamer.stopping_criteria])
-        generation_kwargs = dict(
-            inputs,
-            streamer=streamer,
-            max_new_tokens=2000,
-            stopping_criteria=stopping_criteria,
-        )
-        generation_kwargs.update(kwargs)
+        async for chunk in self._generate_stream(prompt, **kwargs):
+            yield chunk
 
-        def safe_generate():
-            try:
-                self.model.generate(**generation_kwargs)
-            except Exception as e:
-                print(f"Generation error: {e}")
-            finally:
-                # streamer.on_finalized_text("<|END|>")
-                streamer.end()
+    async def chat_in_exclusive(self, messages: list[dict], **kwargs):
+        kwargs.setdefault("max_new_tokens", 2000)
+        async for chunk in self.chat(messages, **kwargs):
+            yield chunk
 
-        thread = Thread(target=safe_generate)
-        thread.start()
-        return streamer
-
-    def chat_at_once(self, messages: list[dict], **kwargs) -> str:
+    async def chat_at_once(self, messages: list[dict], **kwargs) -> str:
         self.load_model()
-        prompt = self.format_prompt(messages)
-        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
-            prompt, return_tensors="pt"
-        ).to(self.model.device)
+        response = []
+        async for chunk in self.chat(messages, **kwargs):
+            if isinstance(chunk, int):
+                continue
+            response.append(chunk)
+        return "".join(response).strip()
 
-        result_queue = asyncio.Queue()
-
-        def generate_and_put():
-            if "max_new_tokens" not in kwargs:
-                kwargs["max_new_tokens"] = 3000
-            outputs = self.model.generate(**inputs, **kwargs)
-            # transform input_ids to list to get length
-            input_len = inputs.input_ids.shape[1]
-            # slice only generated tokens
-            generated_tokens = outputs[0][input_len:]
-            response = cast(PreTrainedTokenizerBase, self.tokenizer).decode(
-                generated_tokens, skip_special_tokens=False
-            )
-            result_queue.put(response)
-
-        thread = Thread(target=generate_and_put)
-        thread.start()
-        thread.join()
-
-        return result_queue.get().strip()
-
-    def complete(self, prompt: str):
+    async def complete(self, prompt: str, **kwargs):
         self.load_model()
-        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
-            prompt, return_tensors="pt"
-        ).to(self.model.device)
-        streamer = TextIteratorStreamer(
-            cast(PreTrainedTokenizerBase, self.tokenizer),
-            skip_prompt=True,
-            skip_special_tokens=True,
-        )
-        generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=200)
-        thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
-        thread.start()
-        return streamer
+        kwargs.setdefault("max_new_tokens", 200)
+        async for chunk in self._generate_stream(prompt, **kwargs):
+            yield chunk
 
-    def complete_at_once(self, prompt: str) -> str:
+    async def complete_at_once(self, prompt: str) -> str:
         self.load_model()
-        inputs = cast(PreTrainedTokenizerBase, self.tokenizer)(
-            prompt, return_tensors="pt"
-        ).to(self.model.device)
-        outputs = self.model.generate(**inputs, max_new_tokens=3000)
-        return cast(PreTrainedTokenizerBase, self.tokenizer).decode(
-            outputs[0], skip_special_tokens=True
-        )
+        response = []
+        async for chunk in self.complete(prompt):
+            if isinstance(chunk, int):
+                continue
+            response.append(chunk)
+        return "".join(response).strip()
 
     def extract_after_think(self, text: str) -> str:
         think_pos = text.find("</think>")

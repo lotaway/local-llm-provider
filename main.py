@@ -180,10 +180,6 @@ class Message(BaseModel):
     content: str | list
 
 
-import queue
-import threading
-
-
 class ChatRequest(BaseModel):
     model: str
     messages: list[Message]
@@ -291,12 +287,12 @@ async def query_rag(request: Request):
             data_path = os.getenv("DATA_PATH", "./docs")
             print(f"初始化 RAG 系统，数据路径: {data_path}")
             local_rag = LocalRAG(local_model, data_path=data_path)
-        result = local_rag.generate_answer(query)
+        result = await local_rag.generate_answer(query)
 
         if isinstance(result, str):
             return PlainTextResponse(result)
 
-        def event_stream():
+        async def event_stream():
             yield f"data: [DONE]{result}\n\n"
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -449,23 +445,20 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
     # Execute through agent system with streaming
     async def event_stream():
         """Generate Server-Sent Events for agent execution"""
-        import queue
-        import threading
-        import asyncio
 
         # Create a queue for streaming events
-        event_queue = queue.Queue()
-        execution_complete = threading.Event()
+        event_queue = asyncio.Queue()
+        execution_complete = asyncio.Event()
         final_state = {"state": None, "error": None}
 
-        def stream_callback(event_data):
+        async def stream_callback(event_data):
             """Callback to receive streaming events from agents"""
-            event_queue.put(event_data)
+            await event_queue.put(event_data)
 
-        def execute_agents():
-            """Execute agents in a separate thread"""
+        async def execute_agents():
+            """Execute agents in a separate task"""
             try:
-                state = agent_runtime.execute(
+                state = await agent_runtime.execute(
                     query,
                     start_agent="qa",
                     stream_callback=stream_callback,
@@ -477,9 +470,8 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
             finally:
                 execution_complete.set()
 
-        # Start agent execution in background thread
-        execution_thread = threading.Thread(target=execute_agents)
-        execution_thread.start()
+        # Start agent execution in background task
+        asyncio.create_task(execute_agents())
 
         # Stream events as they arrive
         while not execution_complete.is_set() or not event_queue.empty():
@@ -495,8 +487,11 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                 break
 
             try:
-                # Use non-blocking get
-                event_data = event_queue.get_nowait()
+                # Use non-blocking get with timeout logic or wait
+                try:
+                    event_data = await asyncio.wait_for(event_queue.get(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    continue
 
                 event_type = event_data.get("event_type")
 
@@ -557,14 +552,12 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
                     }
                     yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
-            except queue.Empty:
-                # Wait a bit and continue to check disconnection
-                await asyncio.sleep(0.1)
+            except Exception:
+                # Should not happen with wait_for above
                 continue
 
-        # Wait for execution thread to complete (or timeout if we cancelled)
-        # If cancelled, the thread should stop soon because we set status to FAILED
-        execution_thread.join(timeout=2.0)
+        # Wait for execution task logic to complete?
+        # Actually loop above handles it. execution_complete is set in finally block.
 
         # Send final completion event only if not disconnected
         if not await request.is_disconnected():
@@ -1216,31 +1209,39 @@ async def chat_completions(req: ChatRequest, request: Request):
             query = req.messages[-1].content
 
         if req.stream:
-            from queue import Queue
+            event_queue = asyncio.Queue()
 
-            event_queue = Queue()
+            async def stream_callback(chunk):
+                # Ensure we strictly put strings or None here.
+                # If chunk is a coroutine or other object, it might fail?
+                # Usually chunk is str.
+                await event_queue.put(chunk)
 
-            def stream_callback(chunk):
-                event_queue.put(chunk)
-
-            def run_rag():
+            async def run_rag():
                 try:
-                    cast(LocalRAG, local_rag).generate_answer(
+                    await cast(LocalRAG, local_rag).generate_answer(
                         query, stream_callback=stream_callback
                     )
                 except Exception as e:
                     print(f"RAG Error: {e}")
                 finally:
-                    event_queue.put(None)
+                    await event_queue.put(None)
 
-            threading.Thread(target=run_rag).start()
+            asyncio.create_task(run_rag())
 
             async def event_stream():
                 while True:
                     if await request.is_disconnected():
                         break
                     try:
-                        chunk = event_queue.get_nowait()
+                        # Non-blocking get with wait_for or similar
+                        try:
+                            chunk = await asyncio.wait_for(
+                                event_queue.get(), timeout=0.1
+                            )
+                        except asyncio.TimeoutError:
+                            continue
+
                         if chunk is None:
                             break
 
@@ -1258,13 +1259,13 @@ async def chat_completions(req: ChatRequest, request: Request):
                             ],
                         }
                         yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-                    except queue.Empty:
-                        await asyncio.sleep(0.01)
+                    except Exception:
+                        continue
                 yield "data: [DONE]\n\n"
 
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         else:
-            output = local_rag.generate_answer(query)
+            output = await local_rag.generate_answer(query)
             response = {
                 "id": f"chatcmpl-rag-{uuid.uuid4().hex}",
                 "object": "chat.completion",
@@ -1295,11 +1296,11 @@ async def chat_completions(req: ChatRequest, request: Request):
 
             async def event_stream():
                 try:
-                    for chunk in streamer:
+                    async for chunk in streamer:
                         if await request.is_disconnected():
                             print("Client disconnected, cancelling generation")
-                            if hasattr(streamer, "cancel"):
-                                streamer.cancel()
+                            if hasattr(streamer, "aclose"):
+                                await streamer.aclose()
                             break
 
                         data = {
@@ -1319,8 +1320,8 @@ async def chat_completions(req: ChatRequest, request: Request):
                     yield "data: [DONE]\n\n"
                 except asyncio.CancelledError:
                     print("Stream cancelled, cancelling generation")
-                    if hasattr(streamer, "cancel"):
-                        streamer.cancel()
+                    if hasattr(streamer, "aclose"):
+                        await streamer.aclose()
                     raise
 
             return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -1364,7 +1365,7 @@ async def chat_completions(req: ChatRequest, request: Request):
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-    output = local_model.chat_at_once([m.model_dump() for m in req.messages])
+    output = await local_model.chat_at_once([m.model_dump() for m in req.messages])
     response = {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
         "object": "chat.completion",
@@ -1410,9 +1411,9 @@ async def completions(req: CompletionRequest):
             local_rag = LocalRAG(local_model)
 
         # Use RAG for completion (treating prompt as query)
-        output = local_rag.generate_answer(req.prompt)
+        output = await local_rag.generate_answer(req.prompt)
     else:
-        output = local_model.complete_at_once(req.prompt)
+        output = await local_model.complete_at_once(req.prompt)
 
     return {
         "id": f"cmpl-{uuid.uuid4().hex}",
