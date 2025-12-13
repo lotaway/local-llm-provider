@@ -408,25 +408,26 @@ class QwenVLModel(BaseMultimodalModel):
 class MultimodalFactory:
     _models = {}
 
+    @staticmethod
+    def get_models():
+        return list(["janus","llava","qwen3-vl"])
+    
     @classmethod
     def get_model(cls, model_name: str) -> BaseMultimodalModel:
         if model_name in cls._models:
             return cls._models[model_name]
-
-        # Normalize name for matching
-        if "janus" in model_name.lower():
-            instance = JanusModel(model_name)
-        elif "llava" in model_name.lower():
-            instance = LlavaModel(model_name)
-        elif "qwen" in model_name.lower() and "vl" in model_name.lower():
-            instance = QwenVLModel(model_name)
-        else:
-            # Default fallback if unknown but requested?
-            # Or raise error. For now default to Janus as it was before
-            logger.warning(
-                f"Unknown multimodal model {model_name}, falling back to Janus"
-            )
-            instance = JanusModel()
+        match model_name.lower():
+            case "janus":
+                return JanusModel(model_name)
+            case "llava":
+                return LlavaModel(model_name)
+            case "qwen3-vl":
+                return QwenVLModel(model_name)
+            case other:
+                logger.warning(
+                    f"Unknown multimodal model {other}, falling back to Janus"
+                )
+                instance = JanusModel()
 
         cls._models[model_name] = instance
         return instance
