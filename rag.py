@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from pymilvus import connections, utility
 import gc
 import torch
@@ -13,7 +14,7 @@ from langchain_community.document_loaders import (
     UnstructuredPowerPointLoader,
     UnstructuredExcelLoader,
 )
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import TextSplitter
 
 # from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -23,13 +24,68 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableSequence
 from model_providers import LocalLLModel
-from typing import Any, Callable, List, cast
-from retrievers import ExpandedRetriever, HybridRetriever, Reranker, ESBM25Retriever
+from typing import Callable, List, cast
+from retrievers import HybridRetriever, Reranker, ESBM25Retriever
 from file_loaders import ChatGPTLoader, DeepSeekLoader
 
 
+class AdaptiveTextSplitter(TextSplitter):
+
+    def __init__(self, min_chunk=500, max_chunk=2000, chunk_overlap=0, **kwargs):
+        super().__init__(**kwargs)
+        self.min_chunk = min_chunk
+        self.max_chunk = max_chunk
+        self.chunk_overlap = chunk_overlap
+
+    def split_text(self, text: str) -> List[str]:
+        chunks = re.split(r"\n\s*\n", text)
+        chunks = [c.strip() for c in chunks if c.strip()]
+
+        if not chunks:
+            return [text] if text else []
+
+        final_chunks = []
+        for chunk in chunks:
+            if len(chunk) > self.max_chunk:
+                sentences = re.split(r"(?<=[.!?。！？])\s+", chunk)
+                current_temp = ""
+                for sentence in sentences:
+                    if not sentence.strip():
+                        continue
+                    if len(current_temp) + len(sentence) <= self.max_chunk:
+                        current_temp += sentence + " "
+                    else:
+                        if current_temp:
+                            final_chunks.append(current_temp.strip())
+
+                        overlap = ""
+                        if self.chunk_overlap > 0 and final_chunks:
+                            overlap = final_chunks[-1][-self.chunk_overlap :]
+                        current_temp = overlap + sentence + " "
+                if current_temp:
+                    final_chunks.append(current_temp.strip())
+
+            elif len(chunk) < self.min_chunk:
+                if (
+                    final_chunks
+                    and len(final_chunks[-1]) + len(chunk) + 2 <= self.max_chunk
+                ):
+                    final_chunks[-1] += "\n\n" + chunk
+                else:
+                    overlap = ""
+                    if self.chunk_overlap > 0 and final_chunks:
+                        overlap = final_chunks[-1][-self.chunk_overlap :]
+                    final_chunks.append(overlap + chunk)
+            else:
+                overlap = ""
+                if self.chunk_overlap > 0 and final_chunks:
+                    overlap = final_chunks[-1][-self.chunk_overlap :]
+                final_chunks.append(overlap + chunk)
+
+        return final_chunks
+
+
 class LocalRAG:
-    # Unified RAG prompt template
     RAG_PROMPT_TEMPLATE = """
 你是检索增强问答助手，严格基于提供的内容回答问题。
 
@@ -170,8 +226,8 @@ class LocalRAG:
 
         doc = Document(page_content=content, metadata=metadata)
 
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, chunk_overlap=200
+        text_splitter = AdaptiveTextSplitter(
+            min_chunk=500, max_chunk=2000, chunk_overlap=200
         )
         chunks = text_splitter.split_documents([doc])
         vectorstore = self.get_or_create_vectorstore()
@@ -187,15 +243,10 @@ class LocalRAG:
         return {"filename": filename, "chunks": len(chunks)}
 
     def check_document_exists(self, bvid: str, cid: int) -> bool:
-        """Check if document exists based on bvid and cid using Elasticsearch"""
         if not self.es_retriever:
-            # If hybrid search is off, we can't easily check unless we query Milvus
-            # For now, let's assume if no ES, we skip check or implement Milvus check if needed.
-            # But the requirement is about avoiding memory usage.
             return False
 
         try:
-            # Search in ES for matching metadata
             query = {
                 "query": {
                     "bool": {
@@ -235,6 +286,7 @@ class LocalRAG:
     ) -> list[Document]:
         """加载多种格式的文档"""
         docs = []
+        filename = []
         print(f"开始扫描文档目录: {self.data_path}")
 
         for root, _, files in os.walk(self.data_path):
@@ -381,8 +433,8 @@ class LocalRAG:
         return embeddings
 
     def build_vectorstore(self, docs: list[Document]):
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, chunk_overlap=200
+        text_splitter = AdaptiveTextSplitter(
+            min_chunk=500, max_chunk=2000, chunk_overlap=200
         )
         chunks = text_splitter.split_documents(docs)
         embeddings = self.get_embeddings()
@@ -425,10 +477,8 @@ class LocalRAG:
             docs = self.load_documents()
             if not docs:
                 raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档")
-
-            # Store documents for hybrid search (Index to ES)
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000, chunk_overlap=200
+            text_splitter = AdaptiveTextSplitter(
+                min_chunk=500, max_chunk=2000, chunk_overlap=200
             )
             chunks = text_splitter.split_documents(docs)
 
@@ -446,15 +496,6 @@ class LocalRAG:
             )
 
     async def generate_answer(self, question, stream_callback=None):
-        """Generate answer with optional streaming support
-
-        Args:
-            question: User question
-            stream_callback: Optional callback for streaming LLM chunks
-
-        Returns:
-            Generated answer string
-        """
         if self.rag_chain is None:
             self.init_rag_chain()
 
