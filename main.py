@@ -1143,7 +1143,6 @@ async def chat_completions(req: ChatRequest, request: Request):
                     f"Remote multimodal failed: {e}, falling back to local if available"
                 )
 
-        # Determine target VLM
         is_vlm_request = (
             req.model in vlm_models
             or "janus" in req.model.lower()
