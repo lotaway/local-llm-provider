@@ -8,11 +8,8 @@ import httpx
 import json
 from typing import cast
 
-# Import global variables and functions
-from globals import local_rag, multimodal_model
-from globals import MULTIMODAL_PROVIDER_URL, remote_multimodal_status, default_vlm
-from globals import vlm_models, MultimodalFactory
-from main import get_multimodal_headers
+import globals as backend_globals
+from auth import get_multimodal_headers
 from model_providers import LocalLLModel
 from schemas import Message, ChatRequest, CompletionRequest
 from rag import LocalRAG
@@ -25,8 +22,6 @@ OTHER_VERSION = "v1"
 
 @router.post("/completions")
 async def chat_completions(req: ChatRequest, request: Request):
-    global local_rag
-    global multimodal_model
 
     if req.files:
         from utils import FileProcessor
@@ -57,7 +52,10 @@ async def chat_completions(req: ChatRequest, request: Request):
         ]
         multimodal_messages = [system_msg] + msgs_dicts
 
-        if remote_multimodal_status and MULTIMODAL_PROVIDER_URL:
+        if (
+            backend_globals.remote_multimodal_status
+            and backend_globals.MULTIMODAL_PROVIDER_URL
+        ):
             try:
                 payload = req.model_dump()
                 payload["messages"] = multimodal_messages
@@ -68,7 +66,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                         async with httpx.AsyncClient() as client:
                             async with client.stream(
                                 "POST",
-                                f"{MULTIMODAL_PROVIDER_URL}/{OTHER_VERSION}/chat/completions",
+                                f"{backend_globals.MULTIMODAL_PROVIDER_URL}/{OTHER_VERSION}/chat/completions",
                                 json=payload,
                                 headers=get_multimodal_headers(),
                                 timeout=60.0,
@@ -82,7 +80,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                 else:
                     async with httpx.AsyncClient() as client:
                         resp = await client.post(
-                            f"{MULTIMODAL_PROVIDER_URL}/{OTHER_VERSION}/chat/completions",
+                            f"{backend_globals.MULTIMODAL_PROVIDER_URL}/{OTHER_VERSION}/chat/completions",
                             json=payload,
                             headers=get_multimodal_headers(),
                             timeout=60.0,
@@ -97,19 +95,24 @@ async def chat_completions(req: ChatRequest, request: Request):
                 )
 
         is_vlm_request = (
-            req.model in vlm_models
+            req.model in backend_globals.vlm_models
             or "janus" in req.model.lower()
             or "llava" in req.model.lower()
             or "vl" in req.model.lower()
         )
 
-        target_model_name = req.model if is_vlm_request else default_vlm
+        target_model_name = req.model if is_vlm_request else backend_globals.default_vlm
 
-        if multimodal_model is None or multimodal_model.model_name != target_model_name:
-            multimodal_model = MultimodalFactory.get_model(target_model_name)
+        if (
+            backend_globals.multimodal_model is None
+            or backend_globals.multimodal_model.model_name != target_model_name
+        ):
+            backend_globals.multimodal_model = (
+                backend_globals.MultimodalFactory.get_model(target_model_name)
+            )
 
         def run_multimodal():
-            return multimodal_model.chat(multimodal_messages)
+            return backend_globals.multimodal_model.chat(multimodal_messages)
 
         output = await asyncio.to_thread(run_multimodal)
 
@@ -151,8 +154,8 @@ async def chat_completions(req: ChatRequest, request: Request):
         logger.warning(f"Context truncation process failed: {e}")
 
     if req.enable_rag:
-        if local_rag is None:
-            local_rag = LocalRAG(local_model)
+        if backend_globals.local_rag is None:
+            backend_globals.local_rag = LocalRAG(local_model)
 
         query = ""
         for m in reversed(req.messages):
@@ -170,7 +173,7 @@ async def chat_completions(req: ChatRequest, request: Request):
 
             async def run_rag():
                 try:
-                    await cast(LocalRAG, local_rag).generate_answer(
+                    await cast(LocalRAG, backend_globals.local_rag).generate_answer(
                         query, stream_callback=stream_callback
                     )
                 except Exception as e:
@@ -226,7 +229,7 @@ async def chat_completions(req: ChatRequest, request: Request):
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         else:
             try:
-                result = await local_rag.generate_answer(query)
+                result = await backend_globals.local_rag.generate_answer(query)
                 response = {
                     "id": f"chatcmpl-{uuid.uuid4().hex}",
                     "object": "chat.completion",
@@ -339,16 +342,15 @@ async def chat_completions(req: ChatRequest, request: Request):
 
 @router.post("/completions")
 async def completions(req: CompletionRequest):
-    global local_rag
 
     local_model = LocalLLModel.init_local_model(req.model)
 
     if req.enable_rag:
-        if local_rag is None:
-            local_rag = LocalRAG(local_model)
+        if backend_globals.local_rag is None:
+            backend_globals.local_rag = LocalRAG(local_model)
 
         try:
-            result = await local_rag.generate_answer(req.prompt)
+            result = await backend_globals.local_rag.generate_answer(req.prompt)
             response = {
                 "id": f"cmpl-{uuid.uuid4().hex}",
                 "object": "text_completion",

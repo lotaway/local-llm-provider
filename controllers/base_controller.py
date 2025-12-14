@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 from typing import cast
-from globals import local_model
-from model_providers import LocalLLModel
+from model_providers import LocalLLModel, local_model
 
 router = APIRouter(prefix="/api", tags=["api"])
 
