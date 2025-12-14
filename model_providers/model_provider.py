@@ -43,6 +43,9 @@ class GenerateHelper:
         self.token_cache = []
 
 
+local_model = None
+
+
 class LocalLLModel:
 
     cur_model_name: str = ""
@@ -54,6 +57,17 @@ class LocalLLModel:
     @staticmethod
     def get_models():
         return list(models.keys())
+
+    @staticmethod
+    def init_local_model(model_name: str | None = None):
+        global local_model
+        from model_providers import LocalLLModel
+
+        if local_model is None:
+            local_model = LocalLLModel()
+        elif model_name is not None and local_model.cur_model_name != model_name:
+            local_model.unload_model()
+        return cast(LocalLLModel, local_model)
 
     def __init__(
         self,
