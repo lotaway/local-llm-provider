@@ -1,2 +1,4 @@
-# Routers package initialization
-# This package contains all the API routers for the application
+from .version import router as version_router
+
+
+__init__ = [version_router]

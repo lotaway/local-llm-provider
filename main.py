@@ -44,7 +44,7 @@ from model_providers import LocalLLModel, PoeModelProvider
 from model_providers.multimodal_provider import MultimodalFactory
 
 # Import version router
-from routers.version import router as version_router
+from routers import version_router
 from controllers.base_controller import router as base_router
 
 
