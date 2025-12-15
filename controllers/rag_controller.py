@@ -30,6 +30,7 @@ async def import_document(req: ImportDocumentRequest):
     LocalLLModel.init_local_model()
 
     if local_rag is None:
+        local_model = LocalLLModel.init_local_model()
         local_rag = LocalRAG(local_model)
 
     try:
