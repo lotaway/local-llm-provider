@@ -46,17 +46,15 @@ class RuntimeState:
         )
 
     def get_context_summary(self) -> str:
-        """Get summary of execution history for context"""
         summary_parts = []
-        for entry in self.history[-5:]:  # Last 5 entries
+        for entry in self.history[-5:]:
             summary_parts.append(
                 f"[{entry['iteration']}] {entry['agent']}: {entry['status']} - {entry['message']}"
             )
         return "\n".join(summary_parts)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize state to dictionary for storage"""
-        return {
+        result = {
             "status": self.status.value,
             "current_agent": self.current_agent,
             "iteration_count": self.iteration_count,
@@ -67,6 +65,27 @@ class RuntimeState:
             "final_result": self.final_result,
             "error_message": self.error_message,
         }
+        if self.status == RuntimeStatus.MAX_ITERATIONS:
+            result["decision_data"] = {
+                "reason": "max_iterations_reached",
+                "message": self.error_message,
+                "max_iterations": self.max_iterations,
+                "iteration_count_round": self.iteration_count_round,
+            }
+        elif self.status == RuntimeStatus.WAITING_HUMAN:
+            decision_data = {}
+            if self.history:
+                last_entry = self.history[-1]
+                if last_entry.get("data"):
+                    decision_data = last_entry["data"].copy()
+            if "reason" not in decision_data:
+                decision_data["reason"] = self.error_message or "waiting_human"
+            if "message" not in decision_data:
+                decision_data["message"] = self.error_message
+
+            result["decision_data"] = decision_data
+
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RuntimeState":

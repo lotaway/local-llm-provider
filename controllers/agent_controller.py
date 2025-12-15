@@ -5,9 +5,7 @@ import logging
 import uuid
 import asyncio
 import time
-from typing import cast
 
-# Import global variables and functions
 from globals import (
     local_rag,
     agent_runtime,
@@ -15,7 +13,7 @@ from globals import (
     permission_manager,
 )
 from model_providers import LocalLLModel
-from schemas import Message, AgentRequest, AgentDecisionRequest, ChatRequest
+from schemas import ChatRequest
 from agents.context_storage import create_context_storage, MemoryContextStorage
 from agents.agent_runtime import AgentRuntime
 from utils import ContentType
@@ -23,6 +21,13 @@ from rag import LocalRAG
 
 router = APIRouter(prefix="/agents", tags=["agent"])
 logger = logging.getLogger(__name__)
+
+
+class AgentRequest(BaseModel):
+    model: str
+    messages: list[str]
+    session_id: str = None
+    files: list[str] = []
 
 
 class AgentDecisionRequest(BaseModel):

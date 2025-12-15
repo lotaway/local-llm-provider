@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 import logging
 import uuid
 import time
@@ -11,13 +12,19 @@ from typing import cast
 import globals as backend_globals
 from auth import get_multimodal_headers
 from model_providers import LocalLLModel
-from schemas import Message, ChatRequest, CompletionRequest
+from schemas import Message, ChatRequest
 from rag import LocalRAG
 from utils import ContentType
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 OTHER_VERSION = "v1"
+
+
+class CompletionRequest(BaseModel):
+    model: str
+    prompt: str
+    enable_rag: bool = False
 
 
 @router.post("/completions")

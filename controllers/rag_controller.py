@@ -1,14 +1,28 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 import logging
+from pydantic import BaseModel
 
 from globals import local_rag
 from model_providers import LocalLLModel
-from schemas import DocumentCheckRequest, ImportDocumentRequest
 from rag import LocalRAG
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 logger = logging.getLogger(__name__)
+
+
+class ImportDocumentRequest(BaseModel):
+    title: str
+    source: str
+    content: str
+    contentType: str = "md"
+    bvid: str
+    cid: int
+
+
+class DocumentCheckRequest(BaseModel):
+    bvid: str
+    cid: int
 
 
 @router.get("/document/check")
