@@ -260,9 +260,10 @@ async def chat_completions(req: ChatRequest, request: Request):
 
             async def run_chat():
                 try:
-                    await local_model.chat(
-                        req.messages, stream_callback=stream_callback
-                    )
+                    async for chunk in local_model.chat(req.messages):
+                        if isinstance(chunk, int):
+                            continue
+                        await stream_callback(chunk)
                 except Exception as e:
                     print(f"Chat Error: {e}")
                 finally:
@@ -316,7 +317,7 @@ async def chat_completions(req: ChatRequest, request: Request):
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         else:
             try:
-                result = await local_model.chat(req.messages)
+                result = await local_model.chat_at_once(req.messages)
                 response = {
                     "id": f"chatcmpl-{uuid.uuid4().hex}",
                     "object": "chat.completion",
