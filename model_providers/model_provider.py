@@ -17,6 +17,7 @@ from utils import (
 )
 import asyncio
 from constants import PROJECT_ROOT, MODEL_DIR
+from file_loaders import UnifiedModelLoader
 
 models = {
     "gpt-oss:20b": os.path.join(PROJECT_ROOT, MODEL_DIR, "openai", "gpt-oss-20b"),
@@ -206,6 +207,16 @@ class LocalLLModel:
                 max_memory=max_memory,
                 low_cpu_mem_usage=True,
             )
+            # self.model = UnifiedModelLoader(
+            #     model_path,
+            #     {
+            #         "local_files_only": True,
+            #         "dtype": torch.bfloat16,
+            #         "device_map": "auto",
+            #         "max_memory": max_memory,
+            #         "low_cpu_mem_usage": True,
+            #     },
+            # )
         else:
             quantization_config = (
                 BitsAndBytesConfig(
@@ -228,6 +239,16 @@ class LocalLLModel:
                 # offload_folder="./offload",  # 将部分权重卸载到磁盘
                 # offload_state_dict=True,  # 卸载状态字典
             )
+            # self.model = UnifiedModelLoader(
+            #     model_path,
+            #     {
+            #         "local_files_only": True,
+            #         "dtype": torch.float16 if is_mac else None,
+            #         "device_map": device_map,
+            #         "max_memory": max_memory,
+            #         "quantization_config": quantization_config,
+            #     },
+            # )
 
     def unload_model(self):
         if self.model is not None:
