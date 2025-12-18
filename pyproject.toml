@@ -1,0 +1,47 @@
+[project]
+authors = [{ name = "lotaway", email = "lotaway@foxmail.com" }]
+name = "local-llm-provider"
+version = "0.1.0"
+description = "Local LLM Provider with RAG and Agent"
+readme = "README.md"
+requires-python = ">=3.12.12"
+dependencies = [
+    "fastapi>=0.118.0",
+    "pydantic>=2.11.9",
+    "uvicorn>=0.37.0",
+    "transformers>=4.57.0",
+    "accelerate>=1.10.1",
+    "openai>=2.2.0",
+    "httpx>=0.28.1",
+    "python-dotenv>=1.1.1",
+    "psutil>=5.9.0",
+    # RAG dependencies
+    "langchain>=1.0.8",
+    "langchain-community>=0.4.1",
+    "langchain-text-splitters>=1.0.0",
+    "langchain-core>=1.0.4",
+    "langchain-huggingface>=1.0.1",
+    "pymilvus>=2.6.3",
+    "sentence-transformers>=5.1.2",
+    "unstructured>=0.18.20",
+    "langchain_milvus>=0.3.0",
+    # Agent dependencies
+    "rank-bm25==0.2.2",
+    "sentence-transformers>=2.2.0",
+    "langchain-milvus>=0.3.0",
+    # Context Storage dependencies
+    "redis>=5.0.0",
+    "psycopg2-binary>=2.9.0",
+    "python-multipart>=0.0.20",
+    "elasticsearch>=9.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Note: torch installation reference
+# torch install: https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/install-pytorch.html#verify-pytorch-installation
+
+# Note: Manual installation required for Janus
+# Install [janus](https://github.com/deepseek-ai/Janus.git) manually.
