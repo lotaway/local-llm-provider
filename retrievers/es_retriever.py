@@ -1,4 +1,3 @@
-
 import os
 import logging
 from typing import List, Dict, Any, Optional
@@ -11,16 +10,17 @@ from langchain_core.callbacks import CallbackManagerForRetrieverRun
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class ESBM25Retriever(BaseRetriever):
     """
     Elasticsearch-based BM25 Retriever.
     Indexes documents into Elasticsearch and retrieves them using BM25 scoring.
     """
-    
+
     es_client: Optional[Elasticsearch] = None
     index_name: Optional[str] = None
     k: int = 5
-    
+
     # Allow arbitrary types for es_client
     model_config = {"arbitrary_types_allowed": True}
 
@@ -28,14 +28,14 @@ class ESBM25Retriever(BaseRetriever):
         self,
         index_name: str = os.getenv("ES_INDEX_NAME", "rag_docs"),
         host: str = os.getenv("ES_HOST", "localhost"),
-        port: int = int(os.getenv("ES_PORT", 9200)),
+        port: int = int(os.getenv("ES_PORT1", 9200)),
         api_key: Optional[str] = os.getenv("ES_API_KEY"),
-        k: int = 5, 
-        **kwargs
+        k: int = 5,
+        **kwargs,
     ):
         """
         Initialize the Elasticsearch client.
-        
+
         Args:
             index_name: Name of the Elasticsearch index.
             host: Elasticsearch host.
@@ -48,20 +48,17 @@ class ESBM25Retriever(BaseRetriever):
         self.k = k
         try:
             if api_key:
-                self.es_client = Elasticsearch(
-                    f"http://{host}:{port}",
-                    api_key=api_key
-                )
+                self.es_client = Elasticsearch(f"http://{host}:{port}", api_key=api_key)
             else:
-                self.es_client = Elasticsearch(
-                    f"http://{host}:{port}"
-                )
+                self.es_client = Elasticsearch(f"http://{host}:{port}")
             info = self.es_client.info()
-            logger.info(f"Connected to Elasticsearch {info['version']['number']} at {host}:{port}")
+            logger.info(
+                f"Connected to Elasticsearch {info['version']['number']} at {host}:{port}"
+            )
         except Exception as e:
             logger.error(f"Failed to connect to Elasticsearch at {host}:{port}: {e}")
             raise
-            
+
         self._ensure_index_exists()
 
     def _ensure_index_exists(self):
@@ -75,20 +72,21 @@ class ESBM25Retriever(BaseRetriever):
                         }
                     }
                 },
-                "similarity": {
-                    "default": {
-                        "type": "BM25"
-                    }
-                }
+                "similarity": {"default": {"type": "BM25"}},
             }
             mappings = {
                 "properties": {
                     "content": {"type": "text", "similarity": "default"},
-                    "metadata": {"type": "object", "enabled": True}  # Store metadata as object
+                    "metadata": {
+                        "type": "object",
+                        "enabled": True,
+                    },  # Store metadata as object
                 }
             }
             try:
-                self.es_client.indices.create(index=self.index_name, settings=settings, mappings=mappings)
+                self.es_client.indices.create(
+                    index=self.index_name, settings=settings, mappings=mappings
+                )
                 logger.info(f"Created Elasticsearch index '{self.index_name}'")
             except Exception as e:
                 logger.error(f"Failed to create index '{self.index_name}': {e}")
@@ -96,34 +94,31 @@ class ESBM25Retriever(BaseRetriever):
     def index_documents(self, documents: List[Document], batch_size: int = 500):
         """
         Index a list of documents into Elasticsearch.
-        
+
         Args:
             documents: List of LangChain Documents to index.
             batch_size: Number of documents to index in a single batch.
         """
         actions = []
         for doc in documents:
-            # Use a hash of content as ID to prevent duplicates if needed, 
-            # or just simple metadata-based ID if available. 
+            # Use a hash of content as ID to prevent duplicates if needed,
+            # or just simple metadata-based ID if available.
             # Here we let ES generate ID or use source/index combination if we want strict dedup.
             # For simplicity, we just insert.
-            
+
             action = {
                 "_index": self.index_name,
-                "_source": {
-                    "content": doc.page_content,
-                    "metadata": doc.metadata
-                }
+                "_source": {"content": doc.page_content, "metadata": doc.metadata},
             }
             actions.append(action)
-            
+
             if len(actions) >= batch_size:
                 self._bulk_index(actions)
                 actions = []
-        
+
         if actions:
             self._bulk_index(actions)
-            
+
     def _bulk_index(self, actions: List[Dict]):
         try:
             success, failed = helpers.bulk(self.es_client, actions, stats_only=True)
@@ -132,45 +127,41 @@ class ESBM25Retriever(BaseRetriever):
             logger.error(f"Bulk indexing failed: {e}")
 
     def _get_relevant_documents(
-        self, query: str, *, run_manager: Optional[CallbackManagerForRetrieverRun] = None
+        self,
+        query: str,
+        *,
+        run_manager: Optional[CallbackManagerForRetrieverRun] = None,
     ) -> List[Document]:
         """
         Retrieve documents using BM25 search from Elasticsearch.
-        
+
         Args:
             query: The search query.
             run_manager: Run manager for callbacks.
-            
+
         Returns:
             List of documents matching the query.
         """
-        search_query = {
-            "query": {
-                "match": {
-                    "content": query
-                }
-            },
-            "size": self.k
-        }
-        
+        search_query = {"query": {"match": {"content": query}}, "size": self.k}
+
         try:
             response = self.es_client.search(index=self.index_name, body=search_query)
-            hits = response['hits']['hits']
-            
+            hits = response["hits"]["hits"]
+
             documents = []
             for hit in hits:
-                source = hit['_source']
-                content = source.get('content', '')
-                metadata = source.get('metadata', {})
-                score = hit['_score']
-                
+                source = hit["_source"]
+                content = source.get("content", "")
+                metadata = source.get("metadata", {})
+                score = hit["_score"]
+
                 # We can store the score in metadata if needed for later fusion
-                metadata['_es_score'] = score
-                
+                metadata["_es_score"] = score
+
                 documents.append(Document(page_content=content, metadata=metadata))
-                
+
             return documents
-            
+
         except Exception as e:
             logger.error(f"Error searching ES: {e}")
             return []
@@ -180,33 +171,28 @@ class ESBM25Retriever(BaseRetriever):
         Get documents with their raw BM25 scores.
         Useful for hybrid search fusion.
         """
-        search_query = {
-            "query": {
-                "match": {
-                    "content": query
-                }
-            },
-            "size": self.k
-        }
+        search_query = {"query": {"match": {"content": query}}, "size": self.k}
 
         try:
             # elasticsearch-py 8.x/9.x: use direct parameters instead of body
             response = self.es_client.search(
                 index=self.index_name,
                 query=search_query["query"],
-                size=search_query["size"]
+                size=search_query["size"],
             )
-            hits = response['hits']['hits']
-            
+            hits = response["hits"]["hits"]
+
             results = []
             for hit in hits:
-                source = hit['_source']
-                content = source.get('content', '')
-                metadata = source.get('metadata', {})
-                score = hit['_score']
-                
-                results.append((Document(page_content=content, metadata=metadata), score))
-            
+                source = hit["_source"]
+                content = source.get("content", "")
+                metadata = source.get("metadata", {})
+                score = hit["_score"]
+
+                results.append(
+                    (Document(page_content=content, metadata=metadata), score)
+                )
+
             return results
         except Exception as e:
             logger.error(f"Error searching ES with scores: {e}")
