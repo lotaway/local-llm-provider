@@ -426,8 +426,10 @@ class LocalRAG:
         return docs
 
     def get_embeddings(self):
+        print("Initializing embedding model")
         embeddings = HuggingFaceEmbeddings(
             model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
+            model_kwargs={"device": "cpu"},
             encode_kwargs={"batch_size": 8},
         )
         return embeddings
