@@ -41,6 +41,9 @@ async def check_document(req: DocumentCheckRequest):
 async def import_document(req: ImportDocumentRequest):
     global local_rag
 
+    if req.content == "":
+        raise HTTPException(status_code=400, detail="Content is required")
+
     LocalLLModel.init_local_model()
 
     if local_rag is None:
