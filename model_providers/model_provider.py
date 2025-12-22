@@ -24,8 +24,8 @@ models = {
     "deepseek-r1:14b-6bit": os.path.join(
         PROJECT_ROOT, MODEL_DIR, "mlx-community", "DeepSeek-R1-Distill-Qwen-14B-6bit"
     ),
-    "deepseek-r1:16b": os.path.join(
-        PROJECT_ROOT, MODEL_DIR, "deepseek-ai", "DeepSeek-R1-Distill-Qwen-16B"
+    "deepseek-r1:14b": os.path.join(
+        PROJECT_ROOT, MODEL_DIR, "deepseek-ai", "DeepSeek-R1-Distill-Qwen-14B"
     ),
     "deepseek-r1:32b": os.path.join(
         PROJECT_ROOT, MODEL_DIR, "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"
@@ -72,7 +72,7 @@ class LocalLLModel:
 
     def __init__(
         self,
-        model_name="deepseek-r1:16b",
+        model_name="deepseek-r1:14b",
         embedding_model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
     ):
         self.embedding_model_name = embedding_model_name
@@ -170,7 +170,7 @@ class LocalLLModel:
             return
 
         model_path = models[self.cur_model_name]
-        tokenizer_model_name = models["deepseek-r1:16b"]
+        tokenizer_model_name = models["deepseek-r1:14b"]
 
         if model_path is None:
             raise ValueError("Model name not found")

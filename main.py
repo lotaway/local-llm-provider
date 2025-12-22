@@ -44,9 +44,9 @@ async def check_multimodal_health():
     if not backend_globals.MULTIMODAL_PROVIDER_URL:
         return
 
-    while True:
-        try:
-            async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(trust_env=False) as client:
+        while True:
+            try:
                 resp = await client.post(
                     f"{backend_globals.MULTIMODAL_PROVIDER_URL}/api/show",
                     headers=get_multimodal_headers(),
@@ -56,10 +56,10 @@ async def check_multimodal_health():
                     backend_globals.remote_multimodal_status = True
                 else:
                     backend_globals.remote_multimodal_status = False
-        except Exception:
-            backend_globals.remote_multimodal_status = False
+            except Exception:
+                backend_globals.remote_multimodal_status = False
 
-        await asyncio.sleep(10)
+            await asyncio.sleep(10)
 
 
 @asynccontextmanager

@@ -16,7 +16,7 @@ from schemas import Message, ChatRequest
 from rag import LocalRAG
 from utils import ContentType
 
-router = APIRouter(prefix="/chat", tags=["chat"])
+router = APIRouter()
 logger = logging.getLogger(__name__)
 OTHER_VERSION = "v1"
 
@@ -27,7 +27,7 @@ class CompletionRequest(BaseModel):
     enable_rag: bool = False
 
 
-@router.post("/completions")
+@router.post("/chat/completions", tags=["chat"])
 async def chat_completions(req: ChatRequest, request: Request):
 
     if req.files:
@@ -159,6 +159,8 @@ async def chat_completions(req: ChatRequest, request: Request):
 
     except Exception as e:
         logger.warning(f"Context truncation process failed: {e}")
+        if "incomplete metadata" in str(e) or "file not fully covered" in str(e):
+            raise HTTPException(status_code=500, detail=f"Model loading failed: {e}")
 
     if req.enable_rag:
         if backend_globals.local_rag is None:
@@ -348,7 +350,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                 raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/completions")
+@router.post("/completions", tags=["completions"])
 async def completions(req: CompletionRequest):
 
     local_model = LocalLLModel.init_local_model(req.model)
