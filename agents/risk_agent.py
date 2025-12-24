@@ -55,7 +55,11 @@ class RiskAgent(BaseAgent):
         self.risk_threshold = risk_threshold
 
     async def execute(
-        self, input_data: Any, context: Dict[str, Any], stream_callback=None
+        self,
+        input_data: Any,
+        context: Dict[str, Any],
+        private_context: Dict[str, Any],
+        stream_callback=None,
     ) -> AgentResult:
         """
         Assess operation risk

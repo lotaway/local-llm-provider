@@ -29,6 +29,7 @@ class AgentResult:
     message: str = ""
     metadata: Dict[str, Any] = None
     next_agent: Optional[str] = None
+    private_data: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):
         if self.metadata is None:
@@ -52,7 +53,11 @@ class BaseAgent(ABC):
 
     @abstractmethod
     async def execute(
-        self, input_data: Any, context: Dict[str, Any], stream_callback=None
+        self,
+        input_data: Any,
+        context: Dict[str, Any],
+        private_context: Dict[str, Any],
+        stream_callback=None,
     ) -> AgentResult:
         pass
 

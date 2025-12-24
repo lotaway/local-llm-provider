@@ -59,7 +59,11 @@ class MCPTaskAgent(BaseAgent):
         )
 
     async def execute(
-        self, input_data: Any, context: Dict[str, Any], stream_callback=None
+        self,
+        input_data: Any,
+        context: Dict[str, Any],
+        private_context: Dict[str, Any],
+        stream_callback=None,
     ) -> AgentResult:
         task = input_data if isinstance(input_data, dict) else {}
         tool_name = task.get("tool_name", "")

@@ -26,7 +26,11 @@ class VerificationAgent(BaseAgent):
 }"""
 
     async def execute(
-        self, input_data: Any, context: Dict[str, Any], stream_callback=None
+        self,
+        input_data: Any,
+        context: Dict[str, Any],
+        private_context: Dict[str, Any],
+        stream_callback=None,
     ) -> AgentResult:
         """
         Verify task execution result

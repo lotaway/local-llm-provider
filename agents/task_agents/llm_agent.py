@@ -13,7 +13,11 @@ class LLMTaskAgent(BaseAgent):
     """Agent for direct LLM queries without RAG or tools"""
 
     async def execute(
-        self, input_data: Any, context: Dict[str, Any], stream_callback=None
+        self,
+        input_data: Any,
+        context: Dict[str, Any],
+        private_context: Dict[str, Any],
+        stream_callback=None,
     ) -> AgentResult:
         """
         Execute LLM task

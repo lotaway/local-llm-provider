@@ -4,7 +4,11 @@ from .agent_base import BaseAgent, AgentResult, AgentStatus
 
 class RouterAgent(BaseAgent):
     async def execute(
-        self, input_data: Any, context: Dict[str, Any], stream_callback=None
+        self,
+        input_data: Any,
+        context: Dict[str, Any],
+        private_context: Dict[str, Any],
+        stream_callback=None,
     ) -> AgentResult:
         if not isinstance(input_data, dict):
             return AgentResult(

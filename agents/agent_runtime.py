@@ -29,6 +29,7 @@ class RuntimeState:
     iteration_count_round: int = 0
     max_iterations: int = 20
     context: Dict[str, Any] = field(default_factory=dict)
+    private_contexts: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     history: List[Dict[str, Any]] = field(default_factory=list)
     final_result: Any = None
     error_message: str = ""
@@ -61,6 +62,7 @@ class RuntimeState:
             "iteration_count_round": self.iteration_count_round,
             "max_iterations": self.max_iterations,
             "context": self.context,
+            "private_contexts": self.private_contexts,
             "history": self.history,
             "final_result": self.final_result,
             "error_message": self.error_message,
@@ -95,6 +97,7 @@ class RuntimeState:
         state.iteration_count = data.get("iteration_count", 0)
         state.iteration_count_round = data.get("iteration_count_round", 0)
         state.context = data.get("context", {})
+        state.private_contexts = data.get("private_contexts", {})
         state.history = data.get("history", [])
         state.final_result = data.get("final_result")
         state.error_message = data.get("error_message", "")
@@ -368,11 +371,22 @@ class AgentRuntime:
                         else:
                             stream_callback(evt)
 
+                # Get private context for this agent
+                private_context = self.state.private_contexts.get(agent_name, {})
+
                 result = await agent.execute(
                     current_input,
                     self.state.context,
+                    private_context,
                     stream_callback=llm_chunk_callback_async,
                 )
+
+                # Update private context if agent returned any
+                if result.private_data:
+                    if agent_name not in self.state.private_contexts:
+                        self.state.private_contexts[agent_name] = {}
+                    self.state.private_contexts[agent_name].update(result.private_data)
+
                 agent.log_execution(current_input, result)
                 self.state.add_to_history(agent_name, result)
                 if stream_callback:

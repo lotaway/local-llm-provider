@@ -47,7 +47,11 @@ class PlanningAgent(BaseAgent):
 }"""
 
     async def execute(
-        self, input_data: Any, context: Dict[str, Any], stream_callback=None
+        self,
+        input_data: Any,
+        context: Dict[str, Any],
+        private_context: Dict[str, Any],
+        stream_callback=None,
     ) -> AgentResult:
         history_summary = context.get("history_summary", "")
         parsed_query = context.get("parsed_query", {})

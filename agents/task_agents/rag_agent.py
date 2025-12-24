@@ -25,7 +25,11 @@ class RAGTaskAgent(BaseAgent):
         self.rag = rag_instance
 
     async def execute(
-        self, input_data: Any, context: Dict[str, Any], stream_callback=None
+        self,
+        input_data: Any,
+        context: Dict[str, Any],
+        private_context: Dict[str, Any],
+        stream_callback=None,
     ) -> AgentResult:
         """
         Execute RAG task
