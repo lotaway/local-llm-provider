@@ -7,35 +7,11 @@ from utils import (
     DeviceUtils,
     Scheduler,
     ContentType,
+    discover_models,
 )
-from constants import PROJECT_ROOT, MODEL_DIR
 from model_providers.inference_engine import InferenceEngine
 from file_loaders import UnifiedModelLoader
 import asyncio
-
-
-def discover_models():
-    abs_model_dir = os.path.join(PROJECT_ROOT, MODEL_DIR)
-    model_map = {}
-    if not os.path.exists(abs_model_dir):
-        return model_map
-
-    for root, dirs, files in os.walk(abs_model_dir):
-        for f in files:
-            if f.endswith(".gguf"):
-                full_path = os.path.join(root, f)
-                rel_path = os.path.relpath(full_path, abs_model_dir)
-                rel_path = rel_path.replace(os.sep, "/")
-                model_map[rel_path] = full_path
-
-        if "config.json" in files:
-            rel_path = os.path.relpath(root, abs_model_dir)
-            if rel_path != ".":
-                rel_path = rel_path.replace(os.sep, "/")
-                model_map[rel_path] = root
-
-    return model_map
-
 
 models = discover_models()
 

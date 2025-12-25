@@ -3,7 +3,7 @@ import os
 import time
 import logging
 from typing import List, Dict, Any, Optional
-from utils import ContentType
+from utils import ContentType, discover_models
 from PIL import Image
 import requests
 from io import BytesIO
@@ -13,20 +13,23 @@ from constants import PROJECT_ROOT, MODEL_DIR
 # Configure logging
 logger = logging.getLogger(__name__)
 
-models = {
-    "deepseek-janus:7b": os.path.join(
-        PROJECT_ROOT, MODEL_DIR, "deepseek-ai", "Janus-Pro-7B"
-    ),
-    "llava-1.5-7b-hf": os.path.join(
-        PROJECT_ROOT, MODEL_DIR, "llava-hf", "llava-1.5-7b-hf"
-    ),
-    "Qwen/Qwen2.5-VL-7B-Instruct": os.path.join(
-        PROJECT_ROOT, MODEL_DIR, "Qwen", "Qwen2.5-VL-7B-Instruct"
-    ),
-    "qwen3-vl-4b-instruct": os.path.join(
-        PROJECT_ROOT, MODEL_DIR, "Qwen", "Qwen3-VL-4B-Instruct"
-    ),
-}
+
+def discover_multimodal_models():
+    all_models = discover_models()
+    multimodal_map = {}
+
+    # Keywords for multimodal models
+    multimodal_keywords = ["vl", "janus", "llava", "vision", "multimodal", "clip"]
+
+    for name, path in all_models.items():
+        name_lower = name.lower()
+        if any(kw in name_lower for kw in multimodal_keywords):
+            multimodal_map[name] = path
+
+    return multimodal_map
+
+
+models = discover_multimodal_models()
 
 
 def load_image(image_path_or_url: str) -> Image.Image:
@@ -410,24 +413,25 @@ class MultimodalFactory:
 
     @staticmethod
     def get_models():
-        return list(["janus","llava","qwen3-vl"])
-    
+        return list(models.keys())
+
     @classmethod
     def get_model(cls, model_name: str) -> BaseMultimodalModel:
         if model_name in cls._models:
             return cls._models[model_name]
-        match model_name.lower():
-            case "janus":
-                return JanusModel(model_name)
-            case "llava":
-                return LlavaModel(model_name)
-            case "qwen3-vl":
-                return QwenVLModel(model_name)
-            case other:
-                logger.warning(
-                    f"Unknown multimodal model {other}, falling back to Janus"
-                )
-                instance = JanusModel()
+
+        name_lower = model_name.lower()
+        if "janus" in name_lower:
+            instance = JanusModel(model_name)
+        elif "llava" in name_lower:
+            instance = LlavaModel(model_name)
+        elif "vl" in name_lower:
+            instance = QwenVLModel(model_name)
+        else:
+            logger.warning(
+                f"Unknown multimodal model {model_name}, falling back to Janus"
+            )
+            instance = JanusModel(model_name)
 
         cls._models[model_name] = instance
         return instance

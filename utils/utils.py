@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class DeviceUtils:
-    
+
     @staticmethod
     def platform_is_mac():
         return os.sys.platform == "darwin"
@@ -50,6 +50,31 @@ class DeviceUtils:
             max_memory["cpu"] = f"{60}GiB"
 
         return max_memory
+
+
+def discover_models():
+    from constants import PROJECT_ROOT, MODEL_DIR
+
+    abs_model_dir = os.path.join(PROJECT_ROOT, MODEL_DIR)
+    model_map = {}
+    if not os.path.exists(abs_model_dir):
+        return model_map
+
+    for root, dirs, files in os.walk(abs_model_dir):
+        for f in files:
+            if f.endswith(".gguf"):
+                full_path = os.path.join(root, f)
+                rel_path = os.path.relpath(full_path, abs_model_dir)
+                rel_path = rel_path.replace(os.sep, "/")
+                model_map[rel_path] = full_path
+
+        if "config.json" in files:
+            rel_path = os.path.relpath(root, abs_model_dir)
+            if rel_path != ".":
+                rel_path = rel_path.replace(os.sep, "/")
+                model_map[rel_path] = root
+
+    return model_map
 
 
 class FileProcessor:
