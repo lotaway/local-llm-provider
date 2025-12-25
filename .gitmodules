@@ -1,0 +1,6 @@
+[submodule "CODE_PINCEPLES"]
+	path = CODE_PINCEPLES
+	url = https://github.com/lotaway/CODE_PINCEPLES.git
+[submodule "llama.cpp"]
+	path = llama.cpp
+	url = https://github.com/ggml-org/llama.cpp.git
