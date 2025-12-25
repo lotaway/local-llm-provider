@@ -13,18 +13,31 @@ from model_providers.inference_engine import InferenceEngine
 from file_loaders import UnifiedModelLoader
 import asyncio
 
-models = {
-    "gpt-oss:20b": os.path.join(PROJECT_ROOT, MODEL_DIR, "openai", "gpt-oss-20b"),
-    "deepseek-r1:14b-6bit": os.path.join(
-        PROJECT_ROOT, MODEL_DIR, "mlx-community", "DeepSeek-R1-Distill-Qwen-14B-6bit"
-    ),
-    "deepseek-r1:14b": os.path.join(
-        PROJECT_ROOT, MODEL_DIR, "deepseek-ai", "DeepSeek-R1-Distill-Qwen-14B"
-    ),
-    "deepseek-r1:32b": os.path.join(
-        PROJECT_ROOT, MODEL_DIR, "deepseek-ai", "DeepSeek-R1-Distill-Qwen-32B"
-    ),
-}
+
+def discover_models():
+    abs_model_dir = os.path.join(PROJECT_ROOT, MODEL_DIR)
+    model_map = {}
+    if not os.path.exists(abs_model_dir):
+        return model_map
+
+    for root, dirs, files in os.walk(abs_model_dir):
+        for f in files:
+            if f.endswith(".gguf"):
+                full_path = os.path.join(root, f)
+                rel_path = os.path.relpath(full_path, abs_model_dir)
+                rel_path = rel_path.replace(os.sep, "/")
+                model_map[rel_path] = full_path
+
+        if "config.json" in files:
+            rel_path = os.path.relpath(root, abs_model_dir)
+            if rel_path != ".":
+                rel_path = rel_path.replace(os.sep, "/")
+                model_map[rel_path] = root
+
+    return model_map
+
+
+models = discover_models()
 
 
 class GenerateHelper:
@@ -63,7 +76,7 @@ class LocalLLModel:
 
     def __init__(
         self,
-        model_name="deepseek-r1:14b",
+        model_name="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
         embedding_model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
     ):
         self.embedding_model_name = embedding_model_name
