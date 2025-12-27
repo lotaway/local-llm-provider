@@ -227,7 +227,7 @@ class LlavaModel(BaseMultimodalModel):
         if is_cuda:
             self.model = LlavaForConditionalGeneration.from_pretrained(
                 self.model_path,
-                torch_dtype=torch.float16,
+                dtype=torch.float16,
                 low_cpu_mem_usage=True,
                 device_map="auto",
             )
@@ -328,14 +328,14 @@ class QwenVLModel(BaseMultimodalModel):
         # If Qwen3 is not in standard transformers yet, we rely on AutoModel
         try:
             self.model = Qwen2VLForConditionalGeneration.from_pretrained(
-                self.model_path, torch_dtype="auto", device_map="auto"
+                self.model_path, dtype="auto", device_map="auto"
             )
         except Exception:
             # Fallback to generic auto model
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_path,
                 trust_remote_code=True,
-                torch_dtype="auto",
+                dtype="auto",
                 device_map="auto",
             )
 

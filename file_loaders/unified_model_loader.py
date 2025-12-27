@@ -62,7 +62,7 @@ class UnifiedModelLoader:
 
         if self.use_gpu:
             transformers_kwargs.setdefault("device_map", "auto")
-            transformers_kwargs.setdefault("torch_dtype", torch.float16)
+            transformers_kwargs.setdefault("dtype", torch.float16)
         else:
             transformers_kwargs.setdefault("device_map", "cpu")
 
