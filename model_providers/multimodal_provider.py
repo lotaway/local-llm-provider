@@ -8,7 +8,7 @@ from PIL import Image
 import requests
 from io import BytesIO
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor
-from constants import PROJECT_ROOT, MODEL_DIR
+from constants import PROJECT_ROOT, MODEL_DIR, OFFLOAD_DIR
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -45,7 +45,6 @@ class BaseMultimodalModel:
         self.model_name = model_name
         self.model_path = models.get(model_name)
         if not self.model_path:
-            # Fallback to model_name if it looks like a path or repo ID
             self.model_path = model_name
         self.model = None
         self.processor = None
@@ -59,7 +58,7 @@ class BaseMultimodalModel:
 
 
 class JanusModel(BaseMultimodalModel):
-    def __init__(self, model_name="deepseek-janus:7b"):
+    def __init__(self, model_name: str):
         super().__init__(model_name)
         self.vl_gpt = None
 
@@ -87,42 +86,45 @@ class JanusModel(BaseMultimodalModel):
         start_time = time.time()
         print(f"Loading Janus model: {self.model_name}...")
 
+        is_mps = torch.backends.mps.is_available()
+        is_cuda = torch.cuda.is_available()
+        load_in_8bit = os.getenv("JANUS_LOAD_IN_8BIT", "true").lower() == "true"
+
+        abs_offload_dir = os.path.join(PROJECT_ROOT, OFFLOAD_DIR)
+        os.makedirs(abs_offload_dir, exist_ok=True)
+
+        # Hardware and dtype configuration
+        kwargs = {
+            "low_cpu_mem_usage": True,
+            "offload_folder": abs_offload_dir,
+        }
+
         if is_mps:
             self.target_dtype = torch.float16
-            self.vl_gpt = AutoModelForCausalLM.from_pretrained(
-                self.model_path,
-                trust_remote_code=False,
-                dtype=self.target_dtype,
-                low_cpu_mem_usage=True,
-                device_map="auto",
-            )
+            kwargs.update({
+                "torch_dtype": self.target_dtype,
+                "device_map": "auto",
+            })
         elif is_cuda:
-            if load_in_8bit:
-                self.target_dtype = torch.float16
-                self.vl_gpt = AutoModelForCausalLM.from_pretrained(
-                    self.model_path,
-                    trust_remote_code=False,
-                    load_in_8bit=True,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                )
-            else:
-                self.target_dtype = torch.bfloat16
-                self.vl_gpt = AutoModelForCausalLM.from_pretrained(
-                    self.model_path,
-                    trust_remote_code=False,
-                    dtype=self.target_dtype,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                )
+            self.target_dtype = torch.float16 if load_in_8bit else torch.bfloat16
+            kwargs.update({
+                "torch_dtype": self.target_dtype,
+                "device_map": "auto",
+                "load_in_8bit": load_in_8bit,
+            })
         else:
             self.target_dtype = torch.float32
-            self.vl_gpt = AutoModelForCausalLM.from_pretrained(
-                self.model_path,
-                trust_remote_code=False,
-                dtype=self.target_dtype,
-                low_cpu_mem_usage=True,
-            )
+            kwargs.update({
+                "torch_dtype": self.target_dtype,
+            })
+
+        # Load model using the imported class
+        self.vl_gpt = MultiModalityCausalLM.from_pretrained(
+            self.model_path,
+            **kwargs
+        )
+
+        if not is_mps and not is_cuda:
             self.vl_gpt = self.vl_gpt.to("cpu")
 
         self.vl_gpt.eval()

@@ -16,7 +16,7 @@ context_storage = None
 MULTIMODAL_PROVIDER_URL = os.getenv("MULTIMODAL_PROVIDER_URL")
 remote_multimodal_status = False
 multimodal_model = None
-default_vlm = os.getenv("DEFAULT_MULTIMODAL_MODEL", "deepseek-janus:7b")
+default_vlm = os.getenv("DEFAULT_MULTIMODAL_MODEL", "")
 
 if os.getenv("PRELOAD_MULTIONDAL", "False").lower() == "true":
     multimodal_model = MultimodalFactory.get_model(default_vlm)
