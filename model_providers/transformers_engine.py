@@ -1,9 +1,9 @@
 import torch
 import gc
 import asyncio
-from typing import AsyncGenerator, Any, cast
+from typing import AsyncGenerator, Any
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-from model_providers.inference_engine import InferenceEngine
+from model_providers import InferenceEngine
 
 
 class TransformersEngine(InferenceEngine):
@@ -16,14 +16,12 @@ class TransformersEngine(InferenceEngine):
     def model_type(self) -> str:
         return "transformers"
 
-    async def generate_stream(self, prompt: str, **kwargs) -> AsyncGenerator[str, None]:
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
-        curr_input_ids = inputs.input_ids
-        curr_attention_mask = inputs.get("attention_mask")
-        past_key_values = None
-        token_cache = []
+    def _generate_next_chunk_sync(
+        self, curr_input_ids, past_key_values, curr_attention_mask, chunk_size, **kwargs
+    ):
+        generated_tokens = []
 
-        while True:
+        for _ in range(chunk_size):
             model_inputs = {"input_ids": curr_input_ids}
             if past_key_values is not None:
                 model_inputs["past_key_values"] = past_key_values
@@ -36,20 +34,7 @@ class TransformersEngine(InferenceEngine):
             past_key_values = out.past_key_values
             next_token = torch.argmax(out.logits[:, -1], dim=-1).unsqueeze(0)
             token_id = next_token[0].item()
-            token_cache.append(token_id)
-
-            text = self.tokenizer.decode(token_cache, skip_special_tokens=False)
-            is_eos = token_id == self.tokenizer.eos_token_id
-
-            if is_eos:
-                yield text
-                break
-
-            if text.endswith("\ufffd") and len(token_cache) < 10:
-                yield ""
-            else:
-                yield text
-                token_cache = []
+            generated_tokens.append(token_id)
 
             curr_input_ids = next_token
             if curr_attention_mask is not None:
@@ -64,7 +49,40 @@ class TransformersEngine(InferenceEngine):
                     ],
                     dim=1,
                 )
-            await asyncio.sleep(0)
+
+            if token_id == self.tokenizer.eos_token_id:
+                break
+
+        return generated_tokens, curr_input_ids, past_key_values, curr_attention_mask
+
+    async def generate_stream(self, prompt: str, **kwargs) -> AsyncGenerator[str, None]:
+        from constants import CHUNK_SIZE
+
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        curr_input_ids = inputs.input_ids
+        curr_attention_mask = inputs.get("attention_mask")
+        past_key_values = None
+
+        while True:
+            res = await asyncio.to_thread(
+                self._generate_next_chunk_sync,
+                curr_input_ids,
+                past_key_values,
+                curr_attention_mask,
+                CHUNK_SIZE,
+                **kwargs,
+            )
+
+            new_tokens, curr_input_ids, past_key_values, curr_attention_mask = res
+
+            if not new_tokens:
+                break
+
+            text = self.tokenizer.decode(new_tokens, skip_special_tokens=False)
+            yield text
+
+            if new_tokens[-1] == self.tokenizer.eos_token_id:
+                break
 
     def unload(self):
         if self.model is not None:

@@ -6,7 +6,7 @@ import os
 import signal
 import socket
 from typing import AsyncGenerator
-from model_providers.inference_engine import InferenceEngine
+from model_providers import InferenceEngine
 
 
 class LlamaCppEngine(InferenceEngine):
@@ -15,12 +15,14 @@ class LlamaCppEngine(InferenceEngine):
         model_path: str,
         project_root: str,
         n_ctx: int = 4096,
+        batch_size: int = 2048,
         n_gpu_layers: int = -1,
     ):
         self.model_path = model_path
         self.project_root = project_root
         self.n_ctx = n_ctx
         self.n_gpu_layers = n_gpu_layers
+        self.batch_size = batch_size
         self.server_process = None
         self.port = self._find_free_port()
         self.base_url = f"http://localhost:{self.port}"
@@ -54,6 +56,8 @@ class LlamaCppEngine(InferenceEngine):
             str(self.port),
             "-ngl",
             str(self.n_gpu_layers) if self.n_gpu_layers >= 0 else "999",
+            "--batch-size",
+            str(self.batch_size),
         ]
         self.server_process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid
@@ -76,11 +80,14 @@ class LlamaCppEngine(InferenceEngine):
         return False
 
     async def generate_stream(self, prompt: str, **kwargs) -> AsyncGenerator[str, None]:
+        from constants import CHUNK_SIZE
+
         if not await self._wait_for_server():
             raise RuntimeError("llama-server failed to start")
 
         payload = {"prompt": prompt, "stream": True, "cache_prompt": True, **kwargs}
 
+        buffer = []
         async with httpx.AsyncClient(timeout=None) as client:
             async with client.stream(
                 "POST", f"{self.base_url}/completion", json=payload
@@ -90,7 +97,13 @@ class LlamaCppEngine(InferenceEngine):
                         data = json.loads(line[6:])
                         content = data.get("content", "")
                         if content:
-                            yield content
+                            buffer.append(content)
+
+                        if len(buffer) >= CHUNK_SIZE or data.get("stop"):
+                            if buffer:
+                                yield "".join(buffer)
+                                buffer = []
+
                         if data.get("stop"):
                             break
 

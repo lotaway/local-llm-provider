@@ -9,8 +9,7 @@ from utils import (
     ContentType,
     discover_models,
 )
-from model_providers.inference_engine import InferenceEngine
-from file_loaders import UnifiedModelLoader
+from model_providers import InferenceEngine, UnifiedModelLoader
 import asyncio
 
 models = discover_models()
@@ -239,8 +238,21 @@ class LocalLLModel:
             gen = self._state[rid]
             try:
                 token = await gen.__anext__()
-                out[rid] = token
+
+                if token is not None:
+                    out[rid] = token
+                else:
+                    out[rid] = None
+                    self._state.pop(rid, None)
             except StopAsyncIteration:
+                out[rid] = None
+                self._state.pop(rid, None)
+            except Exception as e:
+                import logging
+
+                logging.getLogger(__name__).error(
+                    f"Error in generate_next_token for {rid}: {e}"
+                )
                 out[rid] = None
                 self._state.pop(rid, None)
         return out

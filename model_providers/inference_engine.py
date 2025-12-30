@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Any, cast
+from typing import AsyncGenerator
 
 
 class InferenceEngine(ABC):
