@@ -6,7 +6,7 @@ import os
 import signal
 import socket
 from typing import AsyncGenerator
-from model_providers import InferenceEngine
+from .inference_engine import InferenceEngine
 
 
 class LlamaCppEngine(InferenceEngine):

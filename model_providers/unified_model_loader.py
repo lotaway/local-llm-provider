@@ -1,5 +1,5 @@
 import torch
-import os
+import logging
 from typing import Any
 from model_providers.transformers_engine import TransformersEngine
 from model_providers.llama_cpp_engine import LlamaCppEngine
@@ -61,16 +61,22 @@ class UnifiedModelLoader:
             transformers_kwargs["load_in_8bit"] = True
 
         if self.use_gpu:
-            transformers_kwargs.setdefault("device_map", "auto")
-            transformers_kwargs.setdefault("dtype", torch.float16)
+            transformers_kwargs.setdefault("device_map", "cuda:0")
+            transformers_kwargs.setdefault("torch_dtype", torch.float16)
         else:
             transformers_kwargs.setdefault("device_map", "cpu")
+            transformers_kwargs.setdefault("torch_dtype", torch.float32)
 
         transformers_kwargs.setdefault("trust_remote_code", True)
 
         model = AutoModelForCausalLM.from_pretrained(
             self.model_path, **transformers_kwargs
         )
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"Loaded HF model: {self.model_path}")
+        logger.info(f"Model device: {model.device}")
+
         tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_model_name, local_files_only=True
         )

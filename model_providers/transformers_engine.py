@@ -3,7 +3,7 @@ import gc
 import asyncio
 from typing import AsyncGenerator, Any
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-from model_providers import InferenceEngine
+from .inference_engine import InferenceEngine
 
 
 class TransformersEngine(InferenceEngine):

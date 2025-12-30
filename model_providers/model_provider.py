@@ -9,7 +9,8 @@ from utils import (
     ContentType,
     discover_models,
 )
-from model_providers import InferenceEngine, UnifiedModelLoader
+from .inference_engine import InferenceEngine
+from .unified_model_loader import UnifiedModelLoader
 import asyncio
 
 models = discover_models()
@@ -169,10 +170,16 @@ class LocalLLModel:
     def unload_model(self):
         if self.engine is not None:
             self.engine.unload()
+            del self.engine
             self.engine = None
+
         gc.collect()
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+
+        print("Successfully unloaded model and cleared resources.")
 
     def _extract_text_from_content(self, content: str | list) -> str:
         if isinstance(content, str):
