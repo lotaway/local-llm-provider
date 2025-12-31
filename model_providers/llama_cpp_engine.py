@@ -99,28 +99,54 @@ class LlamaCppEngine(InferenceEngine):
         if not await self._wait_for_server():
             raise RuntimeError("llama-server failed to start")
 
-        payload = {"prompt": prompt, "stream": True, "cache_prompt": True, **kwargs}
+        messages = kwargs.get("messages", [{"role": "user", "content": prompt}])
+
+        payload = {
+            "messages": messages,
+            "stream": True,
+            "model": "gpt-3.5-turbo",  # placeholder
+            **{k: v for k, v in kwargs.items() if k not in ["messages"]},
+        }
 
         buffer = []
         async with httpx.AsyncClient(timeout=None, trust_env=False) as client:
             url = self.base_url.replace("localhost", "127.0.0.1")
             async with client.stream(
-                "POST", f"{url}/completion", json=payload
+                "POST", f"{url}/v1/chat/completions", json=payload
             ) as response:
+                if response.status_code != 200:
+                    error_data = await response.aread()
+                    print(
+                        f"DEBUG: llama-server returned {response.status_code}: {error_data.decode()}"
+                    )
+                    raise RuntimeError(f"llama-server error: {error_data.decode()}")
+
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
-                        data = json.loads(line[6:])
-                        content = data.get("content", "")
-                        if content:
-                            buffer.append(content)
-
-                        if len(buffer) >= CHUNK_SIZE or data.get("stop"):
-                            if buffer:
-                                yield "".join(buffer)
-                                buffer = []
-
-                        if data.get("stop"):
+                        line_content = line[6:].strip()
+                        if line_content == "[DONE]":
                             break
+
+                        try:
+                            data = json.loads(line_content)
+                            choices = data.get("choices", [])
+                            if not choices:
+                                continue
+
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "")
+
+                            if content:
+                                buffer.append(content)
+
+                            if len(buffer) >= CHUNK_SIZE or choices[0].get(
+                                "finish_reason"
+                            ):
+                                if buffer:
+                                    yield "".join(buffer)
+                                    buffer = []
+                        except json.JSONDecodeError:
+                            continue
 
     def unload(self):
         if self.server_process:
