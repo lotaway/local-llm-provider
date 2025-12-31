@@ -5,6 +5,7 @@ import json
 import os
 import signal
 import socket
+import atexit
 from typing import AsyncGenerator
 from .inference_engine import InferenceEngine
 
@@ -27,6 +28,7 @@ class LlamaCppEngine(InferenceEngine):
         self.port = self._find_free_port()
         self.base_url = f"http://localhost:{self.port}"
         self._start_server()
+        atexit.register(self.unload)
 
     @property
     def model_type(self) -> str:
@@ -67,13 +69,25 @@ class LlamaCppEngine(InferenceEngine):
         )
 
     async def _wait_for_server(self, timeout=60):
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             start_time = asyncio.get_event_loop().time()
             while asyncio.get_event_loop().time() - start_time < timeout:
                 try:
-                    resp = await client.get(f"{self.base_url}/health")
+                    url = self.base_url.replace("localhost", "127.0.0.1")
+                    resp = await client.get(f"{url}/health")
                     if resp.status_code == 200:
-                        return True
+                        try:
+                            data = json.loads(resp.text)
+                            if data.get("status") == "ok":
+                                return True
+                        except json.JSONDecodeError:
+                            print(
+                                f"DEBUG: Health check returned 200 but invalid JSON: {resp.text}"
+                            )
+                    else:
+                        print(
+                            f"DEBUG: Status {resp.status_code} from health check: {resp.text}"
+                        )
                 except Exception:
                     pass
                 await asyncio.sleep(1)
@@ -88,9 +102,10 @@ class LlamaCppEngine(InferenceEngine):
         payload = {"prompt": prompt, "stream": True, "cache_prompt": True, **kwargs}
 
         buffer = []
-        async with httpx.AsyncClient(timeout=None) as client:
+        async with httpx.AsyncClient(timeout=None, trust_env=False) as client:
+            url = self.base_url.replace("localhost", "127.0.0.1")
             async with client.stream(
-                "POST", f"{self.base_url}/completion", json=payload
+                "POST", f"{url}/completion", json=payload
             ) as response:
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
@@ -110,10 +125,16 @@ class LlamaCppEngine(InferenceEngine):
     def unload(self):
         if self.server_process:
             try:
-                os.killpg(os.getpgid(self.server_process.pid), signal.SIGTERM)
-                self.server_process.wait(timeout=10)
+                print(f"Stopping llama-server (PID: {self.server_process.pid})...")
+                pgid = os.getpgid(self.server_process.pid)
+                os.killpg(pgid, signal.SIGTERM)
+                try:
+                    self.server_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(pgid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             except Exception as e:
                 print(f"Error killing llama-server: {e}")
-                if self.server_process:
-                    self.server_process.kill()
-            self.server_process = None
+            finally:
+                self.server_process = None
