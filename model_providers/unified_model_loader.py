@@ -3,7 +3,9 @@ import logging
 from typing import Any
 from model_providers.transformers_engine import TransformersEngine
 from model_providers.llama_cpp_engine import LlamaCppEngine
-from constants import PROJECT_ROOT
+from constants import PROJECT_ROOT, OFFLOAD_DIR
+from utils import DeviceUtils
+import os
 
 
 class UnifiedModelLoader:
@@ -29,6 +31,15 @@ class UnifiedModelLoader:
         else:
             self._load_transformers()
 
+    def _get_torch_dtype(self, dtype_str: str) -> torch.dtype:
+        mapping = {
+            "float16": torch.float16,
+            "bfloat16": torch.bfloat16,
+            "float32": torch.float32,
+            "half": torch.float16,
+        }
+        return mapping.get(dtype_str.lower(), torch.float16)
+
     def _load_gguf(self):
         n_gpu_layers = self.options.get("n_gpu_layers", -1 if self.use_gpu else 0)
         self.engine = LlamaCppEngine(
@@ -51,21 +62,48 @@ class UnifiedModelLoader:
 
         quantization = self.options.get("quantization")
         if quantization == "4bit":
+            compute_dtype = torch.float16
+            if self.options.get("torch_dtype") == torch.bfloat16:
+                compute_dtype = torch.bfloat16
+
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_compute_dtype=compute_dtype,
             )
             transformers_kwargs["quantization_config"] = quantization_config
         elif quantization == "8bit":
             transformers_kwargs["load_in_8bit"] = True
 
         if self.use_gpu:
-            transformers_kwargs.setdefault("device_map", "cuda:0")
-            transformers_kwargs.setdefault("torch_dtype", torch.float16)
+            transformers_kwargs.setdefault("device_map", "auto")
+            transformers_kwargs.setdefault("low_cpu_mem_usage", True)
+            transformers_kwargs.setdefault("attn_implementation", "sdpa")
+
+            if "max_memory" not in self.options:
+                transformers_kwargs["max_memory"] = DeviceUtils.get_available_memory()
+            else:
+                transformers_kwargs["max_memory"] = self.options["max_memory"]
+
+            offload_folder = os.path.join(PROJECT_ROOT, OFFLOAD_DIR)
+            os.makedirs(offload_folder, exist_ok=True)
+            transformers_kwargs.setdefault("offload_folder", offload_folder)
+
+            if "torch_dtype" in self.options:
+                transformers_kwargs["torch_dtype"] = self._get_torch_dtype(
+                    self.options["torch_dtype"]
+                )
+            else:
+                transformers_kwargs.setdefault("torch_dtype", torch.bfloat16)
         else:
             transformers_kwargs.setdefault("device_map", "cpu")
-            transformers_kwargs.setdefault("torch_dtype", torch.float32)
+            transformers_kwargs.setdefault("low_cpu_mem_usage", True)
+            if "torch_dtype" in self.options:
+                transformers_kwargs["torch_dtype"] = self._get_torch_dtype(
+                    self.options["torch_dtype"]
+                )
+            else:
+                transformers_kwargs.setdefault("torch_dtype", torch.float32)
 
         transformers_kwargs.setdefault("trust_remote_code", True)
 

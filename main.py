@@ -1,4 +1,7 @@
 import os
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["PYTORCH_HIP_ALLOC_CONF"] = "expandable_segments:True"
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import (
     JSONResponse,

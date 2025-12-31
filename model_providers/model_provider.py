@@ -11,6 +11,7 @@ from utils import (
 )
 from .inference_engine import InferenceEngine
 from .unified_model_loader import UnifiedModelLoader
+from constants import QUANTIZATION, TORCH_DTYPE, DEFAULT_CONTEXT_LENGTH
 import asyncio
 
 models = discover_models()
@@ -45,9 +46,10 @@ class LocalLLModel:
     def init_local_model(model_name: str | None = None):
         global local_model
         if local_model is None:
-            local_model = LocalLLModel()
+            local_model = LocalLLModel(model_name) if model_name else LocalLLModel()
         elif model_name is not None and local_model.cur_model_name != model_name:
             local_model.unload_model()
+            local_model.cur_model_name = model_name
         return cast(LocalLLModel, local_model)
 
     def __init__(
@@ -132,7 +134,10 @@ class LocalLLModel:
             prompt_content = [{"role": "user", "content": text}]
         formatted_messages: list[dict] = []
         for msg in prompt_content:
-            if hasattr(msg, "type") and hasattr(msg, "content"):
+            if hasattr(msg, "role") and hasattr(msg, "content"):
+                role = msg.role
+                content = msg.content
+            elif hasattr(msg, "type") and hasattr(msg, "content"):
                 role = (
                     "user"
                     if msg.type == "human"
@@ -161,8 +166,12 @@ class LocalLLModel:
 
         options = {
             "use_gpu": not DeviceUtils.platform_is_mac(),
-            "context_length": 4096,
+            "context_length": DEFAULT_CONTEXT_LENGTH,
+            "quantization": QUANTIZATION,
         }
+
+        if TORCH_DTYPE:
+            options["torch_dtype"] = TORCH_DTYPE
 
         loader = UnifiedModelLoader(model_path, options)
         self.engine = loader.get_engine()
@@ -190,6 +199,9 @@ class LocalLLModel:
                 if isinstance(part, dict):
                     if part.get("type") == ContentType.TEXT.value:
                         text_parts.append(part.get(ContentType.TEXT.value, ""))
+                elif hasattr(part, "type") and hasattr(part, ContentType.TEXT.value):
+                    if part.type == ContentType.TEXT.value:
+                        text_parts.append(part.text)
             return "".join(text_parts)
         return str(content)
 
@@ -208,13 +220,16 @@ class LocalLLModel:
 
     def embed(self, text: str) -> torch.Tensor:
         if self.embedding_model is None:
+            device = os.getenv("EMBEDDING_DEVICE", "cpu")
             self.embedding_model = SentenceTransformer(
                 self.embedding_model_name,
                 cache_folder=os.getenv("CACHE_PATH", "./cache"),
+                device=device,
             )
         return self.embedding_model.encode(text)
 
     def format_prompt(self, messages: list[dict]):
+        messages = self.format_messages(messages)
         tokenizer = getattr(self.engine, "tokenizer", None)
         if tokenizer and hasattr(tokenizer, "apply_chat_template"):
             return tokenizer.apply_chat_template(
@@ -280,6 +295,7 @@ class LocalLLModel:
             yield cast(str, t)
 
     async def chat(self, messages: list[dict], **kwargs):
+        messages = self.format_messages(messages)
         prompt = self.format_prompt(messages)
         async for chunk in self._generate_stream(prompt, **kwargs):
             yield chunk
