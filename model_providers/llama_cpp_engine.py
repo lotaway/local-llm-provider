@@ -171,6 +171,7 @@ class LlamaCppEngine(InferenceEngine):
                             delta = choices[0].get("delta", {})
                             content = delta.get("content")
                             reasoning = delta.get("reasoning_content")
+                            finish_reason = choices[0].get("finish_reason")
 
                             if reasoning:
                                 if buffer:
@@ -180,10 +181,13 @@ class LlamaCppEngine(InferenceEngine):
                             elif content:
                                 buffer.append(content)
 
-                            if len(buffer) >= CHUNK_SIZE or (
-                                choices[0].get("finish_reason") and buffer
-                            ):
-                                yield "".join(buffer)
+                            if (finish_reason and finish_reason != "null") or len(
+                                buffer
+                            ) >= CHUNK_SIZE:
+                                yield {
+                                    "content": "".join(buffer),
+                                    "finish_reason": finish_reason,
+                                }
                                 buffer = []
                         except json.JSONDecodeError:
                             continue

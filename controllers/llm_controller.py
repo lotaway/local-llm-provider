@@ -270,7 +270,12 @@ async def chat_completions(req: ChatRequest, request: Request):
 
             async def run_chat():
                 try:
-                    async for chunk in local_model.chat(req.messages):
+                    async for chunk in local_model.chat(
+                        req.messages,
+                        max_new_tokens=req.max_tokens,
+                        temperature=req.temperature,
+                        top_p=req.top_p,
+                    ):
                         if isinstance(chunk, int):
                             continue
                         await stream_callback(chunk)
@@ -282,6 +287,7 @@ async def chat_completions(req: ChatRequest, request: Request):
             asyncio.create_task(run_chat())
 
             async def event_stream():
+                last_finish_reason = None
                 while True:
                     if await request.is_disconnected():
                         break
@@ -296,7 +302,18 @@ async def chat_completions(req: ChatRequest, request: Request):
                         if chunk is None:
                             break
 
-                        delta = {"content": chunk} if isinstance(chunk, str) else chunk
+                        finish_reason = None
+                        if isinstance(chunk, dict):
+                            delta = {
+                                k: v for k, v in chunk.items() if k != "finish_reason"
+                            }
+                            finish_reason = chunk.get("finish_reason")
+                        else:
+                            delta = {"content": chunk}
+
+                        if finish_reason:
+                            last_finish_reason = finish_reason
+
                         data = {
                             "id": f"chatcmpl-{uuid.uuid4().hex}",
                             "object": "chat.completion.chunk",
@@ -306,7 +323,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                                 {
                                     "index": 0,
                                     "delta": delta,
-                                    "finish_reason": None,
+                                    "finish_reason": finish_reason,
                                 }
                             ],
                         }
@@ -320,7 +337,13 @@ async def chat_completions(req: ChatRequest, request: Request):
                     "object": "chat.completion.chunk",
                     "created": int(time.time()),
                     "model": req.model,
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {},
+                            "finish_reason": last_finish_reason or "stop",
+                        }
+                    ],
                 }
                 yield f"data: {json.dumps(data)}\n\n"
                 yield "data: [DONE]\n\n"
@@ -328,7 +351,12 @@ async def chat_completions(req: ChatRequest, request: Request):
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         else:
             try:
-                result = await local_model.chat_at_once(req.messages)
+                result = await local_model.chat_at_once(
+                    req.messages,
+                    max_new_tokens=req.max_tokens,
+                    temperature=req.temperature,
+                    top_p=req.top_p,
+                )
                 response = {
                     "id": f"chatcmpl-{uuid.uuid4().hex}",
                     "object": "chat.completion",

@@ -234,9 +234,10 @@ class LocalLLModel:
     def format_prompt(self, messages: list[dict]):
         messages = self.format_messages(messages)
         tokenizer = getattr(self.engine, "tokenizer", None)
+        is_last_assistant = messages and messages[-1].get("role") == "assistant"
         if tokenizer and hasattr(tokenizer, "apply_chat_template"):
             return tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
+                messages, tokenize=False, add_generation_prompt=not is_last_assistant
             )
 
         prompt = ""

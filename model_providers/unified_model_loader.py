@@ -77,8 +77,7 @@ class UnifiedModelLoader:
 
         if self.use_gpu:
             transformers_kwargs.setdefault("device_map", "auto")
-            transformers_kwargs.setdefault("low_cpu_mem_usage", True)
-            transformers_kwargs.setdefault("attn_implementation", "sdpa")
+            transformers_kwargs.setdefault("low_cpu_mem_usage", False)
 
             if "max_memory" not in self.options:
                 transformers_kwargs["max_memory"] = DeviceUtils.get_available_memory()
@@ -90,18 +89,18 @@ class UnifiedModelLoader:
             transformers_kwargs.setdefault("offload_folder", offload_folder)
 
             if "torch_dtype" in self.options:
-                transformers_kwargs["torch_dtype"] = self._get_torch_dtype(
-                    self.options["torch_dtype"]
-                )
+                val = self.options["torch_dtype"]
+                if val != "auto":
+                    transformers_kwargs["torch_dtype"] = self._get_torch_dtype(val)
             else:
-                transformers_kwargs.setdefault("torch_dtype", torch.bfloat16)
+                transformers_kwargs.setdefault("torch_dtype", torch.float16)
         else:
             transformers_kwargs.setdefault("device_map", "cpu")
-            transformers_kwargs.setdefault("low_cpu_mem_usage", True)
+            transformers_kwargs.setdefault("low_cpu_mem_usage", False)
             if "torch_dtype" in self.options:
-                transformers_kwargs["torch_dtype"] = self._get_torch_dtype(
-                    self.options["torch_dtype"]
-                )
+                val = self.options["torch_dtype"]
+                if val != "auto":
+                    transformers_kwargs["torch_dtype"] = self._get_torch_dtype(val)
             else:
                 transformers_kwargs.setdefault("torch_dtype", torch.float32)
 

@@ -101,28 +101,31 @@ class JanusModel(BaseMultimodalModel):
 
         if is_mps:
             self.target_dtype = torch.float16
-            kwargs.update({
-                "torch_dtype": self.target_dtype,
-                "device_map": "auto",
-            })
+            kwargs.update(
+                {
+                    "torch_dtype": self.target_dtype,
+                    "device_map": "auto",
+                }
+            )
         elif is_cuda:
             self.target_dtype = torch.float16 if load_in_8bit else torch.bfloat16
-            kwargs.update({
-                "torch_dtype": self.target_dtype,
-                "device_map": "auto",
-                "load_in_8bit": load_in_8bit,
-            })
+            kwargs.update(
+                {
+                    "torch_dtype": self.target_dtype,
+                    "device_map": "auto",
+                    "load_in_8bit": load_in_8bit,
+                }
+            )
         else:
             self.target_dtype = torch.float32
-            kwargs.update({
-                "torch_dtype": self.target_dtype,
-            })
+            kwargs.update(
+                {
+                    "torch_dtype": self.target_dtype,
+                }
+            )
 
         # Load model using the imported class
-        self.vl_gpt = MultiModalityCausalLM.from_pretrained(
-            self.model_path,
-            **kwargs
-        )
+        self.vl_gpt = MultiModalityCausalLM.from_pretrained(self.model_path, **kwargs)
 
         if not is_mps and not is_cuda:
             self.vl_gpt = self.vl_gpt.to("cpu")
@@ -219,13 +222,8 @@ class LlavaModel(BaseMultimodalModel):
 
         print(f"Loading Llava model: {self.model_name}...")
         start_time = time.time()
-
         self.processor = AutoProcessor.from_pretrained(self.model_path)
-
-        # Load with 4-bit quantization if possible for memory saving
-        # Or standard loading depending on hardware
         is_cuda = torch.cuda.is_available()
-
         if is_cuda:
             self.model = LlavaForConditionalGeneration.from_pretrained(
                 self.model_path,

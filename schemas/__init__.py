@@ -13,3 +13,6 @@ class ChatRequest(BaseModel):
     exclusive: bool = False
     enable_rag: bool = False
     files: list[str] = []
+    max_tokens: int | None = None
+    temperature: float = 0.7
+    top_p: float = 0.9
