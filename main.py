@@ -71,7 +71,10 @@ async def lifespan(app: FastAPI):
     if backend_globals.MULTIMODAL_PROVIDER_URL:
         asyncio.create_task(check_multimodal_health())
     yield
-    # Shutdown (if needed in the future)
+    # Shutdown
+    if backend_globals.local_model:
+        print("Shutting down... unloading local model.")
+        backend_globals.local_model.unload_model()
 
 
 app = FastAPI(lifespan=lifespan)

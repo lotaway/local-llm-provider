@@ -286,7 +286,7 @@ class LocalRAG:
     ) -> list[Document]:
         """加载多种格式的文档"""
         docs = []
-        filename = []
+
         print(f"开始扫描文档目录: {self.data_path}")
 
         for root, _, files in os.walk(self.data_path):
@@ -534,21 +534,20 @@ class LocalRAG:
             full_response = ""
             print("Entering stream loop...")
             try:
-                # Iterate over async generator
                 async for chunk in self.llm.chat(
                     messages, temperature=0.1, top_p=0.95, top_k=40
                 ):
-                    # Request ID might be first yielded
                     if isinstance(chunk, int):
                         continue
                     if chunk:
-                        full_response += chunk
+                        if isinstance(chunk, dict):
+                            text = chunk.get(
+                                "content", chunk.get("reasoning_content", "")
+                            )
+                        else:
+                            text = chunk
+                        full_response += text
                         if stream_callback:
-                            # Use await if callback is async, or run sync callback?
-                            # Usually callbacks passed from sync contexts are sync.
-                            # But if we are in async, we should support...
-                            # The signature says stream_callback=None.
-                            # If it's a co-routine, await it.
                             if asyncio.iscoroutinefunction(stream_callback):
                                 await stream_callback(chunk)
                             else:

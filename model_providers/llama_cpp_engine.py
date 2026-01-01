@@ -39,7 +39,28 @@ class LlamaCppEngine(InferenceEngine):
             s.bind(("", 0))
             return s.getsockname()[1]
 
+    def _cleanup_stale_processes(self):
+        try:
+            current_pid = self.server_process.pid if self.server_process else -1
+            model_filename = os.path.basename(self.model_path)
+            cmd = ["pgrep", "-f", f"llama-server.*{model_filename}"]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.stdout:
+                pids = result.stdout.strip().split("\n")
+                for pid_str in pids:
+                    pid = int(pid_str)
+                    if pid != current_pid and pid != os.getpid():
+                        print(f"Cleaning up orphaned llama-server (PID: {pid})")
+                        try:
+                            pgid = os.getpgid(pid)
+                            os.killpg(pgid, signal.SIGKILL)
+                        except:
+                            os.kill(pid, signal.SIGKILL)
+        except Exception as e:
+            print(f"Warning during stale process cleanup: {e}")
+
     def _start_server(self):
+        self._cleanup_stale_processes()
         binary_path = os.path.join(
             self.project_root, "llama.cpp", "bin", "llama-server"
         )
@@ -47,6 +68,10 @@ class LlamaCppEngine(InferenceEngine):
             binary_path = os.path.join(
                 self.project_root, "llama.cpp", "build", "bin", "llama-server"
             )
+        # For AMD GPU
+        env = os.environ.copy()
+        if "HSA_OVERRIDE_GFX_VERSION" not in env:
+            env["HSA_OVERRIDE_GFX_VERSION"] = "11.0.0"
 
         cmd = [
             binary_path,
@@ -60,15 +85,25 @@ class LlamaCppEngine(InferenceEngine):
             str(self.n_gpu_layers) if self.n_gpu_layers >= 0 else "999",
             "--batch-size",
             str(self.batch_size),
+            "-fa",
+            "on",
         ]
+        log_file = os.path.join(self.project_root, "logs", "llama_server.log")
+        f = open(log_file, "w")
         self.server_process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid
+            cmd,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+            preexec_fn=os.setsid,
+            env=env,
         )
+        f.close()
         print(
-            f"Starting llama-server on port {self.port} with process {self.server_process.pid}"
+            f"Starting llama-server on port {self.port} (PID: {self.server_process.pid})."
         )
+        print(f"Detailed logs: {log_file}")
 
-    async def _wait_for_server(self, timeout=60):
+    async def _wait_for_server(self, timeout=120):
         async with httpx.AsyncClient(trust_env=False) as client:
             start_time = asyncio.get_event_loop().time()
             while asyncio.get_event_loop().time() - start_time < timeout:
@@ -134,17 +169,22 @@ class LlamaCppEngine(InferenceEngine):
                                 continue
 
                             delta = choices[0].get("delta", {})
-                            content = delta.get("content", "")
+                            content = delta.get("content")
+                            reasoning = delta.get("reasoning_content")
 
-                            if content:
-                                buffer.append(content)
-
-                            if len(buffer) >= CHUNK_SIZE or choices[0].get(
-                                "finish_reason"
-                            ):
+                            if reasoning:
                                 if buffer:
                                     yield "".join(buffer)
                                     buffer = []
+                                yield {"reasoning_content": reasoning}
+                            elif content:
+                                buffer.append(content)
+
+                            if len(buffer) >= CHUNK_SIZE or (
+                                choices[0].get("finish_reason") and buffer
+                            ):
+                                yield "".join(buffer)
+                                buffer = []
                         except json.JSONDecodeError:
                             continue
 

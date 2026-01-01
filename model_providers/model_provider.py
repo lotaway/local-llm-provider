@@ -71,7 +71,10 @@ class LocalLLModel:
             tokenizer = self.engine.tokenizer
 
         if tokenizer is None:
-            return 0, 32768
+            prompt = self.format_prompt(messages)
+            input_len = len(prompt) // 2
+            max_len = getattr(self.engine, "n_ctx", 4096)
+            return input_len, max_len
 
         prompt = self.format_prompt(messages)
         inputs = tokenizer(prompt, return_tensors="pt")
@@ -297,6 +300,7 @@ class LocalLLModel:
     async def chat(self, messages: list[dict], **kwargs):
         messages = self.format_messages(messages)
         prompt = self.format_prompt(messages)
+        kwargs["messages"] = messages
         async for chunk in self._generate_stream(prompt, **kwargs):
             yield chunk
 
@@ -305,7 +309,12 @@ class LocalLLModel:
         async for chunk in self.chat(messages, **kwargs):
             if isinstance(chunk, int):
                 continue
-            response.append(chunk)
+            if isinstance(chunk, dict):
+                response.append(
+                    chunk.get("content", chunk.get("reasoning_content", ""))
+                )
+            else:
+                response.append(chunk)
         return "".join(response).strip()
 
     async def complete(self, prompt: str, **kwargs):
@@ -317,5 +326,10 @@ class LocalLLModel:
         async for chunk in self.complete(prompt):
             if isinstance(chunk, int):
                 continue
-            response.append(chunk)
+            if isinstance(chunk, dict):
+                response.append(
+                    chunk.get("content", chunk.get("reasoning_content", ""))
+                )
+            else:
+                response.append(chunk)
         return "".join(response).strip()

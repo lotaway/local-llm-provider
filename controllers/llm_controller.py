@@ -207,6 +207,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                         if chunk is None:
                             break
 
+                        delta = {"content": chunk} if isinstance(chunk, str) else chunk
                         data = {
                             "id": f"chatcmpl-{uuid.uuid4().hex}",
                             "object": "chat.completion.chunk",
@@ -215,7 +216,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                             "choices": [
                                 {
                                     "index": 0,
-                                    "delta": {"content": chunk},
+                                    "delta": delta,
                                     "finish_reason": None,
                                 }
                             ],
@@ -295,6 +296,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                         if chunk is None:
                             break
 
+                        delta = {"content": chunk} if isinstance(chunk, str) else chunk
                         data = {
                             "id": f"chatcmpl-{uuid.uuid4().hex}",
                             "object": "chat.completion.chunk",
@@ -303,7 +305,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                             "choices": [
                                 {
                                     "index": 0,
-                                    "delta": {"content": chunk},
+                                    "delta": delta,
                                     "finish_reason": None,
                                 }
                             ],
