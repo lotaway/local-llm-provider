@@ -334,3 +334,8 @@ class LocalLLModel:
             else:
                 response.append(chunk)
         return "".join(response).strip()
+
+
+PRELOAD_MODEL = os.getenv("PRELOAD_MODEL")
+if PRELOAD_MODEL:
+    LocalLLModel.init_local_model(PRELOAD_MODEL).load_model()
