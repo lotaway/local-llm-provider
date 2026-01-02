@@ -70,6 +70,9 @@ async def lifespan(app: FastAPI):
     # Startup
     if backend_globals.MULTIMODAL_PROVIDER_URL:
         asyncio.create_task(check_multimodal_health())
+    PRELOAD_MODEL = os.getenv("PRELOAD_MODEL")
+    if PRELOAD_MODEL:
+        LocalLLModel.init_local_model(PRELOAD_MODEL).load_model()
     yield
     # Shutdown
     import model_providers
