@@ -8,6 +8,7 @@ import socket
 import atexit
 from typing import AsyncGenerator
 from .inference_engine import InferenceEngine
+from constants import MODEL_DIR
 
 
 class LlamaCppEngine(InferenceEngine):
@@ -41,7 +42,7 @@ class LlamaCppEngine(InferenceEngine):
 
     def _cleanup_stale_processes(self):
         try:
-            if os.getenv("LLAMA_CPP_USE_DOCKER", "false").lower() == "true":
+            if os.getenv("LLAMA_CPP_RUN_MODE", "github").lower() == "docker":
                 try:
                     subprocess.run(
                         ["docker", "rm", "-f", "llp-llama-cpp-server"],
@@ -71,22 +72,19 @@ class LlamaCppEngine(InferenceEngine):
     def _start_server(self):
         self._cleanup_stale_processes()
 
-        mode = os.getenv("LLAMA_CPP_RUN_MODE", "docker").lower()
+        mode = os.getenv("LLAMA_CPP_RUN_MODE", "github").lower()
         image = os.getenv(
             "LLAMA_CPP_IMAGE",
             "rocm/llama.cpp:llama.cpp-b6356_rocm6.4.3_ubuntu24.04_full",
         )
         gfx_version = os.getenv("HSA_OVERRIDE_GFX_VERSION", "11.0.0")
-        models_dir = os.getenv(
-            "LLAMA_CPP_MODELS_DIR", os.path.join(self.project_root, "models")
-        )
         if os.path.isabs(self.model_path):
-            rel_model_path = os.path.relpath(self.model_path, models_dir)
+            rel_model_path = os.path.relpath(self.model_path, MODEL_DIR)
         else:
             full_path = os.path.normpath(
                 os.path.join(self.project_root, self.model_path)
             )
-            rel_model_path = os.path.relpath(full_path, models_dir)
+            rel_model_path = os.path.relpath(full_path, MODEL_DIR)
 
         if mode == "compose":
             # Start via Docker Compose
@@ -128,7 +126,7 @@ class LlamaCppEngine(InferenceEngine):
                 "--devices",
                 "/dev/dri",
                 "-v",
-                f"{models_dir}:/models",
+                f"{MODEL_DIR}:/models",
                 "-p",
                 f"{self.port}:8080",
                 "-e",
