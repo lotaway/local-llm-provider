@@ -72,7 +72,14 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(check_multimodal_health())
     PRELOAD_MODEL = os.getenv("PRELOAD_MODEL")
     if PRELOAD_MODEL:
-        LocalLLModel.init_local_model(PRELOAD_MODEL).load_model()
+        available_models = LocalLLModel.get_models()
+        if PRELOAD_MODEL in available_models:
+            logger.info(f"Preloading model: {PRELOAD_MODEL}")
+            LocalLLModel.init_local_model(PRELOAD_MODEL).load_model()
+        else:
+            logger.error(
+                f"PRELOAD_MODEL '{PRELOAD_MODEL}' not found in available models: {available_models}. Skipping preload."
+            )
     yield
     # Shutdown
     import model_providers
