@@ -1,14 +1,11 @@
 import os
-from model_providers import LocalLLModel, PoeModelProvider, ComfyUIProvider
-from model_providers.multimodal_provider import MultimodalFactory, models as vlm_models
+from model_providers import PoeModelProvider, ComfyUIProvider
+from model_providers.multimodal_provider import MultimodalFactory
 from rag import LocalRAG
-from agents import AgentRuntime
-from agents.agent_runtime import RuntimeStatus
-from agents.context_storage import create_context_storage
 
 comfyui_provider = ComfyUIProvider()
-poe_model_provider = None
-local_rag = None
+poe_model_provider: PoeModelProvider | None = None
+local_rag: LocalRAG | None = None
 agent_runtime = None
 permission_manager = None
 context_storage = None
@@ -16,8 +13,8 @@ context_storage = None
 MULTIMODAL_PROVIDER_URL = os.getenv("MULTIMODAL_PROVIDER_URL")
 remote_multimodal_status = False
 multimodal_model = None
-default_vlm = os.getenv("DEFAULT_MULTIMODAL_MODEL", "")
+default_vlm = os.getenv("PRELOAD_MULTIMODAL_MODEL")
 
-if os.getenv("PRELOAD_MULTIONDAL", "False").lower() == "true":
+if default_vlm is not None:
     multimodal_model = MultimodalFactory.get_model(default_vlm)
     multimodal_model.load_model()
