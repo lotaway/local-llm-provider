@@ -2,6 +2,19 @@
 
 This is use for [for VSCode Continue Plugin](https://docs.continue.dev), to provider a local LLM to provide code completion and chat, agent(edit,apply) ability.
 
+## Directory Structure
+
+```
+local-llm-provider
+├── models
+│   └── {model_name}
+├── model_providers
+│   ├── model_provider.py main provider for local llm, can use HF(.safetensors), gguf, onnx
+├── routers provider api as llm provider, mcp
+├── rag.py provide import local/remote docs and rag/es search ability
+├── retrievers for rag hybrid search
+```
+
 ## Usage
 
 ### Download Models
