@@ -39,6 +39,11 @@ uv pip install .
 
 Need install ROCm and [torch ROCm version](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/install-pytorch.html) in Linux/WSL with AMD GPU.
 
+In ROCm 7.1.1, may need to manually install `hsa-runtime` with command:
+```bash
+sudo apt install -y hsa-runtime-rocr4wsl-amdgpu
+```
+
 ### Window
 
 Use WSL ROCm is the best, either need install [Zluda](https://github.com/vosen/ZLUDA.git) or install microsoft dml with `pip install torch-directml`
