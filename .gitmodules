@@ -4,3 +4,6 @@
 [submodule "llama.cpp"]
 	path = llama.cpp
 	url = https://github.com/ggml-org/llama.cpp.git
+[submodule "mcps/chrome-devtools-mcp"]
+	path = mcps/chrome-devtools-mcp
+	url = https://github.com/ChromeDevTools/chrome-devtools-mcp.git
