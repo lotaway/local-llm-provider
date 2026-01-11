@@ -109,6 +109,64 @@ Notice: I use miniforge3 as python environment here, if you use other python env
 
 Done all process, now you can use `bitsandbytes` in your python code.
 
+### for window rocm
+
+Try this:
+
+```bash
+pip install bitsandbytes
+```
+
+If saw something like:
+```bash
+RuntimeError:
+🚨 Forgot to compile the bitsandbytes library? 🚨
+1. You're not using the package but checked-out the source code
+2. You MUST compile from source
+
+Attempted to use bitsandbytes native library functionality but it's not available.
+
+This typically happens when:
+1. bitsandbytes doesn't ship with a pre-compiled binary for your ROCm version
+2. The library wasn't compiled properly during installation from source
+
+To make bitsandbytes work, the compiled library version MUST exactly match the linked ROCm version.
+If your ROCm version doesn't have a pre-compiled binary, you MUST compile from source.
+
+You can COMPILE FROM SOURCE as mentioned here:
+   https://huggingface.co/docs/bitsandbytes/main/en/installation?backend=AMD+ROCm#amd-gpu
+```
+
+You need to follow the [guide](https://huggingface.co/docs/bitsandbytes/main/en/installation?backend=AMD+ROCm#rocm-pip), so far it just need this command:
+
+```bash
+pip install --force-reinstall https://github.com/bitsandbytes-foundation/bitsandbytes/releases/download/continuous-release_main/bitsandbytes-1.33.7.preview-py3-none-win_amd64.whl
+```
+
 ## For Multiple Mac (Apple silicon) devices
 
 You can use [exo](https://github.com/exo-explore/exo) to start the mac device as node, multiple devices as clusters, and let data flow between them to use both gpu.
+
+# Problem
+
+if have problem with:
+
+```bash
+from .CrossEncoder import CrossEncoder
+File "{user}\miniforge3\envs\python3.12\Lib\site-packages\sentence_transformers\cross_encoder\CrossEncoder.py", in <module>
+    from transformers import (
+ImportError: cannot import name 'PreTrainedModel' from 'transformers'
+```
+
+Try to update/lowversion transformers and sentence_transformers, or use hack in file `sentence_transformers\cross_encoder\CrossEncoder.py` before `from transformers import [xxx]`
+
+```python
+import transformers
+if not hasattr(transformers, "PreTrainedModel"):
+    from transformers.modeling_utils import PreTrainedModel
+    transformers.PreTrainedModel = PreTrainedModel
+
+if not hasattr(transformers, "PreTrainedTokenizer"):
+    from transformers.tokenization_utils import PreTrainedTokenizer
+    transformers.PreTrainedTokenizer = PreTrainedTokenizer
+```

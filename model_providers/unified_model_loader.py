@@ -1,5 +1,6 @@
 import torch
 import logging
+import sys
 from typing import Any
 from model_providers.transformers_engine import TransformersEngine
 from model_providers.llama_cpp_engine import LlamaCppEngine
@@ -55,13 +56,21 @@ class UnifiedModelLoader:
         )
 
     def _load_transformers(self):
-        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
         transformers_kwargs = self.options.get("transformers_kwargs", {}).copy()
         tokenizer_model_name = self.options.get("tokenizer_path", self.model_path)
 
         quantization = self.options.get("quantization")
-        if quantization == "4bit":
+        if quantization == "4bit" and not (
+            sys.platform == "win32"
+            and (
+                torch.cuda.is_available()
+                and "amd" in torch.cuda.get_device_name(0).lower()
+            )
+        ):
+            from transformers import BitsAndBytesConfig
+
             compute_dtype = torch.float16
             if self.options.get("torch_dtype") == torch.bfloat16:
                 compute_dtype = torch.bfloat16
