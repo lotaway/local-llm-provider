@@ -50,6 +50,12 @@ Use WSL ROCm is the best, either need install [Zluda](https://github.com/vosen/Z
 
 If choose zluda, need to install torch with cuda version, use `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128`(util 2025/10/11, zluda not implemented cuda13.0 yep, 12.8 is the latest)
 
+For Window ROCm, after ROCm 7.0 can be install in window directly. Use [install_window_rocm shell script](./install_window_rocm.sh)
+
+```bash
+pip install rocm-sdk rocm-sdk-core rocm-sdk-devel rocm-sdk-libraries
+```
+
 ## About bitsandbytes
 
 *Only can use in cuda or amd with linux+rocm, amd with window+zluda no match, zluda did not support bitsandbytes*
