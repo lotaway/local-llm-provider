@@ -52,6 +52,12 @@ If choose zluda, need to install torch with cuda version, use `pip install torch
 
 For Window ROCm, after ROCm 7.0 can be install in window directly. Use [install_window_rocm shell script](./install_window_rocm.sh)
 
+If have problem try ROCm7.10.0-preview:
+```bash
+pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-6.4.4/torch-2.8.0a0%2Bgitfc14c65-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-6.4.4/torchaudio-2.6.0a0%2B1a8f621-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-6.4.4/torchvision-0.24.0a0%2Bc85f008-cp312-cp312-win_amd64.whl
+pip install transformers accelerate
+```
+
 ## About bitsandbytes
 
 *Only can use in cuda or amd with linux+rocm, amd with window+zluda no match, zluda did not support bitsandbytes*
