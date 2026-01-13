@@ -581,17 +581,17 @@ class AgentRuntime:
             "task_rag", RAGTaskAgent(llm_model, rag_instance=rag_instance)
         )
 
-        # Register MCP agent with permission manager
         mcp_agent = MCPTaskAgent(llm_model)
         mcp_agent.permission_manager = permission_manager
         runtime.register_agent("task_mcp", mcp_agent)
 
-        # Populate context with available MCP tools for planning agent
+        from skills import init_skills, registry
+        init_skills()
+        runtime.state.context["available_skills"] = [
+            s.to_dict() for s in registry.list_skills()
+        ]
+
         runtime.state.context["available_mcp_tools"] = mcp_agent.get_available_tools()
-
-        # Register error handler
         runtime.register_agent("error_handler", ErrorHandlerAgent(llm_model))
-
-        logger.info("Created AgentRuntime with all standard agents")
 
         return runtime

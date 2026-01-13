@@ -1,12 +1,8 @@
-"""Planning Agent - Decomposes tasks and creates execution plans"""
-
 from typing import Any, Dict, List
 from .agent_base import BaseAgent, AgentResult, AgentStatus
 
 
 class PlanningAgent(BaseAgent):
-    """Agent for task decomposition and execution planning"""
-
     SYSTEM_PROMPT = """你是一个任务规划助手。你的任务是：
 1. 将复杂查询分解为可执行的子任务
 2. 确定每个子任务需要的工具/Agent（LLM、RAG、MCP）
@@ -19,9 +15,11 @@ class PlanningAgent(BaseAgent):
 - mcp: 调用外部工具，如搜索、文件操作、图像识别等
 
 重要提示：
-- 只能使用已注册的MCP工具，可用的MCP工具列表会在用户消息中提供
-- 如果没有可用的MCP工具，请只使用LLM和RAG能力来完成任务
-- 不要建议使用不存在的MCP工具
+- 优先选择已存在的技能（Skills）和工具（Tools）。
+- 如果没有可用的MCP工具或技能来满足用户需求，你可以建议使用 'skill-creator' 技能来创建一个新的技能。
+- 'skill-creator' 是一个特殊的技能，它可以帮助你定义、编写、测试和打包新的技能到技能库中。
+- 当你需要实现一个复杂、重复、且当前系统无法直接处理的流程时，考虑创建一个新技能。
+- 不要建议使用不存在的工具，除非你打算使用 'skill-creator' 来创建它。
 
 输出JSON格式：
 {
@@ -47,7 +45,6 @@ class PlanningAgent(BaseAgent):
 }"""
 
     def _get_available_skills_info(self) -> str:
-        """Get available skills and tools info for the LLM"""
         try:
             from skills import registry
 
@@ -79,12 +76,9 @@ class PlanningAgent(BaseAgent):
         private_context: Dict[str, Any],
         stream_callback=None,
     ) -> AgentResult:
-        history_summary = context.get("history_summary", "")
         parsed_query = context.get("parsed_query", {})
-
-        # Get available MCP tools
         available_mcp_tools = context.get("available_mcp_tools", [])
-        # Add read_file if files are available
+
         if "file_map" in context and "read_file" not in available_mcp_tools:
             available_mcp_tools.append("read_file")
 
@@ -95,7 +89,6 @@ class PlanningAgent(BaseAgent):
         )
 
         skills_info = self._get_available_skills_info()
-
         available_files = context.get("available_files", [])
         files_info = ""
         if available_files:
@@ -106,24 +99,13 @@ class PlanningAgent(BaseAgent):
             )
 
         self.logger.info(f"Planning agent started")
-        self.logger.debug(f"  Available MCP tools: {available_mcp_tools}")
-        self.logger.debug(f"  Context keys: {list(context.keys())}")
-
         is_mcp_retry = (
             isinstance(input_data, dict) and input_data.get("error") == "tool_not_found"
         )
-        if is_mcp_retry:
-            self.logger.warning(
-                f"Replanning due to MCP tool unavailable: {input_data.get('original_task', '')}"
-            )
 
-        # Check if we have task results to evaluate
         task_results = context.get("task_results", [])
-        if task_results:
-            self.logger.info(f"Evaluating {len(task_results)} completed task results")
 
         if is_mcp_retry:
-            # Replanning due to MCP tool unavailable
             messages = [
                 {"role": "system", "content": self.SYSTEM_PROMPT},
                 {
@@ -142,7 +124,6 @@ class PlanningAgent(BaseAgent):
                 },
             ]
         elif task_results:
-            # Evaluate if task is complete
             messages = [
                 {"role": "system", "content": self.SYSTEM_PROMPT},
                 {
@@ -161,7 +142,6 @@ class PlanningAgent(BaseAgent):
                 },
             ]
         else:
-            # Initial planning
             messages = [
                 {"role": "system", "content": self.SYSTEM_PROMPT},
                 {
@@ -181,7 +161,6 @@ class PlanningAgent(BaseAgent):
             ]
 
         try:
-            self.logger.debug("Calling LLM for planning...")
             response = await self._call_llm(
                 messages,
                 stream_callback=stream_callback,
@@ -189,17 +168,8 @@ class PlanningAgent(BaseAgent):
                 max_new_tokens=2000,
             )
 
-            self.logger.debug(f"LLM response received (length: {len(response)} chars)")
-            self.logger.debug(
-                f"Raw LLM response: {response[:500]}..."
-                if len(response) > 500
-                else f"Raw LLM response: {response}"
-            )
-
             plan_data = self._parse_json_response(response)
-            self.logger.debug(f"Parsed plan data: {plan_data}")
 
-            # Check if completed
             if plan_data.get("completed", False):
                 return AgentResult(
                     status=AgentStatus.COMPLETE,
@@ -208,23 +178,11 @@ class PlanningAgent(BaseAgent):
                     metadata={"reasoning": plan_data.get("reasoning", "")},
                 )
 
-            # Store plan in context
             context["current_plan"] = plan_data.get("plan", [])
             context["plan_reasoning"] = plan_data.get("reasoning", "")
 
-            # Get first task to execute
             plan = plan_data.get("plan", [])
-            self.logger.info(f"Generated plan with {len(plan)} tasks")
-
             if not plan:
-                self.logger.error("Planning failed: LLM returned empty plan")
-                self.logger.error(f"  Plan data: {plan_data}")
-                self.logger.error(
-                    f"  Context: original_query={context.get('original_query', 'N/A')}"
-                )
-
-                # Fallback: create a simple LLM task
-                self.logger.warning("Falling back to simple LLM task")
                 fallback_task = {
                     "task_id": "fallback_llm_1",
                     "description": f"使用LLM直接回答: {context.get('original_query', input_data)}",
@@ -240,29 +198,11 @@ class PlanningAgent(BaseAgent):
                     metadata={"plan": [fallback_task], "fallback": True},
                 )
 
-            # Find first task with no dependencies or satisfied dependencies
             next_task = self._get_next_task(plan, context.get("completed_tasks", []))
 
             if not next_task:
                 completed_tasks = context.get("completed_tasks", [])
-                self.logger.error("Planning failed: No executable task found")
-                self.logger.error(f"  Total tasks in plan: {len(plan)}")
-                self.logger.error(f"  Completed tasks: {completed_tasks}")
-                self.logger.error(f"  Plan details:")
-                for i, task in enumerate(plan):
-                    self.logger.error(
-                        f"    Task {i+1}: {task.get('task_id')} - {task.get('description')}"
-                    )
-                    self.logger.error(
-                        f"      Dependencies: {task.get('dependencies', [])}"
-                    )
-                    self.logger.error(f"      Agent type: {task.get('agent_type')}")
-
-                # Fallback: create a simple LLM task if no tasks were completed yet
                 if not completed_tasks:
-                    self.logger.warning(
-                        "No tasks completed yet, falling back to simple LLM task"
-                    )
                     fallback_task = {
                         "task_id": "fallback_llm_1",
                         "description": f"使用LLM直接回答: {context.get('original_query', input_data)}",
@@ -284,11 +224,6 @@ class PlanningAgent(BaseAgent):
                     message="规划失败：无法找到可执行的任务",
                 )
 
-            self.logger.info(
-                f"Next task selected: {next_task.get('task_id')} - {next_task.get('description')}"
-            )
-            self.logger.debug(f"  Task details: {next_task}")
-
             return AgentResult(
                 status=AgentStatus.SUCCESS,
                 data=next_task,
@@ -298,15 +233,11 @@ class PlanningAgent(BaseAgent):
             )
 
         except Exception as e:
-            self.logger.error(f"Planning failed with exception: {e}", exc_info=True)
-            self.logger.error(f"  Input data: {input_data}")
-            self.logger.error(f"  Context keys: {list(context.keys())}")
             return AgentResult(
                 status=AgentStatus.FAILURE, data=None, message=f"规划失败: {str(e)}"
             )
 
     def _format_task_results(self, results: List[Dict]) -> str:
-        """Format task results for LLM"""
         formatted = []
         for i, result in enumerate(results, 1):
             formatted.append(
@@ -315,7 +246,6 @@ class PlanningAgent(BaseAgent):
         return "\n".join(formatted)
 
     def _get_next_task(self, plan: List[Dict], completed_tasks: List[str]) -> Dict:
-        """Get next executable task from plan"""
         for task in plan:
             task_id = task.get("task_id", "")
             if task_id in completed_tasks:
