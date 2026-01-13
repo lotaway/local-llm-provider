@@ -7,3 +7,6 @@
 [submodule "mcps/chrome-devtools-mcp"]
 	path = mcps/chrome-devtools-mcp
 	url = https://github.com/ChromeDevTools/chrome-devtools-mcp.git
+[submodule "skills/claude-skills"]
+	path = skills/claude-skills
+	url = https://github.com/anthropics/skills.git
