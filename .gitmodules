@@ -10,3 +10,6 @@
 [submodule "skills/claude-skills"]
 	path = skills/claude-skills
 	url = https://github.com/anthropics/skills.git
+[submodule "mcps/chain-trade-mcp"]
+	path = mcps/chain-trade-mcp
+	url = https://github.com/lotaway/chain-trade-mcp.git
