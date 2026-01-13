@@ -7,6 +7,7 @@ from .planning_agent import PlanningAgent
 from .router_agent import RouterAgent
 from .verification_agent import VerificationAgent
 from .risk_agent import RiskAgent
+from .error_handler_agent import ErrorHandlerAgent
 
 __all__ = [
     "BaseAgent",
@@ -18,4 +19,5 @@ __all__ = [
     "RouterAgent",
     "VerificationAgent",
     "RiskAgent",
+    "ErrorHandlerAgent",
 ]

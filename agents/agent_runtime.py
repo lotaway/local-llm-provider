@@ -9,6 +9,7 @@ import logging
 import json
 from .agent_base import BaseAgent, AgentResult, AgentStatus
 from .context_storage import ContextStorage, create_context_storage
+from .error_handler_agent import ErrorHandlerAgent
 
 logger = logging.getLogger(__name__)
 
@@ -504,6 +505,12 @@ class AgentRuntime:
                         break
 
             except Exception as e:
+                if "error_handler" in self.agents and agent_name != "error_handler":
+                    self.logger.warning(f"Exception in agent {agent_name}, routing to error_handler: {e}")
+                    self.state.current_agent = "error_handler"
+                    current_input = {"exception": e, "agent_name": agent_name}
+                    continue
+
                 self.state.status = RuntimeStatus.FAILED
                 self.state.error_message = f"Agent execution error: {str(e)}"
                 self.logger.error(f"\n{'!'*60}")
@@ -581,6 +588,9 @@ class AgentRuntime:
 
         # Populate context with available MCP tools for planning agent
         runtime.state.context["available_mcp_tools"] = mcp_agent.get_available_tools()
+
+        # Register error handler
+        runtime.register_agent("error_handler", ErrorHandlerAgent(llm_model))
 
         logger.info("Created AgentRuntime with all standard agents")
 
