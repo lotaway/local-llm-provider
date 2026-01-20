@@ -33,8 +33,6 @@ from retrievers.graph_retriever import GraphRetriever
 import asyncio
 
 
-
-
 class AdaptiveTextSplitter(TextSplitter):
 
     def __init__(self, min_chunk=500, max_chunk=2000, chunk_overlap=0, **kwargs):
@@ -151,8 +149,6 @@ class LocalRAG:
         self.graph_extractor = GraphExtractionService(llm)
         self.graph_retriever = GraphRetriever(self.neo4j_repo, llm)
 
-
-
     def init_rag_chain(self):
         vectorstore = self.get_or_create_vectorstore()
         if vectorstore is None:
@@ -253,42 +249,42 @@ class LocalRAG:
             self.es_retriever.index_documents(chunks)
             print(f"Added {len(chunks)} chunks to Elasticsearch")
 
-        # Process Graph RAG extraction
-        self._async_extract_graph(chunks, source)
+        asyncio.run(self._async_extract_graph(chunks, source))
 
         return {"filename": filename, "chunks": len(chunks)}
 
-    def _async_extract_graph(self, chunks: List[Document], source_doc_id: str):
-        """Helper to run async graph extraction in a separate task"""
-        async def process_chunks():
-            print(f"Starting graph extraction for {len(chunks)} chunks...")
-            for chunk in chunks:
-                try:
-                    entities, relations = await self.graph_extractor.extract_graph(chunk.page_content)
-                    
-                    # Store entities
-                    for entity in entities:
-                        self.neo4j_repo.merge_entity(entity)
-                    
-                    # Store relations
-                    for relation in relations:
-                        relation.source_doc_id = source_doc_id
-                        self.neo4j_repo.merge_relation(relation)
-                        
-                except Exception as e:
-                    print(f"Error during graph extraction for a chunk: {e}")
-            print("Graph extraction completed.")
+    async def _async_extract_graph(self, chunks: List[Document], source_doc_id: str):
+        """Run graph extraction synchronously to ensure completion before proceeding"""
+        print(f"Starting graph extraction for {len(chunks)} chunks...")
+        total_entities = 0
+        total_relations = 0
+        for i, chunk in enumerate(chunks):
+            try:
+                print(f"Processing chunk {i+1}/{len(chunks)}...")
+                entities, relations = await self.graph_extractor.extract_graph(
+                    chunk.page_content
+                )
+                print(
+                    f"Extracted {len(entities)} entities and {len(relations)} relations from chunk {i+1}"
+                )
 
-        # Create a task to run extraction in background to not block doc import
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(process_chunks())
-            else:
-                asyncio.run(process_chunks())
-        except Exception as e:
-            print(f"Failed to start async graph extraction: {e}")
+                for entity in entities:
+                    self.neo4j_repo.merge_entity(entity)
+                    total_entities += 1
 
+                for relation in relations:
+                    relation.source_doc_id = source_doc_id
+                    self.neo4j_repo.merge_relation(relation)
+                    total_relations += 1
+
+            except Exception as e:
+                print(f"Error during graph extraction for chunk {i+1}: {e}")
+                import traceback
+
+                traceback.print_exc()
+        print(
+            f"Graph extraction completed. Total entities: {total_entities}, Total relations: {total_relations}"
+        )
 
     def check_document_exists(self, bvid: str, cid: int) -> bool:
         if not self.es_retriever:
@@ -535,6 +531,8 @@ class LocalRAG:
             if self.use_hybrid_search and self.es_retriever:
                 print("Indexing documents to Elasticsearch...")
                 self.es_retriever.index_documents(chunks)
+
+            self._async_extract_graph(chunks, "initial_load")
 
             return self.build_vectorstore(docs)
         else:
