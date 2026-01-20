@@ -27,6 +27,12 @@ from model_providers import LocalLLModel
 from typing import Callable, List, cast
 from retrievers import HybridRetriever, Reranker, ESBM25Retriever
 from file_loaders import ChatGPTLoader, DeepSeekLoader
+from repositories.neo4j_repository import Neo4jRepository
+from services.graph_extraction_service import GraphExtractionService
+from retrievers.graph_retriever import GraphRetriever
+import asyncio
+
+
 
 
 class AdaptiveTextSplitter(TextSplitter):
@@ -140,6 +146,13 @@ class LocalRAG:
         # Initialize ES Retriever
         self.es_retriever = ESBM25Retriever() if use_hybrid_search else None
 
+        # Graph RAG initialization
+        self.neo4j_repo = Neo4jRepository()
+        self.graph_extractor = GraphExtractionService(llm)
+        self.graph_retriever = GraphRetriever(self.neo4j_repo, llm)
+
+
+
     def init_rag_chain(self):
         vectorstore = self.get_or_create_vectorstore()
         if vectorstore is None:
@@ -240,7 +253,42 @@ class LocalRAG:
             self.es_retriever.index_documents(chunks)
             print(f"Added {len(chunks)} chunks to Elasticsearch")
 
+        # Process Graph RAG extraction
+        self._async_extract_graph(chunks, source)
+
         return {"filename": filename, "chunks": len(chunks)}
+
+    def _async_extract_graph(self, chunks: List[Document], source_doc_id: str):
+        """Helper to run async graph extraction in a separate task"""
+        async def process_chunks():
+            print(f"Starting graph extraction for {len(chunks)} chunks...")
+            for chunk in chunks:
+                try:
+                    entities, relations = await self.graph_extractor.extract_graph(chunk.page_content)
+                    
+                    # Store entities
+                    for entity in entities:
+                        self.neo4j_repo.merge_entity(entity)
+                    
+                    # Store relations
+                    for relation in relations:
+                        relation.source_doc_id = source_doc_id
+                        self.neo4j_repo.merge_relation(relation)
+                        
+                except Exception as e:
+                    print(f"Error during graph extraction for a chunk: {e}")
+            print("Graph extraction completed.")
+
+        # Create a task to run extraction in background to not block doc import
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(process_chunks())
+            else:
+                asyncio.run(process_chunks())
+        except Exception as e:
+            print(f"Failed to start async graph extraction: {e}")
+
 
     def check_document_exists(self, bvid: str, cid: int) -> bool:
         if not self.es_retriever:
@@ -524,7 +572,15 @@ class LocalRAG:
 
             print(f"Retrieved {len(context_docs)} docs")
             context = "\n\n".join([doc.page_content for doc in context_docs])
+
+            # Augment with Graph Context
+            graph_context = await self.graph_retriever.retrieve_context(question)
+            if graph_context:
+                print("Adding graph context to prompt...")
+                context = f"{context}\n\n{graph_context}"
+
             print("Formatting prompt...")
+
             prompt_str = ChatPromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
             # prompt_str.invoke is fast
             prompt_value = prompt_str.invoke({"context": context, "question": question})
