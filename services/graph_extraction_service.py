@@ -1,11 +1,15 @@
 import json
 import logging
 import re
+import torch
 from typing import List, Dict, Any, Tuple
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from model_providers import LocalLLModel
 from schemas.graph import Entity, Relation
+import os
 
 logger = logging.getLogger(__name__)
+
 
 class GraphExtractionService:
     EXTRACTION_PROMPT = """你是一个知识图谱结构抽取器。
@@ -75,21 +79,59 @@ uses, depends_on, implements, describes, references, member_of, part_of, contain
 
     def __init__(self, llm: LocalLLModel):
         self.llm = llm
+        self.small_model = None
+        self.tokenizer = None
+        self._load_small_model()
+
+    def _load_small_model(self):
+        """Load the small model for graph extraction"""
+        model_name = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
+        device = os.getenv("EMBEDDING_DEVICE", "cpu")
+
+        transformers_kwargs = {}
+        if device == "cuda":
+            transformers_kwargs["device_map"] = "auto"
+            transformers_kwargs["torch_dtype"] = torch.float16
+        else:
+            transformers_kwargs["device_map"] = "cpu"
+            transformers_kwargs["torch_dtype"] = torch.float32
+
+        transformers_kwargs["trust_remote_code"] = True
+        transformers_kwargs["cache_dir"] = os.getenv("CACHE_PATH", "./cache")
+
+        self.small_model = AutoModelForCausalLM.from_pretrained(
+            model_name, **transformers_kwargs
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name, cache_dir=os.getenv("CACHE_PATH", "./cache")
+        )
+        self.small_model.eval()
 
     async def extract_graph(self, text: str) -> Tuple[List[Entity], List[Relation]]:
         """
-        Extract entities and relations from a text chunk using the LLM.
+        Extract entities and relations from a text chunk using the small model.
         """
-        prompt = self.EXTRACTION_PROMPT.format(text=text)
+        prompt = self.EXTRACTION_PROMPT.replace("{text}", text)
         try:
-            # We use chat_at_once for extraction
-            response = await self.llm.chat_at_once(prompt, temperature=0.1)
-            
-            # Extract JSON from response
+            # Use the small model for generation
+            inputs = self.tokenizer(prompt, return_tensors="pt")
+            with torch.no_grad():
+                outputs = self.small_model.generate(
+                    **inputs,
+                    max_length=1024,
+                    temperature=0.1,
+                    do_sample=True,
+                    top_p=0.95,
+                    top_k=40,
+                    num_return_sequences=1,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                )
+            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
             json_text = self._clean_json_response(response)
-            
+
             data = json.loads(json_text)
-            
+
             extracted_entities = []
             for e_data in data.get("entities", []):
                 try:
@@ -103,27 +145,19 @@ uses, depends_on, implements, describes, references, member_of, part_of, contain
                     extracted_relations.append(Relation(**r_data))
                 except Exception as ve:
                     logger.warning(f"Skipping invalid relation: {ve}")
-                    
             return extracted_entities, extracted_relations
-            
         except Exception as e:
             logger.error(f"Failed to extract graph from text: {e}")
             return [], []
 
     def _clean_json_response(self, text: str) -> str:
-        # Step 1: Remove think tags if any (from DeepSeek R1 models)
-        text = self.llm.extract_after_think(text)
-        
-        # Step 2: Find JSON block
         if "```json" in text:
             match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
             if match:
                 return match.group(1).strip()
-        
-        # Step 3: Find outermost braces
         start = text.find("{")
         end = text.rfind("}") + 1
         if start != -1 and end != 0:
             return text[start:end]
-            
+
         return text.strip()

@@ -4,6 +4,7 @@ import re
 from pymilvus import connections, utility
 import gc
 import torch
+from sentence_transformers import SentenceTransformer
 from langchain_community.document_loaders import (
     TextLoader,
     UnstructuredMarkdownLoader,
@@ -149,8 +150,8 @@ class LocalRAG:
         self.graph_extractor = GraphExtractionService(llm)
         self.graph_retriever = GraphRetriever(self.neo4j_repo, llm)
 
-    def init_rag_chain(self):
-        vectorstore = self.get_or_create_vectorstore()
+    async def init_rag_chain(self):
+        vectorstore = await self.get_or_create_vectorstore()
         if vectorstore is None:
             Exception("No vectorstore available, maybe not docs are loaded?")
         vectorstore = cast(Milvus, vectorstore)
@@ -214,7 +215,7 @@ class LocalRAG:
         )
         self.rag_chain = RunnableSequence(chain)
 
-    def add_document(
+    async def add_document(
         self, title: str, content: str, source: str, content_type: str = "md", **kwargs
     ):
         """Import a single document"""
@@ -239,7 +240,7 @@ class LocalRAG:
             min_chunk=500, max_chunk=2000, chunk_overlap=200
         )
         chunks = text_splitter.split_documents([doc])
-        vectorstore = self.get_or_create_vectorstore()
+        vectorstore = await self.get_or_create_vectorstore()
         if vectorstore:
             vectorstore.add_documents(chunks)
             print(f"Added {len(chunks)} chunks to Milvus")
@@ -249,7 +250,7 @@ class LocalRAG:
             self.es_retriever.index_documents(chunks)
             print(f"Added {len(chunks)} chunks to Elasticsearch")
 
-        asyncio.run(self._async_extract_graph(chunks, source))
+        await self._async_extract_graph(chunks, source)
 
         return {"filename": filename, "chunks": len(chunks)}
 
@@ -513,7 +514,7 @@ class LocalRAG:
 
         return vectorstore
 
-    def get_or_create_vectorstore(self):
+    async def get_or_create_vectorstore(self):
         connections.connect(host=self.host, port=self.port)
         embeddings = self.get_embeddings()
         if not utility.has_collection(self.collection):
@@ -532,7 +533,7 @@ class LocalRAG:
                 print("Indexing documents to Elasticsearch...")
                 self.es_retriever.index_documents(chunks)
 
-            self._async_extract_graph(chunks, "initial_load")
+            await self._async_extract_graph(chunks, "initial_load")
 
             return self.build_vectorstore(docs)
         else:
@@ -545,7 +546,7 @@ class LocalRAG:
 
     async def generate_answer(self, question, stream_callback=None):
         if self.rag_chain is None:
-            self.init_rag_chain()
+            await self.init_rag_chain()
 
         if stream_callback is None:
             # Non-streaming mode - use the existing chain with await
@@ -556,7 +557,7 @@ class LocalRAG:
                 retrieval_runnable = self.retrieval_runnable
             else:
                 print("Initializing RAG chain for retrieval...")
-                self.init_rag_chain()
+                await self.init_rag_chain()
                 retrieval_runnable = self.retrieval_runnable
             print("Retrieving context...")
             # retrieval_runnable might be synchronous so we wrap it or just invoke if it's CPU bound but fast
