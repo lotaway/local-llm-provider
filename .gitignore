@@ -6,6 +6,7 @@ __pycache__/
 # AI Model, Datasets
 /models
 /offload
+/cache
 
 # C extensions
 *.so
