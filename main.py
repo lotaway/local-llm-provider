@@ -234,7 +234,7 @@ async def poe(request: Request, path: str):
 
 
 if __name__ == "__main__":
-    default_port = 11435
+    default_port = 8434
     port = os.getenv("PORT", default_port)
     try:
         port = int(port)
