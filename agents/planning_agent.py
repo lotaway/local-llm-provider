@@ -89,6 +89,15 @@ class PlanningAgent(BaseAgent):
         )
 
         skills_info = self._get_available_skills_info()
+        hints = context.get("planning_hints", {}).get("capabilities", [])
+        caps_lines = []
+        for h in hints:
+            rid = h.get("id")
+            desc = h.get("description") or ""
+            saf = h.get("safety") or ""
+            req = "需要人工批准" if h.get("requires_approval") else "无需批准"
+            caps_lines.append(f"- {rid} | {saf} | {req} | {desc}")
+        caps_info = "\n可用能力:\n" + "\n".join(caps_lines) + "\n" if caps_lines else ""
         available_files = context.get("available_files", [])
         files_info = ""
         if available_files:
@@ -117,6 +126,7 @@ class PlanningAgent(BaseAgent):
 
 {mcp_tools_info}
 {skills_info}
+{caps_info}
 {files_info}
 
 请重新规划任务，只使用可用的工具（LLM、RAG或已注册的MCP工具）。
@@ -135,6 +145,7 @@ class PlanningAgent(BaseAgent):
 
 {mcp_tools_info}
 {skills_info}
+{caps_info}
 {files_info}
 
 请判断是否已经完成用户的问题，如果完成则输出final_answer，否则规划下一步任务。
@@ -153,6 +164,7 @@ class PlanningAgent(BaseAgent):
 
 {mcp_tools_info}
 {skills_info}
+{caps_info}
 {files_info}
 
 请为这个问题创建执行计划。

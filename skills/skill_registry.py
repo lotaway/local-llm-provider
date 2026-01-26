@@ -5,6 +5,7 @@ import re
 import importlib.util
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Type
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -254,9 +255,38 @@ def get_registry() -> SkillRegistry:
 
 def init_skills():
     skills_dir = os.path.dirname(__file__)
-    all_manifests = load_skills_from_directory(skills_dir)
-    claude_skills_dir = os.path.join(skills_dir, "claude-skills", "skills")
-    if os.path.exists(claude_skills_dir):
-        claude_manifests = load_skills_from_directory(claude_skills_dir)
-        all_manifests.extend(claude_manifests)
+    all_manifests: List[SkillManifest] = []
+    loaded_names: set = set()
+    project_manifests = load_skills_from_directory(skills_dir)
+    for m in project_manifests:
+        if m.name in loaded_names:
+            logger.warning(f"Duplicate skill skipped: {m.name}")
+            continue
+        loaded_names.add(m.name)
+        all_manifests.append(m)
+    env_dirs = os.getenv("LLP_SKILLS_DIRS", "")
+    if env_dirs:
+        for d in [p for p in env_dirs.split(":") if p]:
+            env_manifests = load_skills_from_directory(d)
+            for m in env_manifests:
+                if m.name in loaded_names:
+                    logger.warning(f"Duplicate skill skipped: {m.name}")
+                    continue
+                loaded_names.add(m.name)
+                all_manifests.append(m)
+    enable_claude = os.getenv("LLP_ENABLE_CLAUDE_GLOBAL", "0")
+    claude_root = os.getenv("LLP_CLAUDE_SKILLS_DIR")
+    if enable_claude == "1":
+        if claude_root and os.path.exists(claude_root):
+            claude_dir = claude_root
+        else:
+            claude_dir = os.path.join(skills_dir, "claude-skills", "skills")
+        if os.path.exists(claude_dir):
+            claude_manifests = load_skills_from_directory(claude_dir)
+            for m in claude_manifests:
+                if m.name in loaded_names:
+                    logger.warning(f"Duplicate skill skipped: {m.name}")
+                    continue
+                loaded_names.add(m.name)
+                all_manifests.append(m)
     return all_manifests
