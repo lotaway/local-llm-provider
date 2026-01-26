@@ -74,9 +74,9 @@ If choose zluda, need to install torch with cuda version, use `pip install torch
 
 For Window ROCm, after ROCm 7.0 can be install in window directly. Use [install_window_rocm shell script](./install_window_rocm.sh)
 
-If have problem try ROCm7.10.0-preview:
+If have problem try ROCm7.2:
 ```bash
-pip install --no-cache-dir https://repo.radeon.com/rocm/windows/rocm-rel-6.4.4/torch-2.8.0a0%2Bgitfc14c65-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-6.4.4/torchaudio-2.6.0a0%2B1a8f621-cp312-cp312-win_amd64.whl https://repo.radeon.com/rocm/windows/rocm-rel-6.4.4/torchvision-0.24.0a0%2Bc85f008-cp312-cp312-win_amd64.whl
+pip install --no-cache-dir "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/rocm-7.2.0.dev0.tar.gz" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/rocm_sdk_core-7.2.0.dev0-py3-none-win_amd64.whl" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/rocm_sdk_devel-7.2.0.dev0-py3-none-win_amd64.whl" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/rocm_sdk_libraries_custom-7.2.0.dev0-py3-none-win_amd64.whl" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/torch-2.9.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/torchaudio-2.9.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/torchvision-0.24.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl"
 pip install transformers accelerate
 ```
 

@@ -4,6 +4,7 @@ import re
 from pymilvus import connections, utility
 import gc
 import torch
+from sentence_transformers import SentenceTransformer
 from langchain_community.document_loaders import (
     TextLoader,
     UnstructuredMarkdownLoader,
@@ -31,8 +32,6 @@ from repositories.neo4j_repository import Neo4jRepository
 from services.graph_extraction_service import GraphExtractionService
 from retrievers.graph_retriever import GraphRetriever
 import asyncio
-
-
 
 
 class AdaptiveTextSplitter(TextSplitter):
@@ -151,10 +150,8 @@ class LocalRAG:
         self.graph_extractor = GraphExtractionService(llm)
         self.graph_retriever = GraphRetriever(self.neo4j_repo, llm)
 
-
-
-    def init_rag_chain(self):
-        vectorstore = self.get_or_create_vectorstore()
+    async def init_rag_chain(self):
+        vectorstore = await self.get_or_create_vectorstore()
         if vectorstore is None:
             Exception("No vectorstore available, maybe not docs are loaded?")
         vectorstore = cast(Milvus, vectorstore)
@@ -218,7 +215,7 @@ class LocalRAG:
         )
         self.rag_chain = RunnableSequence(chain)
 
-    def add_document(
+    async def add_document(
         self, title: str, content: str, source: str, content_type: str = "md", **kwargs
     ):
         """Import a single document"""
@@ -243,7 +240,7 @@ class LocalRAG:
             min_chunk=500, max_chunk=2000, chunk_overlap=200
         )
         chunks = text_splitter.split_documents([doc])
-        vectorstore = self.get_or_create_vectorstore()
+        vectorstore = await self.get_or_create_vectorstore()
         if vectorstore:
             vectorstore.add_documents(chunks)
             print(f"Added {len(chunks)} chunks to Milvus")
@@ -253,42 +250,42 @@ class LocalRAG:
             self.es_retriever.index_documents(chunks)
             print(f"Added {len(chunks)} chunks to Elasticsearch")
 
-        # Process Graph RAG extraction
-        self._async_extract_graph(chunks, source)
+        await self._async_extract_graph(chunks, source)
 
         return {"filename": filename, "chunks": len(chunks)}
 
-    def _async_extract_graph(self, chunks: List[Document], source_doc_id: str):
-        """Helper to run async graph extraction in a separate task"""
-        async def process_chunks():
-            print(f"Starting graph extraction for {len(chunks)} chunks...")
-            for chunk in chunks:
-                try:
-                    entities, relations = await self.graph_extractor.extract_graph(chunk.page_content)
-                    
-                    # Store entities
-                    for entity in entities:
-                        self.neo4j_repo.merge_entity(entity)
-                    
-                    # Store relations
-                    for relation in relations:
-                        relation.source_doc_id = source_doc_id
-                        self.neo4j_repo.merge_relation(relation)
-                        
-                except Exception as e:
-                    print(f"Error during graph extraction for a chunk: {e}")
-            print("Graph extraction completed.")
+    async def _async_extract_graph(self, chunks: List[Document], source_doc_id: str):
+        """Run graph extraction synchronously to ensure completion before proceeding"""
+        print(f"Starting graph extraction for {len(chunks)} chunks...")
+        total_entities = 0
+        total_relations = 0
+        for i, chunk in enumerate(chunks):
+            try:
+                print(f"Processing chunk {i+1}/{len(chunks)}...")
+                entities, relations = await self.graph_extractor.extract_graph(
+                    chunk.page_content
+                )
+                print(
+                    f"Extracted {len(entities)} entities and {len(relations)} relations from chunk {i+1}"
+                )
 
-        # Create a task to run extraction in background to not block doc import
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(process_chunks())
-            else:
-                asyncio.run(process_chunks())
-        except Exception as e:
-            print(f"Failed to start async graph extraction: {e}")
+                for entity in entities:
+                    self.neo4j_repo.merge_entity(entity)
+                    total_entities += 1
 
+                for relation in relations:
+                    relation.source_doc_id = source_doc_id
+                    self.neo4j_repo.merge_relation(relation)
+                    total_relations += 1
+
+            except Exception as e:
+                print(f"Error during graph extraction for chunk {i+1}: {e}")
+                import traceback
+
+                traceback.print_exc()
+        print(
+            f"Graph extraction completed. Total entities: {total_entities}, Total relations: {total_relations}"
+        )
 
     def check_document_exists(self, bvid: str, cid: int) -> bool:
         if not self.es_retriever:
@@ -517,7 +514,7 @@ class LocalRAG:
 
         return vectorstore
 
-    def get_or_create_vectorstore(self):
+    async def get_or_create_vectorstore(self):
         connections.connect(host=self.host, port=self.port)
         embeddings = self.get_embeddings()
         if not utility.has_collection(self.collection):
@@ -536,6 +533,8 @@ class LocalRAG:
                 print("Indexing documents to Elasticsearch...")
                 self.es_retriever.index_documents(chunks)
 
+            await self._async_extract_graph(chunks, "initial_load")
+
             return self.build_vectorstore(docs)
         else:
             print(f"Collection '{self.collection}' already exists, reusing it.")
@@ -547,7 +546,7 @@ class LocalRAG:
 
     async def generate_answer(self, question, stream_callback=None):
         if self.rag_chain is None:
-            self.init_rag_chain()
+            await self.init_rag_chain()
 
         if stream_callback is None:
             # Non-streaming mode - use the existing chain with await
@@ -558,7 +557,7 @@ class LocalRAG:
                 retrieval_runnable = self.retrieval_runnable
             else:
                 print("Initializing RAG chain for retrieval...")
-                self.init_rag_chain()
+                await self.init_rag_chain()
                 retrieval_runnable = self.retrieval_runnable
             print("Retrieving context...")
             # retrieval_runnable might be synchronous so we wrap it or just invoke if it's CPU bound but fast
