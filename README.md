@@ -6,13 +6,35 @@ This is use for [for VSCode Continue Plugin](https://docs.continue.dev), to prov
 
 ```
 local-llm-provider
-├── models
-│   └── {model_name}
-├── model_providers
-│   ├── model_provider.py main provider for local llm, can use HF(.safetensors), gguf, onnx
-├── routers provider api as llm provider, mcp
-├── rag.py provide import local/remote docs and rag/es search ability
-├── retrievers for rag hybrid search
+├── agents                     Agents: planning, routing, verification, error handling
+│   └── task_agents            Task-specific agents
+├── controllers                FastAPI controllers (LLM/RAG/files)
+├── file_loaders               External data loaders (ChatGPT, DeepSeek)
+├── globals                    Package init and global config
+├── model_convert              Model conversion scripts (GGUF/ONNX)
+├── model_providers            Model providers & inference engines (transformers, llama.cpp, ComfyUI, POE)
+├── repositories               Data access (Neo4j)
+├── retrievers                 RAG retrievers (ES, hybrid, graph, reranker)
+├── routers                    API routers & versioning
+├── schemas                    Structured data models (graphs, etc.)
+├── scripts                    Init scripts / SQL
+├── services                   Services (graph extraction)
+├── skills                     MCP skills and registry
+├── tests                      Test suites and verification samples
+├── utils                      Utilities (scheduler, content types, cancellation)
+├── models                     Local models (optional)
+├── main.py                    Server entry point
+├── rag.py                     RAG pipeline: indexing/search
+├── auth.py                    Auth helpers
+├── permission_manager.py      Permission management
+├── constants.py               Constants
+├── manifest.json              MCP/provider manifest
+├── Dockerfile                 Docker build
+├── docker-compose.env.yml     Docker Compose env
+├── docker-compose-elasticsearch-init.sh  Elasticsearch init script
+├── .env.example               Environment variables example
+├── start.sh / build.sh / deploy.sh  Start/build/deploy scripts
+└── HARDWARE.md / PLAN.md / LICENSE  Docs
 ```
 
 ## Usage
