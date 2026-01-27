@@ -50,13 +50,7 @@ Use WSL ROCm is the best, either need install [Zluda](https://github.com/vosen/Z
 
 If choose zluda, need to install torch with cuda version, use `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128`(util 2025/10/11, zluda not implemented cuda13.0 yep, 12.8 is the latest)
 
-For Window ROCm, after ROCm 7.0 can be install in window directly. Use [install_window_rocm shell script](./install_window_rocm.sh)
-
-If have problem try ROCm7.2:
-```bash
-pip install --no-cache-dir "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/rocm-7.2.0.dev0.tar.gz" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/rocm_sdk_core-7.2.0.dev0-py3-none-win_amd64.whl" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/rocm_sdk_devel-7.2.0.dev0-py3-none-win_amd64.whl" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/rocm_sdk_libraries_custom-7.2.0.dev0-py3-none-win_amd64.whl" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/torch-2.9.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/torchaudio-2.9.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl" "https://repo.radeon.com/rocm/windows/.rocm-rel-7.2_a/torchvision-0.24.1%2Brocmsdk20260116-cp312-cp312-win_amd64.whl"
-pip install transformers accelerate
-```
+For Window ROCm, after ROCm 7.0 can be install in window directly. See [ROCm in Window](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html)
 
 ## About bitsandbytes
 
