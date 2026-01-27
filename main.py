@@ -83,6 +83,11 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     import model_providers
+    try:
+        from utils.mcp_loader import stop_all
+        stop_all()
+    except Exception:
+        pass
 
     if getattr(model_providers, "local_model", None):
         print("Shutting down... unloading local model.")

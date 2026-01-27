@@ -591,7 +591,61 @@ class AgentRuntime:
             s.to_dict() for s in registry.list_skills()
         ]
 
+        try:
+            from utils.mcp_loader import load_from_env as _load_mcp
+            _load_mcp(mcp_agent)
+        except Exception:
+            pass
         runtime.state.context["available_mcp_tools"] = mcp_agent.get_available_tools()
+
+        from schemas.capability import Capability, CapabilityKind
+        caps = []
+        for s in registry.list_skills():
+            caps.append(
+                Capability(
+                    id=f"skill.{s.name}",
+                    kind=CapabilityKind.SKILL,
+                    name=s.name,
+                    description=s.description,
+                    safety_level="SAFE",
+                    permission=None,
+                    when_to_use=None,
+                    requires_approval=False,
+                ).to_dict()
+            )
+        for t_name, t in mcp_agent.tools.items():
+            perm = t.get("permission")
+            safety = "UNKNOWN"
+            requires = False
+            if permission_manager and perm:
+                r = permission_manager.check_permission(perm)
+                safety = r.get("safety_level", "UNKNOWN")
+                requires = bool(r.get("needs_human", False))
+            caps.append(
+                Capability(
+                    id=f"mcp.{t_name}",
+                    kind=CapabilityKind.MCP,
+                    name=t_name,
+                    description=t_name,
+                    safety_level=safety,
+                    permission=perm,
+                    when_to_use=None,
+                    requires_approval=requires,
+                ).to_dict()
+            )
+        runtime.state.context["capabilities"] = caps
+        hints = []
+        for c in caps:
+            hints.append(
+                {
+                    "id": c["id"],
+                    "description": c["description"],
+                    "when_to_use": c.get("when_to_use"),
+                    "safety": c.get("safety_level"),
+                    "requires_approval": c.get("requires_approval", False),
+                }
+            )
+        runtime.state.context["planning_hints"] = {"capabilities": hints}
         runtime.register_agent("error_handler", ErrorHandlerAgent(llm_model))
 
         return runtime
