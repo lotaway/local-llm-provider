@@ -3,10 +3,18 @@ set -e
 
 pip install . -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-BNB_PATH=$(python -c "import bitsandbytes; print(bitsandbytes.__path__[0])")
-if [ ! -f "$BNB_PATH/libbitsandbytes_rocm72.so" ]; then
+WANTED_BIN=$(python -c "import bitsandbytes" 2>&1 | grep "Configured ROCm binary not found at" | sed 's/.*found at //')
+
+if [ -z "$WANTED_BIN" ]; then
+    BNB_PATH=$(python -c "import bitsandbytes; print(bitsandbytes.__path__[0])")
+    ROCM_VER=$(cat /opt/rocm/.info/version | cut -d'.' -f1,2 | tr -d '.')
+    WANTED_BIN="$BNB_PATH/libbitsandbytes_rocm${ROCM_VER}.so"
+fi
+
+if [ ! -f "$WANTED_BIN" ]; then
     echo "----------------------------------------------------------------"
-    echo "bitsandbytes ROCm 7.2 binary not found. Compiling from source..."
+    echo "bitsandbytes ROCm binary not found. Expected: $WANTED_BIN"
+    echo "Compiling from source to match your environment..."
     echo "----------------------------------------------------------------"
     
     if ! command -v cmake &> /dev/null; then
@@ -19,7 +27,7 @@ if [ ! -f "$BNB_PATH/libbitsandbytes_rocm72.so" ]; then
     cd $TEMP_DIR
     
     git fetch origin rocm-build-update:rocm-build-update || true
-    git switch rocm-build-update || echo "Already on main or branch not found, continuing with main..."
+    git switch rocm-build-update || echo "Branch not found, using main..."
     
     export BNB_ROCM_ARCH=1
     export ROCM_HOME=/opt/rocm
@@ -29,10 +37,10 @@ if [ ! -f "$BNB_PATH/libbitsandbytes_rocm72.so" ]; then
     cmake -DCOMPUTE_BACKEND=hip -DBNB_ROCM_ARCH="gfx1100" .
     cmake --build .
     
-    cp bitsandbytes/libbitsandbytes_rocm64.so "$BNB_PATH/libbitsandbytes_rocm72.so"
+    cp bitsandbytes/libbitsandbytes_rocm*.so "$WANTED_BIN"
     
     echo "----------------------------------------------------------------"
-    echo "Compilation successful! libbitsandbytes_rocm72.so is ready."
+    echo "Compilation successful! Binary placed at: $WANTED_BIN"
     echo "----------------------------------------------------------------"
     cd /app
 fi
