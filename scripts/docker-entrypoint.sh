@@ -26,15 +26,15 @@ if [ ! -f "$WANTED_BIN" ]; then
     git clone https://github.com/bitsandbytes-foundation/bitsandbytes.git $TEMP_DIR
     cd $TEMP_DIR
     
-    git fetch origin rocm-build-update:rocm-build-update || true
-    git switch rocm-build-update || echo "Branch not found, using main..."
-    
-    export BNB_ROCM_ARCH=1
+    export BNB_ROCM_ARCH="gfx90a;gfx942;gfx1100;gfx1101;gfx1150;gfx1151;gfx1200;gfx1201"
     export ROCM_HOME=/opt/rocm
     export PATH=$ROCM_HOME/bin:$PATH
     export HIP_PATH=$ROCM_HOME
     
-    cmake -DCOMPUTE_BACKEND=hip -DBNB_ROCM_ARCH="gfx1100" .
+    cmake -DCOMPUTE_BACKEND=hip \
+          -DCMAKE_BUILD_TYPE=MinSizeRel \
+          -DCMAKE_HIP_FLAGS="--offload-compress" \
+          -DBNB_ROCM_ARCH="$BNB_ROCM_ARCH" .
     cmake --build .
     
     cp bitsandbytes/libbitsandbytes_rocm*.so "$WANTED_BIN"
