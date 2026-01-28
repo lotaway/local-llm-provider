@@ -4,7 +4,7 @@ name = "local-llm-provider"
 version = "0.1.0"
 description = "Local LLM Provider with RAG and Agent"
 readme = "README.md"
-requires-python = ">=3.12.11"
+requires-python = ">=3.12.3"
 dependencies = [
   "fastapi>=0.118.0",
   "pydantic>=2.11.9",
