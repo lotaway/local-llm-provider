@@ -311,18 +311,6 @@ class LocalRAG:
             print(f"Error checking document existence in ES: {e}")
             return False
 
-    def load_base_documents(self):
-        docs = []
-        for root, _, files in os.walk(self.data_path):
-            for f in files:
-                if f.endswith(".txt") or f.endswith(".md"):
-                    try:
-                        loader = TextLoader(os.path.join(root, f), encoding="utf-8")
-                        docs.extend(loader.load())
-                    except Exception as e:
-                        print(f"加载文件 {f} 时出错: {e}")
-        return docs
-
     def load_documents(
         self,
         after_doc_load: Callable[
