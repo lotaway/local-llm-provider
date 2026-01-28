@@ -1,0 +1,31 @@
+services:
+
+  # For AMD GPU + ROCm support with PyTorch
+  pytorch:
+    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    container_name: llp-pytorch
+    stdin_open: true
+    tty: true
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    ipc: host
+    shm_size: 8G
+    devices:
+      - /dev/dxg:/dev/dxg
+    volumes:
+      - /usr/lib/wsl/lib/libdxcore.so:/usr/lib/libdxcore.so
+      - /opt/rocm/lib/libhsa-runtime64.so.1:/opt/rocm/lib/libhsa-runtime64.so.1
+      # - ${HOME}/local-llm-provider:/app
+      - ${PWD}:/app
+    ports:
+      - "${PORT:-8434}:${PORT:-8434}"
+    restart: unless-stopped
+    networks:
+      - local-llm-provider
+
+networks:
+  local-llm-provider:
+    driver: bridge
+
