@@ -23,6 +23,10 @@ services:
       - "${PORT:-8434}:${PORT:-8434}"
     environment:
       - PORT=${PORT:-8434}
+      - DB_HOST=milvus
+      - DB_PORT=19530
+      - ES_HOST=elasticsearch
+      - ES_PORT1=9200
 
     working_dir: /app
     command: /bin/bash scripts/docker-entrypoint.sh
