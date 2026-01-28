@@ -3,7 +3,7 @@ set -e
 
 pip install . -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-WANTED_BIN=$(python -c "import bitsandbytes" 2>&1 | grep "Configured ROCm binary not found at" | sed 's/.*found at //')
+WANTED_BIN=$(python -c "import bitsandbytes" 2>&1 | grep "Configured ROCm binary not found at" | head -n 1 | sed 's/.*found at //' | xargs)
 
 if [ -z "$WANTED_BIN" ]; then
     BNB_PATH=$(python -c "import bitsandbytes; print(bitsandbytes.__path__[0])")
