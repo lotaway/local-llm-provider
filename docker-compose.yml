@@ -27,6 +27,10 @@ services:
       - DB_PORT=19530
       - ES_HOST=elasticsearch
       - ES_PORT1=9200
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-11.0.0}
+      - ROCM_PATH=/opt/rocm
+      - HIP_PATH=/opt/rocm/hip
+
 
     working_dir: /app
     command: /bin/bash scripts/docker-entrypoint.sh
