@@ -240,9 +240,10 @@ async def poe(request: Request, path: str):
 
 if __name__ == "__main__":
     default_port = 8434
+    host = os.getenv("HOST", "0.0.0.0")
     port = os.getenv("PORT", default_port)
     try:
         port = int(port)
     except ValueError:
         port = default_port
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host=host, port=port)

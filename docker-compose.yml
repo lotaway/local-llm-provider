@@ -20,7 +20,7 @@ services:
       # - ${HOME}/local-llm-provider:/app
       - ${PWD}:/app
     ports:
-      - "${PORT:-8434}:${PORT:-8434}"
+      - "0.0.0.0:${PORT:-8434}:${PORT:-8434}"
     environment:
       - PORT=${PORT:-8434}
       - DB_HOST=milvus
