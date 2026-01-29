@@ -10,16 +10,15 @@ services:
       - SYS_PTRACE
     security_opt:
       - seccomp:unconfined
-    ipc: host
-    shm_size: 64G
-    mem_limit: 64g
+    # ipc: host
+    shm_size: 8g
     devices:
       - /dev/dxg:/dev/dxg
     volumes:
       - /usr/lib/wsl/lib/libdxcore.so:/usr/lib/libdxcore.so
       - /opt/rocm/lib/libhsa-runtime64.so.1:/opt/rocm/lib/libhsa-runtime64.so.1
+      # - ${HOME}/local-llm-provider:/app
       - ${PWD}:/app
-      # 模型缓存目录（使用高速存储）
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     ports:
       - "0.0.0.0:${PORT:-8434}:${PORT:-8434}"
@@ -29,15 +28,11 @@ services:
       - DB_PORT=19530
       - ES_HOST=elasticsearch
       - ES_PORT1=9200
-      # 优化 ROCm 内存使用
       - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-11.0.0}
       - ROCM_PATH=/opt/rocm
       - HIP_PATH=/opt/rocm/hip
-      # PyTorch 内存优化
-      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
-      - PYTORCH_HIP_ALLOC_CONF=max_split_size_mb:512
-      # 允许大模型加载
-      - MODEL_MAX_LENGTH=32768
+
+
     working_dir: /app
     command: /bin/bash scripts/docker-entrypoint.sh
 
