@@ -124,7 +124,7 @@ class LocalRAG:
     def __init__(
         self,
         llm: LocalLLModel,
-        data_path=os.getenv("DATA_PATH", "./docs"),
+        data_path=os.getenv("DATA_PATH", os.getenv("DOCS_PATH", "./docs")),
         use_hybrid_search: bool = True,
         use_reranking: bool = True,
         retrieval_strategy: str = "adaptive",
@@ -460,11 +460,18 @@ class LocalRAG:
 
     def get_embeddings(self):
         print("Initializing embedding model")
+        if hasattr(self, "_embeddings") and self._embeddings is not None:
+            return self._embeddings
+        
+        device = os.getenv("EMBEDDING_DEVICE", "cpu")
+        print(f"Loading embedding model on {device}")
+        
         embeddings = HuggingFaceEmbeddings(
             model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-            model_kwargs={"device": "cpu"},
+            model_kwargs={"device": device},
             encode_kwargs={"batch_size": 8},
         )
+        self._embeddings = embeddings
         return embeddings
 
     def build_vectorstore(self, docs: list[Document]):
@@ -502,9 +509,14 @@ class LocalRAG:
 
         return vectorstore
 
-    async def get_or_create_vectorstore(self):
+    def _sync_get_or_create_vectorstore(self, main_loop: asyncio.AbstractEventLoop):
+        """
+        Synchronous version of get_or_create_vectorstore.
+        This should be called from a thread pool.
+        """
         connections.connect(host=self.host, port=self.port)
         embeddings = self.get_embeddings()
+
         if not utility.has_collection(self.collection):
             print(
                 f"Collection '{self.collection}' not found, creating and inserting documents..."
@@ -521,7 +533,11 @@ class LocalRAG:
                 print("Indexing documents to Elasticsearch...")
                 self.es_retriever.index_documents(chunks)
 
-            await self._async_extract_graph(chunks, "initial_load")
+            print("Scheduling graph extraction in background...")
+            asyncio.run_coroutine_threadsafe(
+                self._async_extract_graph(chunks, "initial_load"), 
+                main_loop
+            )
 
             return self.build_vectorstore(docs)
         else:
@@ -531,6 +547,16 @@ class LocalRAG:
                 connection_args={"host": self.host, "port": self.port},
                 collection_name=self.collection,
             )
+
+    async def get_or_create_vectorstore(self):
+        # Run all synchronous blocking operations in a thread pool
+        # to avoid blocking the async event loop
+        import asyncio
+
+        print("Loading vectorstore (this may take a while)...")
+        loop = asyncio.get_running_loop()
+        vectorstore = await asyncio.to_thread(self._sync_get_or_create_vectorstore, loop)
+        return vectorstore
 
     async def generate_answer(self, question, stream_callback=None):
         if self.rag_chain is None:

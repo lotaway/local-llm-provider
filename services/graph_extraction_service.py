@@ -81,12 +81,14 @@ uses, depends_on, implements, describes, references, member_of, part_of, contain
         self.llm = llm
         self.small_model = None
         self.tokenizer = None
-        self._load_small_model()
 
-    def _load_small_model(self):
-        """Load the small model for graph extraction"""
+    def _ensure_model_loaded(self):
+        if self.small_model is not None:
+            return
+
         model_name = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
         device = os.getenv("EMBEDDING_DEVICE", "cpu")
+        logger.info(f"Loading graph extraction model {model_name} on {device}...")
 
         transformers_kwargs = {}
         if device == "cuda":
@@ -106,14 +108,12 @@ uses, depends_on, implements, describes, references, member_of, part_of, contain
             model_name, cache_dir=os.getenv("CACHE_PATH", "./cache")
         )
         self.small_model.eval()
+        logger.info("Graph extraction model loaded.")
 
     async def extract_graph(self, text: str) -> Tuple[List[Entity], List[Relation]]:
-        """
-        Extract entities and relations from a text chunk using the small model.
-        """
+        self._ensure_model_loaded()
         prompt = self.EXTRACTION_PROMPT.replace("{text}", text)
         try:
-            # Use the small model for generation
             inputs = self.tokenizer(prompt, return_tensors="pt")
             with torch.no_grad():
                 outputs = self.small_model.generate(
