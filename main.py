@@ -80,6 +80,25 @@ async def lifespan(app: FastAPI):
             logger.error(
                 f"PRELOAD_MODEL '{PRELOAD_MODEL}' not found in available models: {available_models}. Skipping preload."
             )
+    PRE_INIT_RAG = os.getenv("PRE_INIT_RAG", "false").lower() == "true"
+    if PRE_INIT_RAG:
+        logger.info("PRE_INIT_RAG is enabled. Checking RAG databases...")
+        # We need a model for LocalRAG. Use PRELOAD_MODEL or the first available one.
+        rag_model_name = PRELOAD_MODEL
+        if not rag_model_name:
+            available_models = LocalLLModel.get_models()
+            if available_models:
+                rag_model_name = available_models[0]
+        
+        if rag_model_name:
+            logger.info(f"Using model '{rag_model_name}' for RAG pre-initialization.")
+            model = LocalLLModel.init_local_model(rag_model_name)
+            backend_globals.local_rag = LocalRAG(model)
+            # Use a task to not block startup if it takes long
+            asyncio.create_task(backend_globals.local_rag.get_or_create_vectorstore())
+        else:
+            logger.warning("PRE_INIT_RAG enabled but no models found to initialize RAG.")
+
     yield
     # Shutdown
     import model_providers

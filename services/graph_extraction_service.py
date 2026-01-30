@@ -1,78 +1,41 @@
 import json
 import logging
 import re
-import torch
-from typing import List, Dict, Any, Tuple
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from model_providers import LocalLLModel
-from schemas.graph import Entity, Relation
 import os
 import asyncio
+import time
+from typing import List, Dict, Any, Tuple
+from model_providers import LocalLLModel
+from schemas.graph import Entity, Relation
 
 logger = logging.getLogger(__name__)
 
 
 class GraphExtractionService:
-    EXTRACTION_PROMPT = """你是一个知识图谱结构抽取器。
-你的职责是：仅从文本中抽取“明确出现的实体和关系”，不得进行推理或补全。
+    EXTRACTION_PROMPT = """你是一个专业的语义知识图谱专家。
+你的任务是：深入理解提供的文本，并将其中的关键实体和核心关系提取出来。
 
-### 实体类型（封闭集合）：
-只能从以下类型中选择：
-Document, Concept, Code, API, Event, Model, Person, Organization
+### 1. 实体类型 (Entities)：
+请根据语义将实体归入以下最合适的类别：
+- **Document**: 文档、文件、协议说明
+- **Concept**: 核心概念、抽象理论、产品特性（如：“PBT材质”、“热升华工艺”）
+- **Code/API**: 函数、变量、程序接口、技术协议
+- **Organization**: 公司、团队、品牌、机构
+- **Person**: 具体的人物
+- **Model/Product**: 具体型号、硬件产品（如：“红武士键帽”、“Q2键盘”）
 
-如果无法准确分类，使用 Concept，不得创建新类型。
+### 2. 关系类型 (Relations)：
+提取能反映逻辑联系的关系：
+- **uses**: 使用/应用
+- **depends_on**: 依赖/前提
+- **implements**: 实现/体现了
+- **describes**: 描述/定义了
+- **part_of / contains**: 包含/组成关系
 
----
-
-### 关系类型（封闭集合）：
-uses, depends_on, implements, describes, references, member_of, part_of, contains, contradicts
-
-规则：
-- 只有当文本中明确表达该关系时才可抽取
-- 如果只是“提到 / 说明 / 举例”，使用 references 或 describes
-- 不得基于常识或经验推断关系
-
----
-
-### 禁止行为（非常重要）：
-- 不得引入文本中未明确出现的实体
-- 不得推断隐含关系
-- 不得合并不同名称的实体
-- 不得修改或解释 Schema 含义
-
----
-
-### 实体 ID 规则：
-- stable_id = Type_规范化名称
-- 规范化规则：
-  - 全小写
-  - 去除空格与特殊字符
-- 同一文本内相同名称必须生成相同 ID
-- 不得基于上下文语义生成 ID
-
----
-
-### 关系置信度规则：
-- 明确陈述的事实关系：0.8–1.0
-- 间接描述但无歧义：0.6–0.8
-- 仅上下文提及：≤ 0.5
-
----
-
-### 输出要求：
-- 仅返回 JSON
-- 所有关系必须引用已定义的实体 stable_id
-- 不输出解释性文本
-
-### 输出格式：
-{
-    "entities": [
-        {"stable_id": "Doc_README_md", "type": "Document", "canonical_name": "README.md", "properties": {"version": "1.0"}}
-    ],
-    "relations": [
-        {"from_entity_id": "Doc_README_md", "to_entity_id": "Concept_GraphRAG", "relation_type": "describes", "confidence": 0.9, "properties": {}}
-    ]
-}
+### 3. 操作要求：
+- **稳定 ID**：`stable_id` 请使用 `类型_名称小写化`。
+- **丰富属性**：在 `properties` 中记录描述。
+- **输出格式**：仅输出 JSON。
 
 ### 待处理文本：
 {text}
@@ -80,79 +43,65 @@ uses, depends_on, implements, describes, references, member_of, part_of, contain
 
     def __init__(self, llm: LocalLLModel):
         self.llm = llm
-        self.small_model = None
-        self.tokenizer = None
-
-    def _ensure_model_loaded(self):
-        if self.small_model is not None:
-            return
-
-        model_name = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
-        device = os.getenv("EMBEDDING_DEVICE", "gpu")
-        logger.info(f"Loading graph extraction model {model_name} on {device}...")
-
-        transformers_kwargs = {}
-        if device == "gpu":
-            transformers_kwargs["device_map"] = "auto"
-            transformers_kwargs["torch_dtype"] = torch.float16
-        else:
-            transformers_kwargs["device_map"] = "cpu"
-            transformers_kwargs["torch_dtype"] = torch.float32
-
-        transformers_kwargs["trust_remote_code"] = True
-        transformers_kwargs["cache_dir"] = os.getenv("CACHE_PATH", "./cache")
-
-        self.small_model = AutoModelForCausalLM.from_pretrained(
-            model_name, **transformers_kwargs
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name, cache_dir=os.getenv("CACHE_PATH", "./cache")
-        )
-        self.small_model.eval()
-        logger.info("Graph extraction model loaded.")
 
     async def extract_graph(self, text: str) -> Tuple[List[Entity], List[Relation]]:
-        self._ensure_model_loaded()
         prompt = self.EXTRACTION_PROMPT.replace("{text}", text)
+        messages = [{"role": "user", "content": prompt}]
         
-        def _generate():
-            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.small_model.device)
-            with torch.no_grad():
-                outputs = self.small_model.generate(
-                    **inputs,
-                    max_new_tokens=1024,
-                    temperature=0.1,
-                    do_sample=True,
-                    top_p=0.95,
-                    top_k=40,
-                    num_return_sequences=1,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    use_cache=False,
-                )
-            return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
         try:
-            # Run blocking generation in a separate thread
-            response = await asyncio.to_thread(_generate)
-            json_text = self._clean_json_response(response)
-            data = json.loads(json_text)
+            logger.info(f"Extracting semantic graph (text len: {len(text)})...")
+            start_time = time.time()
+            response = await self.llm.chat_at_once(
+                messages, 
+                temperature=0.2,
+                top_p=0.95,
+                max_new_tokens=1536
+            )
+            clean_response = self.llm.extract_after_think(response)
+            
+            logger.info(f"Extraction complete in {time.time() - start_time:.2f}s")
+            
+            json_text = self._clean_json_response(clean_response)
+            json_text = self._clean_json_response(clean_response)
+            try:
+                data = json.loads(json_text)
+            except json.JSONDecodeError:
+                try:
+                    fixed_json = re.sub(r',\s*([\]}])', r'\1', json_text)
+                    
+                    try:
+                        data = json.loads(fixed_json)
+                    except json.JSONDecodeError:
+                        if "'" in fixed_json and '"' not in fixed_json:
+                            fixed_json = fixed_json.replace("'", '"')
+                        data = json.loads(fixed_json)
+                except Exception as e:
+                    logger.error(f"JSON Parse Error after repair attempt: {e}")
+                    logger.error(f"Cleaned text snippet: {json_text[:200]}...")
+                    raise
 
             extracted_entities = []
             for e_data in data.get("entities", []):
                 try:
-                    extracted_entities.append(Entity(**e_data))
+                    entity = Entity(**e_data)
+                    extracted_entities.append(entity)
+                    logger.debug(f"Extracted entity: {entity.canonical_name} ({entity.type})")
                 except Exception as ve:
                     logger.warning(f"Skipping invalid entity: {ve}")
 
             extracted_relations = []
             for r_data in data.get("relations", []):
                 try:
-                    extracted_relations.append(Relation(**r_data))
+                    relation = Relation(**r_data)
+                    extracted_relations.append(relation)
+                    logger.debug(f"Extracted relation: {relation.from_entity_id} -> {relation.relation_type} -> {relation.to_entity_id}")
                 except Exception as ve:
                     logger.warning(f"Skipping invalid relation: {ve}")
+                    
             return extracted_entities, extracted_relations
+
         except Exception as e:
-            logger.error(f"Failed to extract graph from text: {e}")
+            logger.error(f"Failed to extract graph using main LLM: {e}")
             return [], []
 
     def _clean_json_response(self, text: str) -> str:
@@ -161,8 +110,30 @@ uses, depends_on, implements, describes, references, member_of, part_of, contain
             if match:
                 return match.group(1).strip()
         start = text.find("{")
+        if start == -1:
+            return text.strip()
+            
+        brace_count = 0
+        in_string = False
+        escape = False
+        
+        for i in range(start, len(text)):
+            char = text[i]
+            if char == '"' and not escape:
+                in_string = not in_string
+            elif char == '\\' and in_string:
+                escape = not escape
+                continue
+            elif not in_string:
+                if char == "{":
+                    brace_count += 1
+                elif char == "}":
+                    brace_count -= 1
+                    if brace_count == 0:
+                        return text[start : i + 1]
+            escape = False
+        
         end = text.rfind("}") + 1
-        if start != -1 and end != 0:
+        if end > start:
             return text[start:end]
-
         return text.strip()

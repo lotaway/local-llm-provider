@@ -315,7 +315,7 @@ class LocalRAG:
             )
             return len(res["hits"]["hits"]) > 0
         except Exception as e:
-            print(f"Error checking document existence in ES: {e}")
+            logger.error(f"Error checking document existence in ES: {e}")
             return False
 
     def load_documents(
