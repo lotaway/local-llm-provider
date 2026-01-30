@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 from sentence_transformers import SentenceTransformer
 import torch
 import os
@@ -191,7 +195,7 @@ class LocalLLModel:
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
 
-        print("Successfully unloaded model and cleared resources.")
+        logger.info("Successfully unloaded model and cleared resources.")
 
     def _extract_text_from_content(self, content: str | list) -> str:
         if isinstance(content, str):

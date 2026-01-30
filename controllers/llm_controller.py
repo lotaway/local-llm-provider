@@ -186,7 +186,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                         query, stream_callback=stream_callback
                     )
                 except Exception as e:
-                    print(f"RAG Error: {e}")
+                    logger.error(f"RAG Error: {e}")
                 finally:
                     await event_queue.put(None)
 
@@ -280,7 +280,7 @@ async def chat_completions(req: ChatRequest, request: Request):
                             continue
                         await stream_callback(chunk)
                 except Exception as e:
-                    print(f"Chat Error: {e}")
+                    logger.error(f"Chat Error: {e}")
                 finally:
                     await event_queue.put(None)
 

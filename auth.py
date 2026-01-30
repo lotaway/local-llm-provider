@@ -1,5 +1,8 @@
 import os
 import secrets
+import logging
+
+logger = logging.getLogger(__name__)
 
 ADMIN_TOKEN = None
 
@@ -12,13 +15,13 @@ def ensure_admin_token():
             token = f.read().strip()
             if token and token.startswith("sk-") and len(token) >= 32:
                 ADMIN_TOKEN = token
-                print(f"Loaded admin token from {token_file}")
+                logger.info(f"Loaded admin token from {token_file}")
                 return
     token = f"sk-{secrets.token_hex(16)}"
     with open(token_file, "w") as f:
         f.write(token)
     ADMIN_TOKEN = token
-    print(f"Generated new admin token and saved to {token_file}: {token}")
+    logger.info(f"Generated new admin token and saved to {token_file}: {token}")
 
 
 def get_multimodal_headers():

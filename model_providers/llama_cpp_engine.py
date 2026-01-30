@@ -6,7 +6,10 @@ import os
 import signal
 import socket
 import atexit
+import logging
 from typing import AsyncGenerator
+
+logger = logging.getLogger(__name__)
 from .inference_engine import InferenceEngine
 from constants import MODEL_DIR
 
@@ -60,14 +63,14 @@ class LlamaCppEngine(InferenceEngine):
                 for pid_str in pids:
                     pid = int(pid_str)
                     if pid != current_pid and pid != os.getpid():
-                        print(f"Cleaning up orphaned llama-server (PID: {pid})")
+                        logger.info(f"Cleaning up orphaned llama-server (PID: {pid})")
                         try:
                             pgid = os.getpgid(pid)
                             os.killpg(pgid, signal.SIGKILL)
                         except:
                             os.kill(pid, signal.SIGKILL)
         except Exception as e:
-            print(f"Warning during stale process cleanup: {e}")
+            logger.warning(f"Warning during stale process cleanup: {e}")
 
     def _start_server(self):
         self._cleanup_stale_processes()
@@ -103,7 +106,7 @@ class LlamaCppEngine(InferenceEngine):
             run_env["HSA_OVERRIDE_GFX_VERSION"] = gfx_version
             run_env["LLAMA_CPP_IMAGE"] = image
 
-            print(f"Starting llama-server via Docker Compose (Model: {rel_model_path})")
+            logger.info(f"Starting llama-server via Docker Compose (Model: {rel_model_path})")
             subprocess.run(cmd, env=run_env, check=True)
 
             # We monitor the container with docker logs
@@ -148,7 +151,7 @@ class LlamaCppEngine(InferenceEngine):
                 "-fa",
                 "on",
             ]
-            print(f"Starting llama-server via Docker: {' '.join(cmd)}")
+            logger.info(f"Starting llama-server via Docker: {' '.join(cmd)}")
             self.server_process = subprocess.Popen(
                 cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
             )
@@ -195,7 +198,7 @@ class LlamaCppEngine(InferenceEngine):
                 env=run_env,
             )
             f.close()
-            print(f"Starting llama-server local process. Logs: {log_file}")
+            logger.info(f"Starting llama-server local process. Logs: {log_file}")
 
     async def _wait_for_server(self, timeout=120):
         async with httpx.AsyncClient(trust_env=False) as client:
@@ -210,12 +213,12 @@ class LlamaCppEngine(InferenceEngine):
                             if data.get("status") == "ok":
                                 return True
                         except json.JSONDecodeError:
-                            print(
-                                f"DEBUG: Health check returned 200 but invalid JSON: {resp.text}"
+                            logger.debug(
+                                f"Health check returned 200 but invalid JSON: {resp.text}"
                             )
                     else:
-                        print(
-                            f"DEBUG: Status {resp.status_code} from health check: {resp.text}"
+                        logger.debug(
+                            f"Status {resp.status_code} from health check: {resp.text}"
                         )
                 except Exception:
                     pass
@@ -245,8 +248,8 @@ class LlamaCppEngine(InferenceEngine):
             ) as response:
                 if response.status_code != 200:
                     error_data = await response.aread()
-                    print(
-                        f"DEBUG: llama-server returned {response.status_code}: {error_data.decode()}"
+                    logger.error(
+                        f"llama-server returned {response.status_code}: {error_data.decode()}"
                     )
                     raise RuntimeError(f"llama-server error: {error_data.decode()}")
 
@@ -289,7 +292,7 @@ class LlamaCppEngine(InferenceEngine):
     def unload(self):
         if self.server_process:
             try:
-                print(f"Stopping llama-server...")
+                logger.info(f"Stopping llama-server...")
                 if os.getenv("LLAMA_CPP_USE_DOCKER", "false").lower() == "true":
                     subprocess.run(
                         ["docker", "stop", "llp-llama-cpp-server"], capture_output=True
@@ -309,6 +312,6 @@ class LlamaCppEngine(InferenceEngine):
                         except:
                             pass
             except Exception as e:
-                print(f"Error killing llama-server: {e}")
+                logger.error(f"Error killing llama-server: {e}")
             finally:
                 self.server_process = None

@@ -5,6 +5,9 @@ from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Reranker:
@@ -35,7 +38,7 @@ class Reranker:
             try:
                 self.cross_encoder = CrossEncoder(cross_encoder_model)
             except Exception as e:
-                print(f"Warning: Failed to load cross-encoder: {e}")
+                logger.warning(f"Warning: Failed to load cross-encoder: {e}")
                 self.use_cross_encoder = False
     
     def rerank(

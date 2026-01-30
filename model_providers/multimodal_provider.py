@@ -84,7 +84,7 @@ class JanusModel(BaseMultimodalModel):
         load_in_8bit = os.getenv("JANUS_LOAD_IN_8BIT", "true").lower() == "true"
 
         start_time = time.time()
-        print(f"Loading Janus model: {self.model_name}...")
+        logger.info(f"Loading Janus model: {self.model_name}...")
 
         is_mps = torch.backends.mps.is_available()
         is_cuda = torch.cuda.is_available()
@@ -131,7 +131,7 @@ class JanusModel(BaseMultimodalModel):
             self.vl_gpt = self.vl_gpt.to("cpu")
 
         self.vl_gpt.eval()
-        print(f"Janus model loaded in {time.time() - start_time:.2f}s")
+        logger.info(f"Janus model loaded in {time.time() - start_time:.2f}s")
 
     def chat(self, messages: list[dict], **kwargs):
         self.load_model()
@@ -220,7 +220,7 @@ class LlavaModel(BaseMultimodalModel):
 
         from transformers import LlavaForConditionalGeneration, AutoProcessor
 
-        print(f"Loading Llava model: {self.model_name}...")
+        logger.info(f"Loading Llava model: {self.model_name}...")
         start_time = time.time()
         self.processor = AutoProcessor.from_pretrained(self.model_path)
         is_cuda = torch.cuda.is_available()
@@ -236,7 +236,7 @@ class LlavaModel(BaseMultimodalModel):
                 self.model_path, low_cpu_mem_usage=True
             )
 
-        print(f"Llava model loaded in {time.time() - start_time:.2f}s")
+        logger.info(f"Llava model loaded in {time.time() - start_time:.2f}s")
 
     def chat(self, messages: list[dict], **kwargs):
         self.load_model()
@@ -321,7 +321,7 @@ class QwenVLModel(BaseMultimodalModel):
 
         # Note: 'qwen_vl_utils' might be needed for advanced video/image processing
 
-        print(f"Loading QwenVL model: {self.model_name}...")
+        logger.info(f"Loading QwenVL model: {self.model_name}...")
         start_time = time.time()
 
         # Use Qwen2VL class as Qwen3VL is likely compatible or alias
@@ -340,7 +340,7 @@ class QwenVLModel(BaseMultimodalModel):
             )
 
         self.processor = AutoProcessor.from_pretrained(self.model_path)
-        print(f"QwenVL model loaded in {time.time() - start_time:.2f}s")
+        logger.info(f"QwenVL model loaded in {time.time() - start_time:.2f}s")
 
     def chat(self, messages: list[dict], **kwargs):
         self.load_model()

@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
         pass
 
     if getattr(model_providers, "local_model", None):
-        print("Shutting down... unloading local model.")
+        logger.info("Shutting down... unloading local model.")
         model_providers.local_model.unload_model()
 
 
@@ -186,22 +186,22 @@ async def query_rag(request: Request):
             "2. 重新启动服务以重新下载模型\n"
             "3. 检查网络连接"
         )
-        print(f"错误: {error_msg}")
+        logger.error(f"错误: {error_msg}")
         raise HTTPException(status_code=500, detail=error_msg)
 
     except ValueError as e:
         error_msg = f"配置错误: {str(e)}"
-        print(f"错误: {error_msg}")
+        logger.error(f"错误: {error_msg}")
         raise HTTPException(status_code=400, detail=error_msg)
 
     except RuntimeError as e:
         error_msg = f"运行时错误: {str(e)}"
-        print(f"错误: {error_msg}")
+        logger.error(f"错误: {error_msg}")
         raise HTTPException(status_code=500, detail=error_msg)
 
     except Exception as e:
         error_msg = f"未知错误: {type(e).__name__} - {str(e)}"
-        print(f"错误: {error_msg}")
+        logger.error(f"错误: {error_msg}")
         import traceback
 
         traceback.print_exc()
@@ -215,9 +215,9 @@ async def poe(request: Request, path: str):
     if backend_globals.poe_model_provider is None:
         backend_globals.poe_model_provider = PoeModelProvider()
         res = backend_globals.poe_model_provider.ping()
-        print(f"ping: {res}")
+        logger.info(f"ping: {res}")
     url = str(request.url)
-    print(f"url: {url}")
+    logger.debug(f"url: {url}")
     try:
         resp = await backend_globals.poe_model_provider.handle_request(path, request)
 

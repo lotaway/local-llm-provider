@@ -1,7 +1,10 @@
 import os
 import json
 import re
+import logging
 from pymilvus import connections, utility
+
+logger = logging.getLogger(__name__)
 import gc
 import torch
 from sentence_transformers import SentenceTransformer
@@ -233,7 +236,7 @@ class LocalRAG:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
 
-        print(f"Document saved to {file_path}")
+        logger.info(f"Document saved to {file_path}")
 
         metadata = {"source": source, "title": title}
         metadata.update({k: v for k, v in kwargs.items() if v is not None})
@@ -247,12 +250,12 @@ class LocalRAG:
         vectorstore = await self.get_or_create_vectorstore()
         if vectorstore:
             vectorstore.add_documents(chunks)
-            print(f"Added {len(chunks)} chunks to Milvus")
+            logger.info(f"Added {len(chunks)} chunks to Milvus")
 
         # Update External Search Store (Elasticsearch)
         if self.use_hybrid_search and self.es_retriever:
             self.es_retriever.index_documents(chunks)
-            print(f"Added {len(chunks)} chunks to Elasticsearch")
+            logger.info(f"Added {len(chunks)} chunks to Elasticsearch")
 
         await self._async_extract_graph(chunks, source)
 
@@ -260,16 +263,16 @@ class LocalRAG:
 
     async def _async_extract_graph(self, chunks: List[Document], source_doc_id: str):
         """Run graph extraction synchronously to ensure completion before proceeding"""
-        print(f"Starting graph extraction for {len(chunks)} chunks...")
+        logger.info(f"Starting graph extraction for {len(chunks)} chunks...")
         total_entities = 0
         total_relations = 0
         for i, chunk in enumerate(chunks):
             try:
-                print(f"Processing chunk {i+1}/{len(chunks)}...")
+                logger.info(f"Processing chunk {i+1}/{len(chunks)}...")
                 entities, relations = await self.graph_extractor.extract_graph(
                     chunk.page_content
                 )
-                print(
+                logger.info(
                     f"Extracted {len(entities)} entities and {len(relations)} relations from chunk {i+1}"
                 )
 
@@ -283,11 +286,11 @@ class LocalRAG:
                     total_relations += 1
 
             except Exception as e:
-                print(f"Error during graph extraction for chunk {i+1}: {e}")
+                logger.error(f"Error during graph extraction for chunk {i+1}: {e}")
                 import traceback
 
                 traceback.print_exc()
-        print(
+        logger.info(
             f"Graph extraction completed. Total entities: {total_entities}, Total relations: {total_relations}"
         )
 
@@ -324,72 +327,72 @@ class LocalRAG:
         """加载多种格式的文档"""
         docs = []
 
-        print(f"开始扫描文档目录: {self.data_path}")
+        logger.info(f"开始扫描文档目录: {self.data_path}")
 
         for root, _, files in os.walk(self.data_path):
-            print(f"当前目录: {root}, 文件数: {len(files)}")
+            logger.info(f"当前目录: {root}, 文件数: {len(files)}")
             for file in files:
                 file_path = os.path.join(root, file)
                 file_ext = os.path.splitext(file)[1].lower()
-                print(f"处理文件: {file}, 扩展名: {file_ext}, 完整路径: {file_path}")
+                logger.info(f"处理文件: {file}, 扩展名: {file_ext}, 完整路径: {file_path}")
 
                 try:
                     if file_ext in [".txt"]:
-                        print(f"加载文本文件: {file}")
+                        logger.info(f"加载文本文件: {file}")
                         loader = TextLoader(file_path, encoding="utf-8")
                         loaded = loader.load()
-                        print(f"成功加载 {len(loaded)} 个文本片段")
+                        logger.info(f"成功加载 {len(loaded)} 个文本片段")
                         docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext in [".md", ".markdown"]:
-                        print(f"加载Markdown文件: {file}")
+                        logger.info(f"加载Markdown文件: {file}")
                         try:
                             loader = UnstructuredMarkdownLoader(file_path)
                             loaded = loader.load()
                         except Exception as e:
-                            print(f"UnstructuredMarkdownLoader 加载失败，回退到 TextLoader: {e}")
+                            logger.warning(f"UnstructuredMarkdownLoader 加载失败，回退到 TextLoader: {e}")
                             loader = TextLoader(file_path, encoding="utf-8")
                             loaded = loader.load()
-                        print(f"成功加载 {len(loaded)} 个Markdown片段")
+                        logger.info(f"成功加载 {len(loaded)} 个Markdown片段")
                         docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext == ".pdf":
-                        print(f"加载PDF文件: {file}")
+                        logger.info(f"加载PDF文件: {file}")
                         loader = PyPDFLoader(file_path)
                         loaded = loader.load()
-                        print(f"成功加载 {len(loaded)} 个PDF页面")
+                        logger.info(f"成功加载 {len(loaded)} 个PDF页面")
                         docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext in [".docx", ".doc"]:
-                        print(f"加载Word文档: {file}")
+                        logger.info(f"加载Word文档: {file}")
                         loader = UnstructuredWordDocumentLoader(file_path)
                         loaded = loader.load()
-                        print(f"成功加载 {len(loaded)} 个Word文档片段")
+                        logger.info(f"成功加载 {len(loaded)} 个Word文档片段")
                         docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext in [".pptx", ".ppt"]:
-                        print(f"加载PPT文件: {file}")
+                        logger.info(f"加载PPT文件: {file}")
                         loader = UnstructuredPowerPointLoader(file_path)
                         loaded = loader.load()
-                        print(f"成功加载 {len(loaded)} 个PPT幻灯片")
+                        logger.info(f"成功加载 {len(loaded)} 个PPT幻灯片")
                         docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext in [".xlsx", ".xls"]:
-                        print(f"加载Excel文件: {file}")
+                        logger.info(f"加载Excel文件: {file}")
                         loader = UnstructuredExcelLoader(file_path)
                         loaded = loader.load()
-                        print(f"成功加载 {len(loaded)} 个Excel工作表")
+                        logger.info(f"成功加载 {len(loaded)} 个Excel工作表")
                         docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext == ".csv":
-                        print(f"加载CSV文件: {file}")
+                        logger.info(f"加载CSV文件: {file}")
                         loader = CSVLoader(file_path)
                         loaded = loader.load()
-                        print(f"成功加载 {len(loaded)} 个CSV记录")
+                        logger.info(f"成功加载 {len(loaded)} 个CSV记录")
                         docs.extend(after_doc_load(loaded, file))
 
                     elif file_ext == ".json":
-                        print(f"加载JSON文件: {file}")
+                        logger.info(f"加载JSON文件: {file}")
                         try:
                             with open(file_path, "r", encoding="utf-8") as f:
                                 data = json.load(f)
@@ -397,17 +400,17 @@ class LocalRAG:
                             gpt_loader = ChatGPTLoader()
                             ds_loader = DeepSeekLoader()
                             if gpt_loader.check(data):
-                                print(f"检测到 ChatGPT 导出格式: {file}")
+                                logger.info(f"检测到 ChatGPT 导出格式: {file}")
                                 loaded = gpt_loader.load(data, file)
-                                print(
+                                logger.info(
                                     f"成功解析 ChatGPT 对话，生成 {len(loaded)} 个文档片段"
                                 )
                                 docs.extend(after_doc_load(loaded, file))
 
                             elif ds_loader.check(data):
-                                print(f"检测到 DeepSeek 导出格式: {file}")
+                                logger.info(f"检测到 DeepSeek 导出格式: {file}")
                                 loaded = ds_loader.load(data, file)
-                                print(
+                                logger.info(
                                     f"成功解析 DeepSeek 对话，生成 {len(loaded)} 个文档片段"
                                 )
                                 docs.extend(after_doc_load(loaded, file))
@@ -420,11 +423,11 @@ class LocalRAG:
                                     text_content=True,
                                 )
                                 loaded = loader.load()
-                                print(f"成功加载 {len(loaded)} 个JSON条目")
+                                logger.info(f"成功加载 {len(loaded)} 个JSON条目")
                                 docs.extend(after_doc_load(loaded, file))
 
                         except Exception as e:
-                            print(f"解析 JSON 文件 {file} 失败: {e}")
+                            logger.error(f"解析 JSON 文件 {file} 失败: {e}")
                             # Fallback
                             try:
                                 loader = JSONLoader(
@@ -435,7 +438,7 @@ class LocalRAG:
                                 loaded = loader.load()
                                 docs.extend(after_doc_load(loaded, file))
                             except Exception as e2:
-                                print(f"回退加载也失败: {e2}")
+                                logger.error(f"回退加载也失败: {e2}")
 
                     elif file_ext in [
                         ".py",
@@ -449,31 +452,31 @@ class LocalRAG:
                         ".cs",
                         ".swift",
                     ]:
-                        print(f"加载代码文件: {file}")
+                        logger.info(f"加载代码文件: {file}")
                         loader = TextLoader(file_path, encoding="utf-8")
                         loaded = loader.load()
-                        print(f"成功加载 {len(loaded)} 个代码片段")
+                        logger.info(f"成功加载 {len(loaded)} 个代码片段")
                         docs.extend(after_doc_load(loaded, file))
 
                     else:
-                        print(f"跳过不支持的文件格式: {file}")
+                        logger.warning(f"跳过不支持的文件格式: {file}")
 
                 except Exception as e:
-                    print(f"加载文件 {file} 时出错: {str(e)}")
+                    logger.error(f"加载文件 {file} 时出错: {str(e)}")
                     import traceback
 
                     traceback.print_exc()
 
-        print(f"成功加载 {len(docs)} 个文档片段")
+        logger.info(f"成功加载 {len(docs)} 个文档片段")
         return docs
 
     def get_embeddings(self):
-        print("Initializing embedding model")
+        logger.info("Initializing embedding model")
         if hasattr(self, "_embeddings") and self._embeddings is not None:
             return self._embeddings
         
         device = os.getenv("EMBEDDING_DEVICE", "cpu")
-        print(f"Loading embedding model on {device}")
+        logger.info(f"Loading embedding model on {device}")
         
         embeddings = HuggingFaceEmbeddings(
             model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
@@ -489,7 +492,7 @@ class LocalRAG:
         )
         chunks = text_splitter.split_documents(docs)
         embeddings = self.get_embeddings()
-        print(f"共切分为 {len(chunks)} 个文本块，开始分批向量化...")
+        logger.info(f"共切分为 {len(chunks)} 个文本块，开始分批向量化...")
 
         # 分批处理以避免显存溢出
         batch_size = 50
@@ -497,7 +500,7 @@ class LocalRAG:
 
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i : i + batch_size]
-            print(
+            logger.info(
                 f"正在处理第 {i + 1} 到 {min(i + batch_size, len(chunks))} 个文本块..."
             )
 
@@ -505,7 +508,7 @@ class LocalRAG:
                 vectorstore = Milvus.from_documents(
                     documents=batch,
                     embedding=embeddings,
-                    connection_args={"host": self.host, "port": self.port},
+                    connection_args={"uri": self.connection_uri},
                     collection_name=self.collection,
                 )
             else:
@@ -530,14 +533,14 @@ class LocalRAG:
         has_graph = not self.neo4j_repo.is_empty()
 
         if has_milvus and has_graph:
-            print(f"Collection '{self.collection}' and Graph already exist, reusing them.")
+            logger.info(f"Collection '{self.collection}' and Graph already exist, reusing them.")
             return Milvus(
                 embedding_function=embeddings,
                 connection_args={"uri": self.connection_uri},
                 collection_name=self.collection,
             )
 
-        print(
+        logger.info(
             f"Initialization needed: Milvus status (exists={has_milvus}), Graph status (exists={has_graph})"
         )
         docs = self.load_documents()
@@ -545,10 +548,10 @@ class LocalRAG:
             if not has_milvus:
                 raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档，无法初始化向量库")
             else:
-                print(f"Warning: No documents found in {self.data_path}, but Milvus collection exists. Returning existing collection.")
+                logger.warning(f"Warning: No documents found in {self.data_path}, but Milvus collection exists. Returning existing collection.")
                 return Milvus(
                     embedding_function=embeddings,
-                    connection_args={"host": self.host, "port": self.port},
+                    connection_args={"uri": self.connection_uri},
                     collection_name=self.collection,
                 )
 
@@ -559,13 +562,13 @@ class LocalRAG:
 
         vectorstore = None
         if not has_milvus:
-            print(f"Creating Milvus collection '{self.collection}' and indexing documents...")
+            logger.info(f"Creating Milvus collection '{self.collection}' and indexing documents...")
             if self.use_hybrid_search and self.es_retriever:
-                print("Indexing documents to Elasticsearch...")
+                logger.info("Indexing documents to Elasticsearch...")
                 self.es_retriever.index_documents(chunks)
             vectorstore = self.build_vectorstore(docs)
         else:
-            print(f"Collection '{self.collection}' already exists, reusing it.")
+            logger.info(f"Collection '{self.collection}' already exists, reusing it.")
             vectorstore = Milvus(
                 embedding_function=embeddings,
                 connection_args={"uri": self.connection_uri},
@@ -573,7 +576,7 @@ class LocalRAG:
             )
 
         if not has_graph:
-            print("Scheduling graph extraction in background...")
+            logger.info("Scheduling graph extraction in background...")
             asyncio.run_coroutine_threadsafe(
                 self._async_extract_graph(chunks, "initial_load"), main_loop
             )
@@ -585,7 +588,7 @@ class LocalRAG:
         # to avoid blocking the async event loop
         import asyncio
 
-        print("Loading vectorstore (this may take a while)...")
+        logger.info("Loading vectorstore (this may take a while)...")
         loop = asyncio.get_running_loop()
         vectorstore = await asyncio.to_thread(self._sync_get_or_create_vectorstore, loop)
         return vectorstore
@@ -598,14 +601,14 @@ class LocalRAG:
             # Non-streaming mode - use the existing chain with await
             return await cast(RunnableSequence, self.rag_chain).ainvoke(question)
         else:
-            print("Starting RAG generation...")
+            logger.info("Starting RAG generation...")
             if hasattr(self, "retrieval_runnable"):
                 retrieval_runnable = self.retrieval_runnable
             else:
-                print("Initializing RAG chain for retrieval...")
+                logger.info("Initializing RAG chain for retrieval...")
                 await self.init_rag_chain()
                 retrieval_runnable = self.retrieval_runnable
-            print("Retrieving context...")
+            logger.info("Retrieving context...")
             # retrieval_runnable might be synchronous so we wrap it or just invoke if it's CPU bound but fast
             # RunnableSequence.ainvoke handles sync steps in threadpool usually
             # But here we are invoking runnable directly.
@@ -615,25 +618,24 @@ class LocalRAG:
 
             context_docs = await asyncio.to_thread(retrieval_runnable.invoke, question)
 
-            print(f"Retrieved {len(context_docs)} docs")
             context = "\n\n".join([doc.page_content for doc in context_docs])
 
             # Augment with Graph Context
             graph_context = await self.graph_retriever.retrieve_context(question)
             if graph_context:
-                print("Adding graph context to prompt...")
+                logger.info("Adding graph context to prompt...")
                 context = f"{context}\n\n{graph_context}"
 
-            print("Formatting prompt...")
+            logger.info("Formatting prompt...")
 
             prompt_str = ChatPromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
             # prompt_str.invoke is fast
             prompt_value = prompt_str.invoke({"context": context, "question": question})
             messages = self.llm.format_messages(prompt_value)
-            print("Starting LLM chat stream...")
+            logger.info("Starting LLM chat stream...")
 
             full_response = ""
-            print("Entering stream loop...")
+            logger.info("Entering stream loop...")
             try:
                 async for chunk in self.llm.chat(
                     messages, temperature=0.1, top_p=0.95, top_k=40
@@ -654,9 +656,9 @@ class LocalRAG:
                             else:
                                 stream_callback(chunk)
             except Exception as e:
-                print(f"Stream error: {e}")
+                logger.error(f"Stream error: {e}")
                 raise e
-            print("Stream finished.")
+            logger.info("Stream finished.")
 
             return self.llm.extract_after_think(full_response)
 
@@ -667,7 +669,7 @@ class LocalRAG:
             self.rag_chain = None  # Set to None after deletion
         gc.collect()
         torch.cuda.empty_cache()
-        print("已释放 RAG 相关显存资源")
+        logger.info("已释放 RAG 相关显存资源")
 
 
 def command_line_rag():

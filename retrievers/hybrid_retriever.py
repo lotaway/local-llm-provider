@@ -5,6 +5,9 @@ from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class HybridRetriever(BaseRetriever):
@@ -70,7 +73,7 @@ class HybridRetriever(BaseRetriever):
              # Fetch more candidates for reranking/fusion
             vector_docs = self.vectorstore.similarity_search_with_score(query, k=self.k * 2)
         except Exception as e:
-            print(f"Vector search failed: {e}")
+            logger.error(f"Vector search failed: {e}")
             vector_docs = []
         
         # BM25 search via external retriever
@@ -87,7 +90,7 @@ class HybridRetriever(BaseRetriever):
                 bm25_docs_with_scores = [(d, 1.0 / (i + 1)) for i, d in enumerate(docs)]
                 
         except Exception as e:
-            print(f"BM25 search failed: {e}")
+            logger.error(f"BM25 search failed: {e}")
             bm25_docs_with_scores = []
         
         # Normalize scores

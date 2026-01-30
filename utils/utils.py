@@ -35,7 +35,7 @@ class DeviceUtils:
             available_memory_gb = max(1, (total_memory / (1024**3)) - reserved_gb)
             max_memory["cpu"] = f"{int(available_memory_gb)}GiB"
             if torch.backends.mps.is_available():
-                print("MPS 加速可用")
+                logger.info("MPS 加速可用")
         else:
             if torch.cuda.is_available():
                 gpu_memory = torch.cuda.get_device_properties(0).total_memory
@@ -45,7 +45,7 @@ class DeviceUtils:
             available_cpu_gb = max(1, (total_memory / (1024**3)) - 8)
             max_memory["cpu"] = f"{int(available_cpu_gb)}GiB"
         if max_memory.get("cpu") == "0GiB" and max_memory.get(0) == "0GiB":
-            print("内存检测异常，使用默认配置")
+            logger.warning("内存检测异常，使用默认配置")
             max_memory[0] = f"{24 - 4}GiB"
             max_memory["cpu"] = f"{60}GiB"
 
