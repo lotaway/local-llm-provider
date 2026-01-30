@@ -7,6 +7,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from model_providers import LocalLLModel
 from schemas.graph import Entity, Relation
 import os
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +88,11 @@ uses, depends_on, implements, describes, references, member_of, part_of, contain
             return
 
         model_name = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
-        device = os.getenv("EMBEDDING_DEVICE", "cpu")
+        device = os.getenv("EMBEDDING_DEVICE", "gpu")
         logger.info(f"Loading graph extraction model {model_name} on {device}...")
 
         transformers_kwargs = {}
-        if device == "cuda":
+        if device == "gpu":
             transformers_kwargs["device_map"] = "auto"
             transformers_kwargs["torch_dtype"] = torch.float16
         else:
@@ -113,7 +114,8 @@ uses, depends_on, implements, describes, references, member_of, part_of, contain
     async def extract_graph(self, text: str) -> Tuple[List[Entity], List[Relation]]:
         self._ensure_model_loaded()
         prompt = self.EXTRACTION_PROMPT.replace("{text}", text)
-        try:
+        
+        def _generate():
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.small_model.device)
             with torch.no_grad():
                 outputs = self.small_model.generate(
@@ -127,10 +129,12 @@ uses, depends_on, implements, describes, references, member_of, part_of, contain
                     pad_token_id=self.tokenizer.eos_token_id,
                     use_cache=False,
                 )
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
+        try:
+            # Run blocking generation in a separate thread
+            response = await asyncio.to_thread(_generate)
             json_text = self._clean_json_response(response)
-
             data = json.loads(json_text)
 
             extracted_entities = []
