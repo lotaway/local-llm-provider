@@ -31,6 +31,8 @@ services:
       - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-11.0.0}
       - ROCM_PATH=/opt/rocm
       - HIP_PATH=/opt/rocm/hip
+      - NEO4J_BOLT_URL=${NEO4J_BOLT_URL:-bolt://neo4j:7687}
+      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/123123123}
 
 
     working_dir: /app

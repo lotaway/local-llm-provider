@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class Neo4jRepository:
     def __init__(self):
         uri = os.getenv("NEO4J_BOLT_URL", "bolt://localhost:7687")
-        auth_env = os.getenv("NEO4J_AUTH", "neo4j/123123123")
+        auth_env = os.getenv("NEO4J_AUTH")
         try:
             parts = auth_env.split("/")
             user = parts[0]
