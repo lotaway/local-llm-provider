@@ -24,6 +24,17 @@ class Neo4jRepository:
     def close(self):
         self.driver.close()
 
+    def is_empty(self) -> bool:
+        """Check if the database has any Entity nodes"""
+        try:
+            with self.driver.session() as session:
+                result = session.run("MATCH (n:Entity) RETURN count(n) AS count")
+                record = result.single()
+                return record["count"] == 0 if record else True
+        except Exception as e:
+            logger.error(f"Error checking if Neo4j is empty: {e}")
+            return True
+
     def merge_entity(self, entity: Entity):
         """Idempotent merge of an entity node"""
         with self.driver.session() as session:

@@ -24,6 +24,7 @@ dependencies = [
   "pymilvus>=2.6.3",
   "sentence-transformers>=5.1.2",
   "unstructured>=0.18.20",
+  "markdown",
   "langchain_milvus>=0.3.0",
   # Agent dependencies
   "rank-bm25==0.2.2",

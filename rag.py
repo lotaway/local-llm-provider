@@ -120,6 +120,8 @@ class LocalRAG:
 - 关键词查询：按上述特殊处理方式输出
 - 无相关内容：使用规则2或7的标准回复
             """
+            
+    rag_chain: RunnableSequence | None = None
 
     def __init__(
         self,
@@ -131,17 +133,19 @@ class LocalRAG:
     ):
         self.llm = llm
         self.data_path = data_path
+        self.reranker = Reranker() if use_reranking else None
+
+        # Milvus connection details
         self.host = os.getenv("DB_HOST", "localhost")
         self.port = os.getenv("DB_PORT", "19530")
         self.collection = os.getenv("DB_COLLECTION", "rag_docs")
-        self.rag_chain: RunnableSequence | None = None
+        self.connection_uri = f"http://{self.host}:{self.port}"
 
         # Enhanced retrieval settings
         self.use_hybrid_search = use_hybrid_search
         self.use_reranking = use_reranking
-        self.retrieval_strategy = retrieval_strategy  # "adaptive", "hybrid", "vector"
-        self.reranker = Reranker() if use_reranking else None
-
+        self.retrieval_strategy = retrieval_strategy
+        
         # Initialize ES Retriever
         self.es_retriever = ESBM25Retriever() if use_hybrid_search else None
 
@@ -339,8 +343,13 @@ class LocalRAG:
 
                     elif file_ext in [".md", ".markdown"]:
                         print(f"加载Markdown文件: {file}")
-                        loader = UnstructuredMarkdownLoader(file_path)
-                        loaded = loader.load()
+                        try:
+                            loader = UnstructuredMarkdownLoader(file_path)
+                            loaded = loader.load()
+                        except Exception as e:
+                            print(f"UnstructuredMarkdownLoader 加载失败，回退到 TextLoader: {e}")
+                            loader = TextLoader(file_path, encoding="utf-8")
+                            loaded = loader.load()
                         print(f"成功加载 {len(loaded)} 个Markdown片段")
                         docs.extend(after_doc_load(loaded, file))
 
@@ -514,39 +523,62 @@ class LocalRAG:
         Synchronous version of get_or_create_vectorstore.
         This should be called from a thread pool.
         """
-        connections.connect(host=self.host, port=self.port)
+        connections.connect(uri=self.connection_uri)
         embeddings = self.get_embeddings()
 
-        if not utility.has_collection(self.collection):
-            print(
-                f"Collection '{self.collection}' not found, creating and inserting documents..."
-            )
-            docs = self.load_documents()
-            if not docs:
-                raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档")
-            text_splitter = AdaptiveTextSplitter(
-                min_chunk=500, max_chunk=2000, chunk_overlap=200
-            )
-            chunks = text_splitter.split_documents(docs)
+        has_milvus = utility.has_collection(self.collection)
+        has_graph = not self.neo4j_repo.is_empty()
 
+        if has_milvus and has_graph:
+            print(f"Collection '{self.collection}' and Graph already exist, reusing them.")
+            return Milvus(
+                embedding_function=embeddings,
+                connection_args={"uri": self.connection_uri},
+                collection_name=self.collection,
+            )
+
+        print(
+            f"Initialization needed: Milvus status (exists={has_milvus}), Graph status (exists={has_graph})"
+        )
+        docs = self.load_documents()
+        if not docs:
+            if not has_milvus:
+                raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档，无法初始化向量库")
+            else:
+                print(f"Warning: No documents found in {self.data_path}, but Milvus collection exists. Returning existing collection.")
+                return Milvus(
+                    embedding_function=embeddings,
+                    connection_args={"host": self.host, "port": self.port},
+                    collection_name=self.collection,
+                )
+
+        text_splitter = AdaptiveTextSplitter(
+            min_chunk=500, max_chunk=2000, chunk_overlap=200
+        )
+        chunks = text_splitter.split_documents(docs)
+
+        vectorstore = None
+        if not has_milvus:
+            print(f"Creating Milvus collection '{self.collection}' and indexing documents...")
             if self.use_hybrid_search and self.es_retriever:
                 print("Indexing documents to Elasticsearch...")
                 self.es_retriever.index_documents(chunks)
-
-            print("Scheduling graph extraction in background...")
-            asyncio.run_coroutine_threadsafe(
-                self._async_extract_graph(chunks, "initial_load"), 
-                main_loop
-            )
-
-            return self.build_vectorstore(docs)
+            vectorstore = self.build_vectorstore(docs)
         else:
             print(f"Collection '{self.collection}' already exists, reusing it.")
-            return Milvus(
+            vectorstore = Milvus(
                 embedding_function=embeddings,
-                connection_args={"host": self.host, "port": self.port},
+                connection_args={"uri": self.connection_uri},
                 collection_name=self.collection,
             )
+
+        if not has_graph:
+            print("Scheduling graph extraction in background...")
+            asyncio.run_coroutine_threadsafe(
+                self._async_extract_graph(chunks, "initial_load"), main_loop
+            )
+
+        return vectorstore
 
     async def get_or_create_vectorstore(self):
         # Run all synchronous blocking operations in a thread pool

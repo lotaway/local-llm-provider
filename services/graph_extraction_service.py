@@ -114,17 +114,18 @@ uses, depends_on, implements, describes, references, member_of, part_of, contain
         self._ensure_model_loaded()
         prompt = self.EXTRACTION_PROMPT.replace("{text}", text)
         try:
-            inputs = self.tokenizer(prompt, return_tensors="pt")
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.small_model.device)
             with torch.no_grad():
                 outputs = self.small_model.generate(
                     **inputs,
-                    max_length=1024,
+                    max_new_tokens=1024,
                     temperature=0.1,
                     do_sample=True,
                     top_p=0.95,
                     top_k=40,
                     num_return_sequences=1,
                     pad_token_id=self.tokenizer.eos_token_id,
+                    use_cache=False,
                 )
             response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
