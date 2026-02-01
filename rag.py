@@ -4,6 +4,7 @@ import re
 import logging
 import hashlib
 from pymilvus import connections, utility
+from constants import DATA_PATH, DB_HOST, DB_PORT, DB_COLLECTION
 
 logger = logging.getLogger(__name__)
 import gc
@@ -40,7 +41,6 @@ import asyncio
 
 
 class AdaptiveTextSplitter(TextSplitter):
-
     def __init__(self, min_chunk=500, max_chunk=2000, chunk_overlap=0, **kwargs):
         super().__init__(**kwargs)
         self.min_chunk = min_chunk
@@ -125,13 +125,13 @@ class LocalRAG:
 - 关键词查询：按上述特殊处理方式输出
 - 无相关内容：使用规则2或7的标准回复
             """
-            
+
     rag_chain: RunnableSequence | None = None
 
     def __init__(
         self,
         llm: LocalLLModel,
-        data_path=os.getenv("DATA_PATH", os.getenv("DOCS_PATH", "./docs")),
+        data_path=DATA_PATH,
         use_hybrid_search: bool = True,
         use_reranking: bool = True,
         retrieval_strategy: str = "adaptive",
@@ -141,19 +141,19 @@ class LocalRAG:
         self.reranker = Reranker() if use_reranking else None
 
         # Milvus connection details
-        self.host = os.getenv("DB_HOST", "localhost")
-        self.port = os.getenv("DB_PORT", "19530")
-        self.collection = os.getenv("DB_COLLECTION", "rag_docs")
+        self.host = DB_HOST
+        self.port = DB_PORT
+        self.collection = DB_COLLECTION
         self.connection_uri = f"http://{self.host}:{self.port}"
 
         # Enhanced retrieval settings
         self.use_hybrid_search = use_hybrid_search
         self.use_reranking = use_reranking
         self.retrieval_strategy = retrieval_strategy
-        
+
         # Initialize MongoDB as source of truth
         self.mongo_repo = MongoDBRepository()
-        
+
         # Initialize ES Retriever
         self.es_retriever = ESBM25Retriever() if use_hybrid_search else None
 
@@ -242,14 +242,14 @@ class LocalRAG:
 
         # Calculate checksum
         checksum = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        
+
         # Generate doc_id
         doc_id = f"doc_{checksum[:16]}"
-        
+
         # Save to MongoDB
         metadata = {"title": title}
         metadata.update({k: v for k, v in kwargs.items() if v is not None})
-        
+
         self.mongo_repo.save_document(
             doc_id=doc_id,
             content=content,
@@ -258,23 +258,26 @@ class LocalRAG:
             filename=filename,
             format=content_type,
             checksum=f"sha256:{checksum}",
-            metadata=metadata
+            metadata=metadata,
         )
-        
+
         logger.info(f"Document {doc_id} saved to MongoDB")
 
         # Step 2: Generate chunks and save to MongoDB
-        doc = Document(page_content=content, metadata={"source": source, "title": title, "doc_id": doc_id})
+        doc = Document(
+            page_content=content,
+            metadata={"source": source, "title": title, "doc_id": doc_id},
+        )
         text_splitter = AdaptiveTextSplitter(
             min_chunk=500, max_chunk=2000, chunk_overlap=200
         )
         langchain_chunks = text_splitter.split_documents([doc])
-        
+
         # Save chunks to MongoDB with stable IDs
         chunk_records = []
         for idx, chunk in enumerate(langchain_chunks):
             chunk_id = f"{doc_id}_chunk_{idx:04d}"
-            
+
             chunk_record = self.mongo_repo.save_chunk(
                 chunk_id=chunk_id,
                 doc_id=doc_id,
@@ -282,14 +285,14 @@ class LocalRAG:
                 text=chunk.page_content,
                 offset_start=0,  # Could calculate actual offsets if needed
                 offset_end=len(chunk.page_content),
-                metadata=chunk.metadata
+                metadata=chunk.metadata,
             )
             chunk_records.append(chunk_record)
-            
+
             # Update langchain chunk metadata with chunk_id
             chunk.metadata["chunk_id"] = chunk_id
             chunk.metadata["doc_id"] = doc_id
-        
+
         self.mongo_repo.update_document_status(doc_id, "chunked", True)
         logger.info(f"Saved {len(chunk_records)} chunks to MongoDB")
 
@@ -299,11 +302,13 @@ class LocalRAG:
             # Add documents with chunk_id in metadata
             vectorstore.add_documents(langchain_chunks)
             logger.info(f"Added {len(langchain_chunks)} chunks to Milvus")
-            
+
             # Update embedding status in MongoDB
             for chunk_record in chunk_records:
-                self.mongo_repo.update_chunk_embedding_status(chunk_record["chunk_id"], "done")
-        
+                self.mongo_repo.update_chunk_embedding_status(
+                    chunk_record["chunk_id"], "done"
+                )
+
         self.mongo_repo.update_document_status(doc_id, "embedded", True)
 
         # Step 4: Index to Elasticsearch
@@ -319,28 +324,32 @@ class LocalRAG:
 
     async def _async_extract_graph(self, chunks: List[Document], source_doc_id: str):
         logger.info(f"Starting graph extraction for {len(chunks)} chunks...")
-        
+
         # Create Document node in Neo4j
         doc_metadata = chunks[0].metadata if chunks else {}
         doc_title = doc_metadata.get("title", source_doc_id)
-        
+
         self.neo4j_repo.session.run(
             """
             MERGE (d:Document {doc_id: $doc_id})
             SET d.filename = $filename
             """,
             doc_id=source_doc_id,
-            filename=doc_title
+            filename=doc_title,
         )
-        
+
         total_entities = 0
         total_relations = 0
-        
+
         for i, chunk in enumerate(chunks):
             try:
-                chunk_id = chunk.metadata.get("chunk_id", f"{source_doc_id}_chunk_{i:04d}")
-                logger.info(f"Processing chunk {i+1}/{len(chunks)} (chunk_id: {chunk_id})...")
-                
+                chunk_id = chunk.metadata.get(
+                    "chunk_id", f"{source_doc_id}_chunk_{i:04d}"
+                )
+                logger.info(
+                    f"Processing chunk {i + 1}/{len(chunks)} (chunk_id: {chunk_id})..."
+                )
+
                 # Create Chunk pointer node in Neo4j (ID only, no text)
                 self.neo4j_repo.session.run(
                     """
@@ -349,9 +358,9 @@ class LocalRAG:
                     """,
                     chunk_id=chunk_id,
                     doc_id=source_doc_id,
-                    index=i
+                    index=i,
                 )
-                
+
                 # Create relationship: Document -> Chunk
                 self.neo4j_repo.session.run(
                     """
@@ -360,21 +369,21 @@ class LocalRAG:
                     MERGE (d)-[:CONTAINS]->(c)
                     """,
                     doc_id=source_doc_id,
-                    chunk_id=chunk_id
+                    chunk_id=chunk_id,
                 )
-                
+
                 # Extract entities and relations from chunk text
                 entities, relations = await self.graph_extractor.extract_graph(
                     chunk.page_content
                 )
                 logger.info(
-                    f"Extracted {len(entities)} entities and {len(relations)} relations from chunk {i+1}"
+                    f"Extracted {len(entities)} entities and {len(relations)} relations from chunk {i + 1}"
                 )
 
                 for entity in entities:
                     self.neo4j_repo.merge_entity(entity)
                     total_entities += 1
-                    
+
                     # Create relationship: Chunk -> Concept
                     self.neo4j_repo.session.run(
                         """
@@ -383,7 +392,7 @@ class LocalRAG:
                         MERGE (c)-[:DESCRIBES]->(e)
                         """,
                         chunk_id=chunk_id,
-                        stable_id=entity.stable_id
+                        stable_id=entity.stable_id,
                     )
 
                 # Merge concept relations
@@ -393,10 +402,11 @@ class LocalRAG:
                     total_relations += 1
 
             except Exception as e:
-                logger.error(f"Error during graph extraction for chunk {i+1}: {e}")
+                logger.error(f"Error during graph extraction for chunk {i + 1}: {e}")
                 import traceback
+
                 traceback.print_exc()
-                
+
         logger.info(
             f"Graph extraction completed. Total entities: {total_entities}, Total relations: {total_relations}"
         )
@@ -441,7 +451,9 @@ class LocalRAG:
             for file in files:
                 file_path = os.path.join(root, file)
                 file_ext = os.path.splitext(file)[1].lower()
-                logger.info(f"处理文件: {file}, 扩展名: {file_ext}, 完整路径: {file_path}")
+                logger.info(
+                    f"处理文件: {file}, 扩展名: {file_ext}, 完整路径: {file_path}"
+                )
 
                 try:
                     if file_ext in [".txt"]:
@@ -457,7 +469,9 @@ class LocalRAG:
                             loader = UnstructuredMarkdownLoader(file_path)
                             loaded = loader.load()
                         except Exception as e:
-                            logger.warning(f"UnstructuredMarkdownLoader 加载失败，回退到 TextLoader: {e}")
+                            logger.warning(
+                                f"UnstructuredMarkdownLoader 加载失败，回退到 TextLoader: {e}"
+                            )
                             loader = TextLoader(file_path, encoding="utf-8")
                             loaded = loader.load()
                         logger.info(f"成功加载 {len(loaded)} 个Markdown片段")
@@ -581,10 +595,10 @@ class LocalRAG:
         logger.info("Initializing embedding model")
         if hasattr(self, "_embeddings") and self._embeddings is not None:
             return self._embeddings
-        
+
         device = os.getenv("EMBEDDING_DEVICE", "cpu")
         logger.info(f"Loading embedding model on {device}")
-        
+
         embeddings = HuggingFaceEmbeddings(
             model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
             model_kwargs={"device": device},
@@ -597,16 +611,16 @@ class LocalRAG:
         text_splitter = AdaptiveTextSplitter(
             min_chunk=500, max_chunk=2000, chunk_overlap=200
         )
-        
+
         all_chunks = []
-        
+
         # Process each document
         for doc in docs:
             # Generate doc_id from content checksum
             content = doc.page_content
             checksum = hashlib.sha256(content.encode("utf-8")).hexdigest()
             doc_id = f"doc_{checksum[:16]}"
-            
+
             # Save document to MongoDB if not exists
             source = doc.metadata.get("source", "unknown")
             if not self.mongo_repo.get_document(doc_id):
@@ -618,20 +632,20 @@ class LocalRAG:
                     filename=os.path.basename(source) if source else "unknown",
                     format="auto",
                     checksum=f"sha256:{checksum}",
-                    metadata=doc.metadata
+                    metadata=doc.metadata,
                 )
-            
+
             # Split into chunks
             doc_chunks = text_splitter.split_documents([doc])
-            
+
             # Save chunks to MongoDB with stable IDs
             for idx, chunk in enumerate(doc_chunks):
                 chunk_id = f"{doc_id}_chunk_{idx:04d}"
-                
+
                 # Add chunk_id to metadata
                 chunk.metadata["chunk_id"] = chunk_id
                 chunk.metadata["doc_id"] = doc_id
-                
+
                 # Save to MongoDB
                 self.mongo_repo.save_chunk(
                     chunk_id=chunk_id,
@@ -640,19 +654,21 @@ class LocalRAG:
                     text=chunk.page_content,
                     offset_start=0,
                     offset_end=len(chunk.page_content),
-                    metadata=chunk.metadata
+                    metadata=chunk.metadata,
                 )
-                
+
                 all_chunks.append(chunk)
-            
+
             # Update document status
             self.mongo_repo.update_document_status(doc_id, "chunked", True)
-        
+
         logger.info(f"共切分为 {len(all_chunks)} 个文本块，开始分批向量化...")
 
         # 分批处理以避免显存溢出
         batch_size = 50
         vectorstore: Milvus | None = None
+
+        embeddings = self.get_embeddings()
 
         for i in range(0, len(all_chunks), batch_size):
             batch = all_chunks[i : i + batch_size]
@@ -669,7 +685,7 @@ class LocalRAG:
                 )
             else:
                 vectorstore.add_documents(batch)
-            
+
             # Update embedding status in MongoDB
             for chunk in batch:
                 chunk_id = chunk.metadata.get("chunk_id")
@@ -692,10 +708,29 @@ class LocalRAG:
         embeddings = self.get_embeddings()
 
         has_milvus = utility.has_collection(self.collection)
+        has_mongo_docs = self.mongo_repo.documents.count_documents({}) > 0
         has_graph = not self.neo4j_repo.is_empty()
+        has_es_docs = False
+        if self.es_retriever and self.es_retriever.es_client:
+            try:
+                has_es_docs = self.es_retriever.es_client.indices.exists(
+                    index=self.es_retriever.index_name
+                )
+            except Exception:
+                pass
 
-        if has_milvus and has_graph:
-            logger.info(f"Collection '{self.collection}' and Graph already exist, reusing them.")
+        # Calculate which stores need initialization
+        needs_milvus = has_milvus and has_mongo_docs
+        needs_es = (
+            self.use_hybrid_search
+            and self.es_retriever
+            and has_mongo_docs
+            and not has_es_docs
+        )
+        needs_graph = has_mongo_docs and not has_graph
+
+        if has_milvus and has_graph and has_es_docs:
+            logger.info(f"All stores already exist, reusing them.")
             return Milvus(
                 embedding_function=embeddings,
                 connection_args={"uri": self.connection_uri},
@@ -703,14 +738,20 @@ class LocalRAG:
             )
 
         logger.info(
-            f"Initialization needed: Milvus status (exists={has_milvus}), Graph status (exists={has_graph})"
+            f"Initialization status: Milvus={has_milvus}, MongoDB={has_mongo_docs}, "
+            f"ES={has_es_docs}, Graph={has_graph}"
         )
+
         docs = self.load_documents()
         if not docs:
             if not has_milvus:
-                raise ValueError(f"在路径 {self.data_path} 中没有找到任何文档，无法初始化向量库")
+                raise ValueError(
+                    f"在路径 {self.data_path} 中没有找到任何文档，无法初始化向量库"
+                )
             else:
-                logger.warning(f"Warning: No documents found in {self.data_path}, but Milvus collection exists. Returning existing collection.")
+                logger.warning(
+                    f"Warning: No documents found in {self.data_path}, but Milvus collection exists. Returning existing collection."
+                )
                 return Milvus(
                     embedding_function=embeddings,
                     connection_args={"uri": self.connection_uri},
@@ -723,25 +764,129 @@ class LocalRAG:
         chunks = text_splitter.split_documents(docs)
 
         vectorstore = None
+
+        # Step 1: Ensure MongoDB has all documents and chunks
+        logger.info("Ensuring MongoDB is up to date...")
+        self._sync_ensure_mongodb(docs, text_splitter)
+
+        # Step 2: Handle Milvus
         if not has_milvus:
-            logger.info(f"Creating Milvus collection '{self.collection}' and indexing documents...")
-            if self.use_hybrid_search and self.es_retriever:
+            logger.info(
+                f"Creating Milvus collection '{self.collection}' and indexing documents..."
+            )
+            if needs_es:
                 logger.info("Indexing documents to Elasticsearch...")
                 self.es_retriever.index_documents(chunks)
             vectorstore = self.build_vectorstore(docs)
         else:
-            logger.info(f"Collection '{self.collection}' already exists, reusing it.")
+            logger.info(
+                f"Milvus collection '{self.collection}' exists, checking for missing chunks..."
+            )
+            # Check for and add missing chunks only
             vectorstore = Milvus(
                 embedding_function=embeddings,
                 connection_args={"uri": self.connection_uri},
                 collection_name=self.collection,
             )
+            # Sync any missing chunks to Milvus
+            vectorstore = self._sync_add_missing_chunks(vectorstore, chunks)
 
-        if not has_graph:
+        # Step 3: Handle Elasticsearch
+        if needs_es:
+            logger.info("Indexing documents to Elasticsearch...")
+            self.es_retriever.index_documents(chunks)
+
+        # Step 4: Handle Graph extraction
+        if needs_graph:
             logger.info("Scheduling graph extraction in background...")
             asyncio.run_coroutine_threadsafe(
                 self._async_extract_graph(chunks, "initial_load"), main_loop
             )
+
+        return vectorstore
+
+    def _sync_ensure_mongodb(
+        self, docs: list[Document], text_splitter: AdaptiveTextSplitter
+    ):
+        """Ensure MongoDB has all documents and chunks, skip if already exists"""
+        for doc in docs:
+            content = doc.page_content
+            checksum = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            doc_id = f"doc_{checksum[:16]}"
+
+            # Check if document already exists
+            if self.mongo_repo.get_document(doc_id):
+                logger.debug(f"Document {doc_id} already exists in MongoDB, skipping")
+                continue
+
+            # Save new document
+            source = doc.metadata.get("source", "unknown")
+            self.mongo_repo.save_document(
+                doc_id=doc_id,
+                content=content,
+                source=source,
+                path=source,
+                filename=os.path.basename(source) if source else "unknown",
+                format="auto",
+                checksum=f"sha256:{checksum}",
+                metadata=doc.metadata,
+            )
+
+            # Split and save chunks
+            doc_chunks = text_splitter.split_documents([doc])
+            for idx, chunk in enumerate(doc_chunks):
+                chunk_id = f"{doc_id}_chunk_{idx:04d}"
+
+                # Check if chunk exists
+                if self.mongo_repo.get_chunk(chunk_id):
+                    continue
+
+                chunk.metadata["chunk_id"] = chunk_id
+                chunk.metadata["doc_id"] = doc_id
+
+                self.mongo_repo.save_chunk(
+                    chunk_id=chunk_id,
+                    doc_id=doc_id,
+                    index=idx,
+                    text=chunk.page_content,
+                    offset_start=0,
+                    offset_end=len(chunk.page_content),
+                    metadata=chunk.metadata,
+                )
+
+            self.mongo_repo.update_document_status(doc_id, "chunked", True)
+            logger.info(f"Added new document {doc_id} to MongoDB")
+
+    def _sync_add_missing_chunks(
+        self, vectorstore: Milvus, all_chunks: list[Document]
+    ) -> Milvus:
+        """Add only chunks that don't exist in Milvus yet"""
+        embeddings = self.get_embeddings()
+        missing_chunks = []
+
+        for chunk in all_chunks:
+            chunk_id = chunk.metadata.get("chunk_id")
+            if chunk_id:
+                # Check MongoDB for embedding status
+                mongo_chunk = self.mongo_repo.get_chunk(chunk_id)
+                if mongo_chunk and mongo_chunk.get("embedding_status") != "done":
+                    missing_chunks.append(chunk)
+
+        if missing_chunks:
+            logger.info(f"Adding {len(missing_chunks)} missing chunks to Milvus...")
+
+            batch_size = 50
+            for i in range(0, len(missing_chunks), batch_size):
+                batch = missing_chunks[i : i + batch_size]
+                vectorstore.add_documents(batch)
+
+                # Update status
+                for c in batch:
+                    cid = c.metadata.get("chunk_id")
+                    if cid:
+                        self.mongo_repo.update_chunk_embedding_status(cid, "done")
+        else:
+            logger.info("No missing chunks to add to Milvus")
 
         return vectorstore
 
@@ -752,7 +897,9 @@ class LocalRAG:
 
         logger.info("Loading vectorstore (this may take a while)...")
         loop = asyncio.get_running_loop()
-        vectorstore = await asyncio.to_thread(self._sync_get_or_create_vectorstore, loop)
+        vectorstore = await asyncio.to_thread(
+            self._sync_get_or_create_vectorstore, loop
+        )
         return vectorstore
 
     async def generate_answer(self, question, stream_callback=None):
@@ -823,22 +970,24 @@ class LocalRAG:
             logger.info("Stream finished.")
 
             return self.llm.extract_after_think(full_response)
-    
+
     def get_document_context(self, doc_id: str) -> str:
         """Retrieve full document context from MongoDB by doc_id"""
         doc = self.mongo_repo.get_document(doc_id)
         if doc:
             return doc.get("content", "")
         return ""
-    
+
     def get_chunk_context(self, chunk_id: str) -> str:
         """Retrieve chunk context from MongoDB by chunk_id"""
         chunk = self.mongo_repo.get_chunk(chunk_id)
         if chunk:
             return chunk.get("text", "")
         return ""
-    
-    def get_surrounding_chunks(self, chunk_id: str, before: int = 1, after: int = 1) -> List[str]:
+
+    def get_surrounding_chunks(
+        self, chunk_id: str, before: int = 1, after: int = 1
+    ) -> List[str]:
         """
         Retrieve surrounding chunks for better context.
         Returns [before chunks, current chunk, after chunks]
@@ -846,15 +995,15 @@ class LocalRAG:
         chunk = self.mongo_repo.get_chunk(chunk_id)
         if not chunk:
             return []
-        
+
         doc_id = chunk["doc_id"]
         current_index = chunk["index"]
-        
+
         all_chunks = self.mongo_repo.get_chunks_by_doc(doc_id)
-        
+
         start_idx = max(0, current_index - before)
         end_idx = min(len(all_chunks), current_index + after + 1)
-        
+
         return [c["text"] for c in all_chunks[start_idx:end_idx]]
 
     def release_memory(self):
@@ -865,7 +1014,7 @@ class LocalRAG:
         gc.collect()
         torch.cuda.empty_cache()
         logger.info("已释放 RAG 相关显存资源")
-    
+
     def close(self):
         """Clean up all database connections"""
         if hasattr(self, "mongo_repo"):

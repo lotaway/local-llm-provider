@@ -5,6 +5,7 @@ import logging
 import uuid
 import asyncio
 import time
+from constants import DATA_PATH
 
 from globals import (
     local_rag,
@@ -129,7 +130,9 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
         return StreamingResponse(event_stream(), media_type="text/event-stream")
     else:
         try:
-            state = agent_runtime.execute(query, initial_context)
+            state = agent_runtime.execute(
+                query, start_agent="qa", initial_context=initial_context
+            )
             return JSONResponse(content=state.to_dict())
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -159,7 +162,7 @@ async def agent_chat(req: ChatRequest):
         if local_rag is None:
             import os
 
-            data_path = os.getenv("DATA_PATH", "./docs")
+            data_path = DATA_PATH
             local_rag = LocalRAG(local_model, data_path=data_path)
         from agents.agent_runtime import AgentRuntime
 

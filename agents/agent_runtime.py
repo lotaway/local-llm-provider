@@ -314,12 +314,12 @@ class AgentRuntime:
             self.state.iteration_count += 1
             agent_name = self.state.current_agent
 
-            self.logger.info(f"\n{'='*60}")
+            self.logger.info(f"\n{'=' * 60}")
             self.logger.info(
                 f"Iteration {self.state.iteration_count}/{self.state.max_iterations} (Round {self.state.iteration_count_round})"
             )
             self.logger.info(f"Current agent: {agent_name}")
-            self.logger.info(f"{'='*60}")
+            self.logger.info(f"{'=' * 60}")
 
             # Get agent
             if agent_name not in self.agents:
@@ -425,11 +425,11 @@ class AgentRuntime:
                 if result.status == AgentStatus.COMPLETE:
                     self.state.status = RuntimeStatus.COMPLETED
                     self.state.final_result = result.data
-                    self.logger.info(f"\n{'*'*60}")
+                    self.logger.info(f"\n{'*' * 60}")
                     self.logger.info(
                         f"✓ Workflow completed successfully after {self.state.iteration_count} iterations"
                     )
-                    self.logger.info(f"{'*'*60}")
+                    self.logger.info(f"{'*' * 60}")
                     # Save final state
                     self._save_state()
                     break
@@ -470,7 +470,7 @@ class AgentRuntime:
                 elif result.status == AgentStatus.FAILURE:
                     self.state.status = RuntimeStatus.FAILED
                     self.state.error_message = result.message
-                    self.logger.error(f"\n{'!'*60}")
+                    self.logger.error(f"\n{'!' * 60}")
                     self.logger.error(f"✗ Agent {agent_name} failed: {result.message}")
                     self.logger.error(f"  Iteration: {self.state.iteration_count}")
                     self.logger.error(
@@ -479,7 +479,7 @@ class AgentRuntime:
                     self.logger.error(f"  History length: {len(self.state.history)}")
                     if result.data:
                         self.logger.error(f"  Error data: {result.data}")
-                    self.logger.error(f"{'!'*60}")
+                    self.logger.error(f"{'!' * 60}")
                     break
 
                 elif result.status == AgentStatus.NEEDS_RETRY:
@@ -506,18 +506,20 @@ class AgentRuntime:
 
             except Exception as e:
                 if "error_handler" in self.agents and agent_name != "error_handler":
-                    self.logger.warning(f"Exception in agent {agent_name}, routing to error_handler: {e}")
+                    self.logger.warning(
+                        f"Exception in agent {agent_name}, routing to error_handler: {e}"
+                    )
                     self.state.current_agent = "error_handler"
                     current_input = {"exception": e, "agent_name": agent_name}
                     continue
 
                 self.state.status = RuntimeStatus.FAILED
                 self.state.error_message = f"Agent execution error: {str(e)}"
-                self.logger.error(f"\n{'!'*60}")
+                self.logger.error(f"\n{'!' * 60}")
                 self.logger.error(f"✗ Exception during {agent_name} execution")
                 self.logger.error(f"  Error: {str(e)}")
                 self.logger.error(f"  Iteration: {self.state.iteration_count}")
-                self.logger.error(f"{'!'*60}")
+                self.logger.error(f"{'!' * 60}")
                 self.logger.error("Full traceback:", exc_info=True)
                 break
 
@@ -551,7 +553,7 @@ class AgentRuntime:
         if rag_instance is None:
             from rag import LocalRAG
 
-            data_path = os.getenv("DATA_PATH", "./docs")
+            data_path = DATA_PATH
             rag_instance = LocalRAG(llm_model, data_path=data_path)
         if permission_manager is None:
             from permission_manager import PermissionManager, SafetyLevel
@@ -586,6 +588,7 @@ class AgentRuntime:
         runtime.register_agent("task_mcp", mcp_agent)
 
         from skills import init_skills, registry
+
         init_skills()
         runtime.state.context["available_skills"] = [
             s.to_dict() for s in registry.list_skills()
@@ -593,12 +596,14 @@ class AgentRuntime:
 
         try:
             from utils.mcp_loader import load_from_env as _load_mcp
+
             _load_mcp(mcp_agent)
         except Exception:
             pass
         runtime.state.context["available_mcp_tools"] = mcp_agent.get_available_tools()
 
         from schemas.capability import Capability, CapabilityKind
+
         caps = []
         for s in registry.list_skills():
             caps.append(

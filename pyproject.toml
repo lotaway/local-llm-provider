@@ -29,7 +29,7 @@ dependencies = [
   # Agent dependencies
   "rank-bm25==0.2.2",
   "langchain-milvus>=0.3.0",
-  # Context Storage dependencies
+  "pymongo>=4.8.0",
   "redis>=5.0.0",
   "psycopg2-binary>=2.9.0",
   "python-multipart>=0.0.20",

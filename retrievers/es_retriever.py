@@ -2,6 +2,7 @@ import os
 import logging
 from typing import List, Dict, Any, Optional
 from elasticsearch import Elasticsearch, helpers
+from constants import ES_HOST, ES_PORT1, ES_INDEX_NAME
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
@@ -17,8 +18,8 @@ class ESBM25Retriever(BaseRetriever):
     Indexes documents into Elasticsearch and retrieves them using BM25 scoring.
     """
 
-    es_client: Optional[Elasticsearch] = None
-    index_name: Optional[str] = None
+    es_client: Elasticsearch
+    index_name: str = ""
     k: int = 5
 
     # Allow arbitrary types for es_client
@@ -26,9 +27,9 @@ class ESBM25Retriever(BaseRetriever):
 
     def __init__(
         self,
-        index_name: str = os.getenv("ES_INDEX_NAME", "rag_docs"),
-        host: str = os.getenv("ES_HOST", "localhost"),
-        port: int = int(os.getenv("ES_PORT1", 9200)),
+        index_name: str = ES_INDEX_NAME,
+        host: str = ES_HOST,
+        port: int = ES_PORT1,
         api_key: Optional[str] = os.getenv("ES_API_KEY"),
         k: int = 5,
         **kwargs,

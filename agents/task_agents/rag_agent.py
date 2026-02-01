@@ -3,6 +3,7 @@
 from typing import Any, Dict
 import sys
 import os
+from constants import DATA_PATH
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
@@ -58,7 +59,7 @@ class RAGTaskAgent(BaseAgent):
             if self.rag is None:
                 from rag import LocalRAG
 
-                data_path = os.getenv("DATA_PATH", "./docs")
+                data_path = DATA_PATH
                 self.rag = LocalRAG(self.llm, data_path=data_path)
 
             # Execute RAG query with streaming support

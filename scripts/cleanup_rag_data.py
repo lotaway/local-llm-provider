@@ -9,22 +9,37 @@ import os
 import sys
 from datetime import datetime
 
+# Add project root to path first
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
+from constants import (
+    DB_HOST,
+    DB_PORT,
+    DB_COLLECTION,
+    ES_HOST,
+    ES_PORT1,
+    ES_INDEX_NAME,
+    NEO4J_BOLT_URL,
+    NEO4J_AUTH,
+    MONGO_URI,
+    MONGO_DB_NAME,
+)
+
 from pymilvus import connections, utility, Collection
 from elasticsearch import Elasticsearch
 from neo4j import GraphDatabase
+from pymongo import MongoClient
 
 
 def get_milvus_stats():
     try:
-        host = os.getenv("DB_HOST", "localhost")
-        port = os.getenv("DB_PORT", "19530")
-        collection_name = os.getenv("DB_COLLECTION", "rag_docs")
+        host = DB_HOST
+        port = DB_PORT
+        collection_name = DB_COLLECTION
 
         connections.connect(host=host, port=port)
 
@@ -48,7 +63,7 @@ def get_milvus_stats():
     except Exception as e:
         return {
             "entities": -1,
-            "collection_name": os.getenv("DB_COLLECTION", "rag_docs"),
+            "collection_name": DB_COLLECTION,
             "connected": False,
             "error": str(e),
         }
@@ -56,9 +71,9 @@ def get_milvus_stats():
 
 def get_es_stats():
     try:
-        host = os.getenv("ES_HOST", "localhost")
-        port = int(os.getenv("ES_PORT1", 9200))
-        index_name = os.getenv("ES_INDEX_NAME", "rag_docs")
+        host = ES_HOST
+        port = ES_PORT1
+        index_name = ES_INDEX_NAME
 
         es_client = Elasticsearch(f"http://{host}:{port}")
 
@@ -79,7 +94,7 @@ def get_es_stats():
     except Exception as e:
         return {
             "documents": -1,
-            "index_name": os.getenv("ES_INDEX_NAME", "rag_docs"),
+            "index_name": ES_INDEX_NAME,
             "connected": False,
             "error": str(e),
         }
@@ -87,8 +102,8 @@ def get_es_stats():
 
 def get_neo4j_stats():
     try:
-        uri = os.getenv("NEO4J_BOLT_URL", "bolt://localhost:7687")
-        auth_env = os.getenv("NEO4J_AUTH", "neo4j/123123123")
+        uri = NEO4J_BOLT_URL
+        auth_env = NEO4J_AUTH
 
         parts = auth_env.split("/")
         user = parts[0]
@@ -116,11 +131,67 @@ def get_neo4j_stats():
         return {"entities": -1, "relations": -1, "connected": False, "error": str(e)}
 
 
+def get_mongodb_stats():
+    """Get MongoDB statistics for documents and chunks"""
+    try:
+        mongo_uri = MONGO_URI
+        db_name = MONGO_DB_NAME
+
+        client = MongoClient(mongo_uri)
+        db = client[db_name]
+
+        documents_count = db["documents"].count_documents({})
+        chunks_count = db["chunks"].count_documents({})
+
+        client.close()
+
+        return {
+            "documents": documents_count,
+            "chunks": chunks_count,
+            "db_name": db_name,
+            "connected": True,
+        }
+    except Exception as e:
+        return {
+            "documents": -1,
+            "chunks": -1,
+            "db_name": MONGO_DB_NAME,
+            "connected": False,
+            "error": str(e),
+        }
+
+
+def cleanup_mongodb():
+    """Cleanup all documents and chunks in MongoDB"""
+    try:
+        mongo_uri = MONGO_URI
+        db_name = MONGO_DB_NAME
+
+        client = MongoClient(mongo_uri)
+        db = client[db_name]
+
+        documents_count = db["documents"].count_documents({})
+        chunks_count = db["chunks"].count_documents({})
+
+        db["documents"].delete_many({})
+        db["chunks"].delete_many({})
+
+        client.close()
+
+        return {
+            "success": True,
+            "documents_deleted": documents_count,
+            "chunks_deleted": chunks_count,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def cleanup_milvus():
     try:
-        host = os.getenv("DB_HOST", "localhost")
-        port = os.getenv("DB_PORT", "19530")
-        collection_name = os.getenv("DB_COLLECTION", "rag_docs")
+        host = DB_HOST
+        port = DB_PORT
+        collection_name = DB_COLLECTION
 
         connections.connect(host=host, port=port)
 
@@ -145,9 +216,9 @@ def cleanup_milvus():
 
 def cleanup_es():
     try:
-        host = os.getenv("ES_HOST", "localhost")
-        port = int(os.getenv("ES_PORT1", 9200))
-        index_name = os.getenv("ES_INDEX_NAME", "rag_docs")
+        host = ES_HOST
+        port = ES_PORT1
+        index_name = ES_INDEX_NAME
 
         es_client = Elasticsearch(f"http://{host}:{port}")
 
@@ -187,8 +258,8 @@ def cleanup_es():
 
 def cleanup_neo4j():
     try:
-        uri = os.getenv("NEO4J_BOLT_URL", "bolt://localhost:7687")
-        auth_env = os.getenv("NEO4J_AUTH", "neo4j/123123123")
+        uri = NEO4J_BOLT_URL
+        auth_env = NEO4J_AUTH
 
         parts = auth_env.split("/")
         user = parts[0]
@@ -219,7 +290,7 @@ def cleanup_neo4j():
         return {"success": False, "error": str(e)}
 
 
-def print_stats(milvus_stats, es_stats, neo4j_stats):
+def print_stats(milvus_stats, es_stats, neo4j_stats, mongo_stats):
     print("\n" + "=" * 60)
     print("RAG Data Statistics")
     print("=" * 60)
@@ -260,6 +331,19 @@ def print_stats(milvus_stats, es_stats, neo4j_stats):
     else:
         print(f"   Connection failed: {neo4j_stats.get('error', 'Unknown error')}")
 
+    print("\nMongoDB (Source of Truth)")
+    if mongo_stats.get("connected"):
+        if mongo_stats.get("documents", -1) >= 0:
+            print(f"   Database: {mongo_stats['db_name']}")
+            print(f"   Documents: {mongo_stats['documents']:,}")
+            print(f"   Chunks: {mongo_stats['chunks']:,}")
+        else:
+            print(
+                f"   Warning: {mongo_stats.get('message', mongo_stats.get('error', 'Unknown error'))}"
+            )
+    else:
+        print(f"   Connection failed: {mongo_stats.get('error', 'Unknown error')}")
+
     total_docs = 0
     if milvus_stats.get("entities", -1) > 0:
         total_docs += milvus_stats["entities"]
@@ -284,6 +368,7 @@ def confirm_cleanup():
     print("   - All vectors in Milvus")
     print("   - All indexed documents in Elasticsearch")
     print("   - All entities and relations in Neo4j")
+    print("   - All documents and chunks in MongoDB")
     print("\nThis operation is irreversible!")
 
     print("\n" + "-" * 60)
@@ -310,8 +395,9 @@ def main():
     milvus_stats = get_milvus_stats()
     es_stats = get_es_stats()
     neo4j_stats = get_neo4j_stats()
+    mongo_stats = get_mongodb_stats()
 
-    print_stats(milvus_stats, es_stats, neo4j_stats)
+    print_stats(milvus_stats, es_stats, neo4j_stats, mongo_stats)
 
     has_data = False
     if milvus_stats.get("entities", 0) > 0:
@@ -319,6 +405,8 @@ def main():
     if es_stats.get("documents", 0) > 0:
         has_data = True
     if neo4j_stats.get("entities", 0) > 0 or neo4j_stats.get("relations", 0) > 0:
+        has_data = True
+    if mongo_stats.get("documents", 0) > 0:
         has_data = True
 
     if not has_data:
@@ -329,6 +417,17 @@ def main():
         return
 
     print("\nStarting data cleanup...")
+
+    print("\nCleaning MongoDB...")
+    mongo_result = cleanup_mongodb()
+    if mongo_result["success"]:
+        print(
+            f"   MongoDB cleanup complete. Deleted {mongo_result.get('documents_deleted', 0)} documents and {mongo_result.get('chunks_deleted', 0)} chunks"
+        )
+    else:
+        print(
+            f"   MongoDB cleanup failed: {mongo_result.get('error', 'Unknown error')}"
+        )
 
     print("\nCleaning Milvus...")
     milvus_result = cleanup_milvus()
@@ -366,12 +465,16 @@ def main():
     milvus_final = get_milvus_stats()
     es_final = get_es_stats()
     neo4j_final = get_neo4j_stats()
+    mongo_final = get_mongodb_stats()
 
     print("\nPost-cleanup statistics:")
     print(f"   Milvus: {milvus_final.get('entities', 'N/A')} vectors")
     print(f"   Elasticsearch: {es_final.get('documents', 'N/A')} documents")
     print(
         f"   Neo4j: {neo4j_final.get('entities', 'N/A')} entities, {neo4j_final.get('relations', 'N/A')} relations"
+    )
+    print(
+        f"   MongoDB: {mongo_final.get('documents', 'N/A')} documents, {mongo_final.get('chunks', 'N/A')} chunks"
     )
 
     print("\n" + "=" * 60)

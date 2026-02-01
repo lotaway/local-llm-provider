@@ -88,7 +88,7 @@ from repositories.mongodb_repository import MongoDBRepository
 self.mongo_repo = MongoDBRepository()
 
 # Milvus collection 名称变更
-self.collection = os.getenv("DB_COLLECTION", "document_chunks")
+self.collection = DB_COLLECTION
 ```
 
 #### 文档处理流程
