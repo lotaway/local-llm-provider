@@ -1,7 +1,8 @@
 import logging
 from typing import List, Optional, Dict, Any
 from constants import NEO4J_BOLT_URL, NEO4J_AUTH
-from schemas.graph import Entity, Relation
+from schemas.graph import Entity, Relation, LTMNode
+from neo4j import GraphDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -141,3 +142,156 @@ class Neo4jRepository:
             )
             result = session.run(query, name=name, limit=limit)
             return [dict(record["e"]) for record in result]
+
+    def save_ltm(self, ltm: LTMNode) -> str:
+        """Save or update an LTM node, returns the topic_version key"""
+        topic_version = f"{ltm.topic}_v{ltm.version}"
+        with self.driver.session() as session:
+            session.execute_write(self._save_ltm_tx, ltm, topic_version)
+        return topic_version
+
+    @staticmethod
+    def _save_ltm_tx(tx, ltm: LTMNode, topic_version: str):
+        query = (
+            "MERGE (l:LTMNode {topic_version: $topic_version}) "
+            "SET l.topic = $topic, "
+            "    l.version = $version, "
+            "    l.conclusion = $conclusion, "
+            "    l.conditions = $conditions, "
+            "    l.confidence = $confidence, "
+            "    l.sources = $sources, "
+            "    l.source_chunk_ids = $source_chunk_ids, "
+            "    l.properties = $properties, "
+            "    l.created_at = $created_at, "
+            "    l.updated_at = $updated_at "
+            "RETURN l.topic_version"
+        )
+        tx.run(
+            query,
+            topic_version=topic_version,
+            topic=ltm.topic,
+            version=ltm.version,
+            conclusion=ltm.conclusion,
+            conditions=ltm.conditions,
+            confidence=ltm.confidence,
+            sources=ltm.sources,
+            source_chunk_ids=ltm.source_chunk_ids,
+            properties=ltm.properties,
+            created_at=ltm.created_at.isoformat(),
+            updated_at=ltm.updated_at.isoformat(),
+        )
+
+    def get_ltm_by_topic(self, topic: str) -> List[Dict[str, Any]]:
+        """Get all versions of LTM nodes for a topic"""
+        with self.driver.session() as session:
+            query = (
+                "MATCH (l:LTMNode) "
+                "WHERE l.topic = $topic "
+                "RETURN l ORDER BY l.version DESC"
+            )
+            result = session.run(query, topic=topic)
+            return [dict(record["l"]) for record in result]
+
+    def get_ltm_by_topic_version(
+        self, topic: str, version: int
+    ) -> Optional[Dict[str, Any]]:
+        """Get specific version of LTM node"""
+        with self.driver.session() as session:
+            query = (
+                "MATCH (l:LTMNode) "
+                "WHERE l.topic = $topic AND l.version = $version "
+                "RETURN l"
+            )
+            result = session.run(query, topic=topic, version=version)
+            record = result.single()
+            return dict(record["l"]) if record else None
+
+    def get_latest_ltm(self, topic: str) -> Optional[Dict[str, Any]]:
+        """Get the latest version of LTM for a topic"""
+        with self.driver.session() as session:
+            query = (
+                "MATCH (l:LTMNode) "
+                "WHERE l.topic = $topic "
+                "RETURN l ORDER BY l.version DESC LIMIT 1"
+            )
+            result = session.run(query, topic=topic)
+            record = result.single()
+            return dict(record["l"]) if record else None
+
+    def link_episodic_to_ltm(self, chunk_id: str, ltm_topic_version: str):
+        """Create relationship from episodic chunk to LTM node"""
+        with self.driver.session() as session:
+            query = (
+                "MATCH (c:Chunk {chunk_id: $chunk_id}) "
+                "MATCH (l:LTMNode {topic_version: $ltm_topic_version}) "
+                "MERGE (c)-[:EVOLVED_TO]->(l)"
+            )
+            session.run(query, chunk_id=chunk_id, ltm_topic_version=ltm_topic_version)
+
+    def get_episodic_for_ltm(self, ltm_topic_version: str) -> List[Dict[str, Any]]:
+        """Get all episodic chunks that evolved into this LTM"""
+        with self.driver.session() as session:
+            query = (
+                "MATCH (c:Chunk)-[:EVOLVED_TO]->(l:LTMNode {topic_version: $topic_version}) "
+                "RETURN c"
+            )
+            result = session.run(query, topic_version=ltm_topic_version)
+            return [dict(record["c"]) for record in result]
+
+    def create_ltm_version_relation(
+        self, old_topic_version: str, new_topic_version: str
+    ):
+        """Create supersedes relationship between versions"""
+        with self.driver.session() as session:
+            query = (
+                "MATCH (old:LTMNode {topic_version: $old_version}) "
+                "MATCH (new:LTMNode {topic_version: $new_version}) "
+                "MERGE (old)-[:SUPERSEDED_BY]->(new)"
+            )
+            session.run(
+                query, old_version=old_topic_version, new_version=new_topic_version
+            )
+
+    def get_ltm_versions_chain(self, topic: str) -> List[Dict[str, Any]]:
+        """Get version chain for a topic with supersedes relationships"""
+        with self.driver.session() as session:
+            query = (
+                "MATCH (l:LTMNode {topic: $topic}) "
+                "OPTIONAL MATCH (l)-[:SUPERSEDED_BY]->(next:LTMNode) "
+                "RETURN l, next "
+                "ORDER BY l.version DESC"
+            )
+            result = session.run(query, topic=topic)
+            versions = []
+            for record in result:
+                node = dict(record["l"])
+                node["superseded_by"] = (
+                    dict(record["next"])["topic_version"] if record["next"] else None
+                )
+                versions.append(node)
+            return versions
+
+    def search_ltm_by_conclusion(
+        self, query_text: str, limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Search LTM nodes by conclusion content (simple substring match)"""
+        with self.driver.session() as session:
+            query = (
+                "MATCH (l:LTMNode) "
+                "WHERE l.conclusion CONTAINS $query "
+                "RETURN l ORDER BY l.confidence DESC LIMIT $limit"
+            )
+            result = session.run(query, query=query_text, limit=limit)
+            return [dict(record["l"]) for record in result]
+
+    def delete_ltm(self, topic: str, version: int) -> bool:
+        """Delete a specific LTM version"""
+        with self.driver.session() as session:
+            topic_version = f"{topic}_v{version}"
+            result = session.run(
+                "MATCH (l:LTMNode {topic_version: $topic_version}) "
+                "DETACH DELETE l RETURN count(*) as deleted",
+                topic_version=topic_version,
+            )
+            record = result.single()
+            return record["deleted"] > 0 if record else False

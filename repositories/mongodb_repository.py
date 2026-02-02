@@ -45,6 +45,10 @@ class MongoDBRepository:
         self.chunks.create_index("chunk_id", unique=True)
         self.chunks.create_index("doc_id")
         self.chunks.create_index([("doc_id", 1), ("index", 1)])
+        self.chunks.create_index("importance_score")
+        self.chunks.create_index("last_reviewed")
+        self.chunks.create_index("memory_type")
+        self.chunks.create_index([("memory_type", 1), ("importance_score", -1)])
         logger.info("MongoDB indexes created")
 
     def save_document(
@@ -111,6 +115,7 @@ class MongoDBRepository:
         offset_end: int = 0,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        now = datetime.utcnow()
         chunk = {
             "chunk_id": chunk_id,
             "doc_id": doc_id,
@@ -120,6 +125,13 @@ class MongoDBRepository:
             "text": text,
             "embedding_status": "pending",
             "metadata": metadata or {},
+            "importance_score": 0.5,
+            "last_reviewed": None,
+            "decay_rate": 0.01,
+            "review_count": 0,
+            "memory_type": "episodic",
+            "created_at": now,
+            "updated_at": now,
         }
         self.chunks.update_one({"chunk_id": chunk_id}, {"$set": chunk}, upsert=True)
         return chunk
@@ -137,6 +149,56 @@ class MongoDBRepository:
 
     def get_pending_chunks(self, limit: int = 100) -> List[Dict[str, Any]]:
         return list(self.chunks.find({"embedding_status": "pending"}).limit(limit))
+
+    def update_importance_score(self, chunk_id: str, score: float):
+        self.chunks.update_one(
+            {"chunk_id": chunk_id},
+            {"$set": {"importance_score": score, "updated_at": datetime.utcnow()}},
+        )
+
+    def increment_importance(self, chunk_id: str, delta: float = 0.1):
+        self.chunks.update_one(
+            {"chunk_id": chunk_id},
+            {
+                "$inc": {"importance_score": delta, "review_count": 1},
+                "$set": {
+                    "last_reviewed": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                },
+            },
+        )
+
+    def update_last_reviewed(self, chunk_id: str):
+        self.chunks.update_one(
+            {"chunk_id": chunk_id},
+            {
+                "$set": {
+                    "last_reviewed": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+
+    def get_chunks_by_importance(
+        self, memory_type: str = None, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        query = {}
+        if memory_type:
+            query["memory_type"] = memory_type
+        return list(self.chunks.find(query).sort("importance_score", -1).limit(limit))
+
+    def get_chunks_by_memory_type(self, memory_type: str) -> List[Dict[str, Any]]:
+        return list(
+            self.chunks.find({"memory_type": memory_type}).sort("created_at", -1)
+        )
+
+    def get_low_importance_chunks(
+        self, threshold: float = 0.1, memory_type: str = None, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        query = {"importance_score": {"$lt": threshold}}
+        if memory_type:
+            query["memory_type"] = memory_type
+        return list(self.chunks.find(query).limit(limit))
 
     def close(self):
         self.client.close()

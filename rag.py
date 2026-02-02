@@ -36,6 +36,7 @@ from file_loaders import ChatGPTLoader, DeepSeekLoader
 from repositories.neo4j_repository import Neo4jRepository
 from repositories.mongodb_repository import MongoDBRepository
 from services.graph_extraction_service import GraphExtractionService
+from services.feedback_service import FeedbackService
 from retrievers.graph_retriever import GraphRetriever
 import asyncio
 
@@ -162,6 +163,9 @@ class LocalRAG:
         self.graph_extractor = GraphExtractionService(llm)
         self.graph_retriever = GraphRetriever(self.neo4j_repo, llm)
 
+        # Feedback service for memory lifecycle
+        self.feedback_service = FeedbackService(self.mongo_repo)
+
     async def init_rag_chain(self):
         vectorstore = await self.get_or_create_vectorstore()
         if vectorstore is None:
@@ -177,6 +181,7 @@ class LocalRAG:
                 vector_weight=0.7,
                 bm25_weight=0.3,
                 k=10 if self.use_reranking else 5,
+                feedback_service=self.feedback_service,
             )
         else:
             retriever = vectorstore.as_retriever(
@@ -442,9 +447,8 @@ class LocalRAG:
 
     def load_documents(
         self,
-        after_doc_load: Callable[
-            [List[Document], str], List[Document]
-        ] = lambda x, _: x,
+        after_doc_load: Callable[[List[Document], str], List[Document]] = lambda x,
+        _: x,
     ) -> list[Document]:
         """加载多种格式的文档"""
         docs = []
