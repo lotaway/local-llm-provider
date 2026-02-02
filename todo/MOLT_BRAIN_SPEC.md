@@ -1,247 +1,315 @@
-0. 总体目标（升级版）
+一个完整落地的长期记忆实现计划，基于你当前已经采用的技术栈：MongoDB + Milvus + Elasticsearch + Neo4j，并补充你原类脑规范中缺失的三个关键能力：
 
-Agent 的记忆系统必须满足：
+👉 抽象 (Abstraction)
+👉 反馈机制 (Feedback)
+👉 记忆衰减/时间维度与版本迭代 (Decay / Versions)
 
-分层记忆 + 生命周期机制
+这个方案既保留你原来的设计重点，也兼顾工程可实现性，并在每个层级说明该用哪个组件、怎么用以及之间的关系。
 
-遗忘与强化都是可控 / 可解释
+🚀 整体架构图（高层）
+       Agent 输入事件
+              │
+              ▼
+          M1 Sensory Cache
+              │
+              ▼
+          M2 Working Memory
+              │
+              ├─────────────┐
+              ▼             ▼
+     Episodic Memory (M3)   Task/Interaction
+              │
+    ┌─────────▼──────────┐
+    │  自动评估 & 反馈   │  ←── Molt Controller
+    │  (重要性 / 成效)   │
+    └─────────┬──────────┘
+              │ 触发
+              ▼
+      抽象 & 提炼逻辑 (Abstraction Engine)
+              │
+              ▼
+      Long-Term Memory (LTM)
+              │
+              ▼
+      版本 / 时间维度管理 + 衰减
 
-自主评价 & 自我调整策略（Molt 层）
+🧱 1. 分层记忆实现细节（含抽象 + 反馈 + 衰减）
+🔹 M1 感觉缓存（Sensory）
 
-支持多 Agent 共享 / 私有 /共识知识
+职责：只存原始输入流
+组件：MongoDB + TTL
+实现细节
 
-存储有意义的结构化知识，而非堆积 Context
+存储：MongoDB collection（感知流）
 
-这个架构融合了研究上的“多级记忆分层模型”理念（类似层次化缓存/分层记忆）及 Agent 记忆系统设计最佳实践。
+TTL index 让数据自动过期
 
-🧱 1. 记忆层级 与 Molt 触发规则
+触发规则（供 Molt 读）
 
-每层不仅定义存储与淘汰规则，还定义：
+多次 attention / 高频触达 → 标记 candidate 上升
 
-何时被 Molt 系统评估 & 可能调整行为规则（Prompt / 索引策略 /聚合方式）
+目标检查点
 
-🔹 M1：感觉缓存（Sensory / Immediate）
+自动消失（TTL）
 
-原则：只感知，不记忆
-目标：快速接收当前输入，极短期临时存储
-执行：
+不向量化、不参与高层检索
 
-存储：MongoDB + TTL Index
+MongoDB 本身已支持 TTL 索引，可自动遗忘过时数据。
 
-字段：timestamp / source / attention_score / raw_content
+🔹 M2 工作记忆（Working Memory）
 
-默认 TTL：很短
+职责：当前任务临时上下文
+实现：内存结构（进程运行）
 
-Molt 触发检查（单次即时）：
+容量约束规则
 
-当 raw_content 被重复访问（触发 attention_score 上升）时 → 标记“有用输入信号”
+fixed cap（如 7±2）
 
-如果注意力、任务相关性高 → 触发进入 M2 判断
+rehearsal count 影响淘汰顺序
 
-禁止：
+不落库、不跨会话、不共享
 
-不向量化
+🔹 M3 短期记忆 / 经验记忆（Episodic）
 
-不参与长期索引
+这是你原先提到的“向量 + 图 + Meta 信息”的主要层。
 
-不允许被 Agent 主动回忆
+组件组合：
 
-🔹 M2：工作记忆（Working Memory）
+存储	作用
+Milvus	语义向量召回（embedding search）
+Neo4j	情境关系图（结构化关联）
+MongoDB	原始片段/元数据
 
-原则：推理/规划/短期上下文
-目标：支撑当前任务，严格容量限制
+为什么要三者组合
 
-结构：
+Milvus 做语义召回
 
-{
-  "content",
-  "created_at",
-  "last_accessed",
-  "rehearsal_count",
-  "links_to_other_chunks"
-}
+Neo4j 做关系拓扑
 
+MongoDB 保存元信息 + 时间/来源
+这组合能同时支持语义检索和关系推理。
 
-Molt 触发规则（实时）：
+新增能力：反馈 & 衰减
 
-当同一 “content chunk” 被多次引用（rehearsal_count 增加）
-→ 发出“潜在长期价值”信号
+🔥 反馈机制（Feedback）
 
-当低价值或过时内容导致推理误导
-→ Molt 层触发 Prompt/Chunk 生成规则微调
+每次记忆被检索或参与任务成功：
 
-淘汰：
+importance_score += 1
+last_reviewed = now
 
-超过容量上限 → 基于 rehearsal_count & recency 淘汰
 
-Agent 进程重启清空
+每次没有被使用：
 
-🔹 M3：短期记忆（Short-term / Episodic）
+importance_score *= decay_factor  (< 1)
 
-目标：被 Agent 回忆 & 可能强化
-存储：
 
-Milvus/ES 向量
+这个逻辑可以在每次 Episodic Memory 被调用时计算，然后写回 MongoDB 或向量 metadata。
 
-Neo4j 情境图
+🔥 衰减机制（Decay）
 
-MongoDB 原始片段
+每个记忆记录包含：
 
-Molt 触发判断：
+created_at
+importance_score
+last_reviewed
+decay_rate  // 可动态调整
 
-定期评估记忆权重 / 召回命中情况
-→ 自动调整记忆权重 decay schedule
 
-当某一记忆在多个情境下被检索并强化
-→ 自主参与 “压缩 & 抽象” 进入 LTM
+衰减规则：
 
-实现细节：
+importance_score := importance_score * exp(-lambda * time_since_last_review)
 
-embedding + semantic_summary + importance + graph_links
 
-复习行为会延缓遗忘
+这个是指数衰减，符合“遗忘曲线”设计。衰减越久分数越低 → 最终淘汰。
 
-权重可解释、可追踪
+🧠 时间维度
 
-🔹 M4：长期记忆（Long-term Memory，LTM）
+需要在 MongoDB 域内存储时间戳/活动时间。可通过时序查询筛选“过时记忆”。
 
-目标：高质量抽象（避免无脑对话堆积）
+⚙️ 知识图关系（在 Neo4j）
 
-存储：
+Neo4j 存的是实体/事件之间的结构关系：
 
-存储	内容
-Neo4j	概念关系、因果图
-Milvus	语义召回向量
-ES	tag / keyword 辅助检索
+(M3_Item)-[:RELATED_TO {type, weight}]->(Other_Item)
 
-压缩规则（自动）：
 
-多条相关 M3 → 抽象成一个 LTM 节点
+关系权重随反馈变化：
 
-只保留：结论 / 适用条件 / 置信度
+正向被引用 → 增强边权
 
-Molt 触发（定期 & 事件）：
+过时/不相关 → 逐渐衰弱
 
-当大量 M3 指向同一主题时
-→ 自动触发“合并与抽象器”
+这种图结构支持跨情境检索与因果/情境路径推理。
 
-当冲突知识出现
-→ 标记并保持版本化（不覆盖）
+🔹 Long-Term Memory（LTM）
 
-🔹 M5：程序性记忆（Procedural Memory）
+这是你要真正保存抽象知识的层。当前技术栈可以支撑，但需加入下面三个机制：
 
-目标：记录可复用策略 / 流程（不是对话）
+🏆 LTM 的核心实质
 
-结构：
+Long-Term Memory 是 抽象结论 + 条件 + 置信度 + 来源关系，不是简单文本堆积。
 
-step_pattern
+抽象就是：
 
-preconditions / postconditions
+从若干 M3 片段 => 合成一个高阶结论
 
-success_rate
 
-Molt 触发（经验反馈）：
+这一步需要一个**抽象引擎（Abstraction Engine）**利用 LLM / 模板逻辑合并 summary。
 
-基于成功/失败执行记录自动调整成功率
+🧩 技术实现（长期存储）
 
-Agent 可选择更稳定的流程
+存储在 Neo4j + Milvus + ES（可选）
 
-🔁 2. Molt 元进化控制器（Memory Meta-Controller）
+用途	技术
+抽象结论存放	Neo4j 节点
+语义召回	Milvus（embedding 生成结论向量）
+关键字检索标签	ES（不全文堆积，仅 Tag）
 
-这是整个系统最核心的升级：
+📌 与短期不同：
 
-它不是一个单一数据库，而是一个负责：
+LTM 不存大量文本原文
 
-周期性评估记忆质量（召回命中、任务成功率）
+只存结论 + 约束条件 + 来源 ID
 
-调整 Memory 系统行为（升降级规则、Prompt 变更、索引策略）
+🧠 版本与时间
 
-自动优化淘汰与保留参数
+为解决知识冲突或进化：
 
-推动长期结构自适应进化
+LTM_Node:
+- version
+- timestamp
+- sources[]
+- confidence
 
-🧠 Molt 循环机制
-记忆生成 → 质量评估 → 反馈信号 → 调整策略 → 更新记忆规则
 
-2.1 质量评估信号来源
+每次相同主题有新证据：
 
-Agent 的任务成功 / 失败
+判断是否覆盖
 
-记忆召回命中率统计
+若冲突则保留版本（而不是覆盖）
 
-复习强度 / 任务相关度
+这个逻辑来源于长期知识演化研究观点。
 
-冲突信息率
+🧠 2. 抽象 (Abstraction Engine)
+👇 抽象引擎功能
 
-🪄 自我修改策略（自动）
+自动发现主题相似 M3 片段
 
-Molt 控制器可以自动：
+合并成 condensed summary
 
-调整向量索引参数（如 recall threshold）
+标记适用条件 / 置信度
 
-修改分块与摘要 Prompt 产生规则
+输出标准化结论
 
-自动压缩冗余记忆
+来源
+这个逻辑可直接利用 LLM 模块执行：
 
-调整淘汰阈值
+LLM(
+  “Take these M3 summaries and produce a general principle/conclusion.
+   Include conditions and confidence level.”
+)
 
-重新组织图关系
 
-这样的机制与研究中强调的 “记忆的动态更新 & 衰退控制” 相呼应，而不是静态的记忆池。
+输出写入 Neo4j LTM 节点，并生成向量存 Milvus。
 
-🔐 3. 多 Agent 共享 / 竞争记忆规范
-层级	共享	私有
-M1	❌	✔️
-M2	❌	✔️
-M3	⚠️ 授权由 Molt Collector 控制	✔️
-LTM	✔️（版本 & 来源可追踪）	✔️
-Procedural	✔️（安全执行 & 审计）	✔️
-⛔ 共享层级禁止行为
+🔁 3. 反馈机制（Feedback Signals）
 
-私有经验直接污染 LTM
+反馈信号来源：
 
-无共识写入长期知识
+召回命中次数
 
-Agent 直接操作底层结构
+在任务输出中的实际贡献
 
-🧪 4. Molt 驱动的验证与测试体系
+用户/代理各类正/负反馈
 
-为了避免“黑箱成长”，每一层必须：
+反馈分两类：
 
-能回答：我是哪个层级记忆
+即时反馈
 
-能回答：我什么时候会被遗忘
+被召回 => importance_score += 1
 
-能回答：我从哪些经验中抽象而来
 
-可审计来源与时间线
+长周期反馈
 
-不允许 Agent 直接写底层 schema
+参与实际任务成功 => reinforcement event
 
-🧾 5. 最终验收 Checklist（加 Molt 指标）
 
-❏ M3 到 LTM 的抽象是否触发正确
+长期强化将增加 LTM 节点的置信度并可能触发版本迭代。
 
-❏ Molt 是否主动调整 Prompt / 压缩策略
+⏱️ 4. 衰减与生命周期
+📍 衰减公式
 
-❏ 冲突知识是否保留来源版本
+每条记忆都有内建衰减：
 
-❏ 所有记忆可解释 & 可追踪 & 可测试
+importance = importance * exp(-λ * Δt)
 
-❏ 多 Agent 读写共享规范生效
 
-🧠 总体架构图（逻辑）
-             ┌──────────────┐
-             │  Input Stream│
-             └───────▲──────┘
-                     │
-M1 Sensory Cache ───▶│
-                     │        Molt Meta Controller
-                     ▼      ↙        ▲      ↘
-             ┌──────────────┐       │       ┌──────────────┐
-             │   M2 WM      │◀──Quality Feedback──▶ M3 Episodic Memory
-             └──────────────┘       │       └──────────────┘
-                     │              │                │
-                     │              ▼                ▼
-                     └─────────▶ LTM   ←────────▶ Procedural
-                                (abstract / shared knowledge)
+λ（衰减率）可以根据不同层级、使用频率动态调整。
+
+🧠 5. Molt Controller（Meta-Feedback）
+
+职责
+
+| 动作 | 触发条件 |
+|——|——|
+| 调整 recall threshold | 召回效果下降 |
+| 调整 decay rate | 记忆过早衰减 or 混乱 |
+| 触发抽象引擎 | 相关片段密集 |
+| 冲突处理策略 | LTM 冲突高 |
+
+这个组件需要一个 调度器 定期评估各层反馈统计指标并动态调整策略。
+
+🧠 6. 版本控制与冲突管理
+📌 为什么要版本
+
+长期知识管理需要处理：
+
+新证据 vs 旧证据
+
+冲突结论并存
+
+因此 LTM 节点不仅有 confidence，还要有版本 + source list。
+
+版本控制策略：
+
+源相同 → 合并
+
+源冲突不同 → 保留版本
+
+🧾 7. 最终验收标准（可测试）
+检查记忆生命周期
+检查项	预期行为
+Episodic importance 衰减	随时间自动下降
+高频复习记忆强化	权重上升
+抽象节点生成	当 M3 相关片段密集
+冲突版本保留	源不同但同主题
+Molt 策略调整	recall 成效指标改善
+可解释性
+
+长短期记忆需能回答：
+
+“为什么这个记忆被保留？”
+
+“它来自哪些事件？”
+
+“它什么时候过期？什么时候强化？”
+
+🧠 8. 示例方案部署选择与替代（可选）
+🕒 时间数据库替代
+
+如果 MongoDB 的 TTL 不够精细，可考虑使用 PostgreSQL + TimescaleDB 来做更复杂时间序列衰减跟踪。
+
+🧠 总结要点
+
+记忆层不仅存储，还要有：
+
+抽象能力 → 用 LLM 提取长效结论
+
+反馈机制 → 实时 & 周期性权重更新
+
+衰减机制 → 重要性动态衰减
+
+时间维度与版本迭代管理
+
+这些能力缺一不可，否则记忆就会无限增长/失真/混乱。
