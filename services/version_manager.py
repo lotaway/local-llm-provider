@@ -12,7 +12,7 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from dataclasses import dataclass
-
+from constants import LEARNING
 from repositories.neo4j_repository import Neo4jRepository
 from repositories.mongodb_repository import MongoDBRepository
 from schemas.graph import LTMNode
@@ -116,6 +116,10 @@ class VersionManager:
         Returns:
             保存的topic_version
         """
+        if not LEARNING:
+            logger.info("LEARNING=false, skipping LTM upsert")
+            return ""
+
         conflict = self.detect_conflict(ltm.topic, ltm.conclusion)
 
         if conflict.recommended_action == "merge":
@@ -243,6 +247,10 @@ class VersionManager:
 
     def rollback_to_version(self, topic: str, version: int) -> bool:
         """回滚到指定版本"""
+        if not LEARNING_ENABLED:
+            logger.info("LEARNING=false, skipping rollback")
+            return False
+
         target = self.neo4j_repo.get_ltm_by_topic_version(topic, version)
         if not target:
             logger.warning(f"Version {version} not found for topic {topic}")
@@ -304,9 +312,9 @@ class VersionManager:
             "has_conflicts": len(conflicts) > 0,
             "version_count": len(existing),
             "conflicts": conflicts,
-            "recommendation": "Consider merging similar versions"
-            if conflicts
-            else "OK",
+            "recommendation": (
+                "Consider merging similar versions" if conflicts else "OK"
+            ),
         }
 
     def close(self):

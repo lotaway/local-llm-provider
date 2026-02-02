@@ -524,3 +524,51 @@ controller.close()
 | 2026-02-02 | v1.7 | **阶段七完成**: 版本控制 |
 | 2026-02-02 | v1.8 | **阶段八完成**: 集成测试 |
 
+
+---
+
+## LEARNING 环境变量
+
+### 配置
+
+```bash
+# .env.example
+LEARNING=false  # 是否启用自我进化（默认false）
+```
+
+### 行为
+
+| LEARNING 值 | 衰减 | 抽象 | 版本更新 |
+|------------|------|------|---------|
+| `false` | ❌ 跳过 | ❌ 跳过 | ❌ 跳过 |
+| `true` | ✅ 执行 | ✅ 执行 | ✅ 执行 |
+
+### 受影响的服务
+
+| 服务 | 方法 | 检查位置 |
+|------|------|---------|
+| `decay_scheduler.py` | `apply_decay_all()` | Line 113 |
+| | `cleanup_low_importance()` | Line 170 |
+| `abstraction_engine.py` | `abstract_to_ltm()` | Line 124 |
+| | `auto_discover_and_abstract()` | Line 261 |
+| `molt_controller.py` | `run_decay_job()` | Line 198 |
+| | `run_abstraction_job()` | Line 210 |
+| | `run_full_cycle()` | Line 233 |
+| `version_manager.py` | `upsert_ltm()` | Line 124 |
+| | `rollback_to_version()` | Line 261 |
+
+### 使用示例
+
+```bash
+# 启用自我进化
+export LEARNING=true
+
+# 运行完整周期
+python -c "
+from services.molt_controller import MoltController
+controller = MoltController()
+result = controller.run_full_cycle()
+print(result)
+"
+```
+

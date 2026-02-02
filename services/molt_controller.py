@@ -13,7 +13,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 import statistics
-
+from constants import LEARNING
 from repositories.mongodb_repository import MongoDBRepository
 from repositories.neo4j_repository import Neo4jRepository
 from services.feedback_service import FeedbackService
@@ -187,12 +187,18 @@ class MoltController:
 
     def run_decay_job(self) -> Dict[str, Any]:
         """执行衰减任务"""
+        if not LEARNING:
+            return {"skipped": True, "reason": "LEARNING disabled"}
+
         stats = self.decay_scheduler.apply_decay_all()
         self.decay_scheduler.cleanup_low_importance()
         return stats
 
     def run_abstraction_job(self) -> List[Dict[str, Any]]:
         """执行抽象任务"""
+        if not LEARNING:
+            return []
+
         candidates = self.abstraction_engine.get_abstraction_candidates()
         results = []
 
@@ -219,6 +225,13 @@ class MoltController:
         3. 执行衰减
         4. 执行抽象
         """
+        if not LEARNING:
+            return {
+                "skipped": True,
+                "reason": "LEARNING disabled",
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
         report = {
             "timestamp": datetime.utcnow().isoformat(),
             "metrics": None,

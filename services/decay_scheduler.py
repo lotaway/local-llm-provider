@@ -12,6 +12,7 @@ import logging
 import math
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
+from constants import LEARNING
 from repositories.mongodb_repository import MongoDBRepository
 from services.feedback_service import FeedbackService
 
@@ -102,6 +103,10 @@ class DecayScheduler:
         Returns:
             处理统计
         """
+        if not LEARNING:
+            logger.info("LEARNING=false, skipping decay application")
+            return {"skipped": True, "reason": "LEARNING disabled"}
+
         chunks = (
             self.mongo_repo.get_chunks_by_memory_type(memory_type)
             if memory_type
@@ -155,6 +160,10 @@ class DecayScheduler:
         Returns:
             被清理的chunk_id列表
         """
+        if not LEARNING:
+            logger.info("LEARNING=false, skipping cleanup")
+            return []
+
         threshold = threshold or self.IMPORTANCE_THRESHOLD
         stale_chunks = self.mongo_repo.get_low_importance_chunks(
             threshold=threshold, limit=1000

@@ -6,12 +6,15 @@
 2. 使用 LLM 提炼抽象结论
 3. 存入 LTM (Neo4j)
 4. 建立 M3 → LTM 关系
+
+注意：需要 LEARNING=true 环境变量才能执行抽象
 """
 
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
+from constants import LEARNING
 from repositories.mongodb_repository import MongoDBRepository
 from repositories.neo4j_repository import Neo4jRepository
 from schemas.graph import LTMNode
@@ -122,6 +125,10 @@ class AbstractionEngine:
         Returns:
             抽象结果或None（如果不满足条件）
         """
+        if not LEARNING:
+            logger.info("LEARNING=false, skipping abstraction")
+            return None
+
         if source_chunk_ids:
             episodes = [self.mongo_repo.get_chunk(cid) for cid in source_chunk_ids]
             episodes = [e for e in episodes if e]
@@ -249,6 +256,10 @@ Rules:
         Returns:
             抽象结果列表
         """
+        if not LEARNING:
+            logger.info("LEARNING=false, skipping auto abstraction")
+            return []
+
         results = []
 
         chunks = self.mongo_repo.get_chunks_by_memory_type("episodic")

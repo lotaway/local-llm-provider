@@ -30,3 +30,6 @@ MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "rag_system")
 
 # Data Path Configuration
 DATA_PATH = os.getenv("DOCS_PATH", "./docs")
+
+# MOLT Learning Configuration
+LEARNING = os.getenv("LEARNING", "false").lower() == "true"
