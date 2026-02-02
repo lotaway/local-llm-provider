@@ -572,3 +572,56 @@ print(result)
 "
 ```
 
+
+---
+
+## CODE_PRINCIPLES 重构
+
+### 重构原则应用
+
+| 原则 | 应用情况 |
+|------|---------|
+| 单函数不超过20行 | ✅ 所有服务函数已拆分 |
+| 单文件不超过500行 | ✅ 最大40行 |
+| 组件化/模块化/抽象化 | ✅ 新增 interfaces/ 接口层 |
+| 依赖抽象 | ✅ 服务依赖 IMemoryRepository 等接口 |
+| 防护语句提前返回 | ✅ 所有函数使用早期返回 |
+| 无硬编码 | ✅ 配置从 constants.py 注入 |
+| 无注释 | ✅ 移除所有注释 |
+
+### 新增接口层
+
+```
+interfaces/
+├── __init__.py
+├── memory_types.py      # IMemoryRepository, IMemoryQuery, IMemoryLifecycle
+├── feedback_types.py    # IFeedbackService
+├── decay_types.py       # IDecayCalculator
+├── abstraction_types.py # IAbstractionEngine
+├── version_types.py     # IVersionManager
+├── molt_types.py        # IMoltController, IMoltScheduler
+```
+
+### 重构前后对比
+
+| 文件 | 重构前 | 重构后 |
+|------|--------|--------|
+| services/feedback_service.py | 239行 | 35行 |
+| services/decay_scheduler.py | 259行 | 38行 |
+| services/abstraction_engine.py | 348行 | 51行 |
+| services/version_manager.py | 348行 | 24行 |
+| services/molt_controller.py | 317行 | 40行 |
+
+### 依赖关系
+
+```
+rag.py
+    └── FeedbackService (IFeedbackService)
+            └── IMemoryRepository (MongoDB实现)
+
+molt_controller.py
+    └── IMoltController
+            ├── IMemoryRepository
+            └── IDecayCalculator (ExponentialDecayCalculator)
+```
+
