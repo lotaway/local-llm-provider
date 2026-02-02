@@ -246,14 +246,19 @@ class LocalRAG:
         # Generate doc_id
         doc_id = f"doc_{checksum[:16]}"
 
-        # Save to MongoDB
-        metadata = {"title": title}
+        metadata = kwargs.get("metadata", {})
+        doc_title = title or "Untitled"
+        doc_author = kwargs.get("author", "")
+        doc_summary = kwargs.get("summary", "")
         metadata.update({k: v for k, v in kwargs.items() if v is not None})
 
         self.mongo_repo.save_document(
             doc_id=doc_id,
             content=content,
+            title=doc_title,
             source=source,
+            author=doc_author,
+            summary=doc_summary,
             path=file_path,
             filename=filename,
             format=content_type,
@@ -623,13 +628,20 @@ class LocalRAG:
 
             # Save document to MongoDB if not exists
             source = doc.metadata.get("source", "unknown")
+            filename = os.path.basename(source) if source else "unknown"
+            doc_title = doc.metadata.get("title") or filename or "Untitled"
+            doc_author = doc.metadata.get("author", "")
+            doc_summary = doc.metadata.get("summary", "")
             if not self.mongo_repo.get_document(doc_id):
                 self.mongo_repo.save_document(
                     doc_id=doc_id,
                     content=content,
+                    title=doc_title,
                     source=source,
+                    author=doc_author,
+                    summary=doc_summary,
                     path=source,
-                    filename=os.path.basename(source) if source else "unknown",
+                    filename=filename,
                     format="auto",
                     checksum=f"sha256:{checksum}",
                     metadata=doc.metadata,
@@ -774,7 +786,7 @@ class LocalRAG:
             logger.info(
                 f"Creating Milvus collection '{self.collection}' and indexing documents..."
             )
-            if needs_es:
+            if needs_es and self.es_retriever:
                 logger.info("Indexing documents to Elasticsearch...")
                 self.es_retriever.index_documents(chunks)
             vectorstore = self.build_vectorstore(docs)
@@ -792,7 +804,7 @@ class LocalRAG:
             vectorstore = self._sync_add_missing_chunks(vectorstore, chunks)
 
         # Step 3: Handle Elasticsearch
-        if needs_es:
+        if needs_es and self.es_retriever:
             logger.info("Indexing documents to Elasticsearch...")
             self.es_retriever.index_documents(chunks)
 
@@ -821,12 +833,19 @@ class LocalRAG:
 
             # Save new document
             source = doc.metadata.get("source", "unknown")
+            filename = os.path.basename(source) if source else "unknown"
+            doc_title = doc.metadata.get("title") or filename or "Untitled"
+            doc_author = doc.metadata.get("author", "")
+            doc_summary = doc.metadata.get("summary", "")
             self.mongo_repo.save_document(
                 doc_id=doc_id,
                 content=content,
+                title=doc_title,
                 source=source,
+                author=doc_author,
+                summary=doc_summary,
                 path=source,
-                filename=os.path.basename(source) if source else "unknown",
+                filename=filename,
                 format="auto",
                 checksum=f"sha256:{checksum}",
                 metadata=doc.metadata,
