@@ -13,7 +13,7 @@ local-llm-provider
 ├── globals                    Package init and global config
 ├── model_convert              Model conversion scripts (GGUF/ONNX)
 ├── model_providers            Model providers & inference engines (transformers, llama.cpp, ComfyUI, POE)
-├── repositories               Data access (Neo4j)
+├── repositories               Data access (MongoDB, Neo4j)
 ├── retrievers                 RAG retrievers (ES, hybrid, graph, reranker)
 ├── routers                    API routers & versioning
 ├── schemas                    Structured data models (graphs, etc.)
@@ -34,8 +34,44 @@ local-llm-provider
 ├── docker-compose-elasticsearch-init.sh  Elasticsearch init script
 ├── .env.example               Environment variables example
 ├── start.sh / build.sh / deploy.sh  Start/build/deploy scripts
-└── HARDWARE.md / PLAN.md / LICENSE  Docs
+├── HARDWARE.md / RAG_MIGRATION.md / LICENSE  Docs
 ```
+
+## RAG Architecture
+
+The system uses **MongoDB as Source of Truth** with unified storage for documents and chunks.
+
+```
+                    ┌─────────────┐
+                    │   MongoDB   │
+                    │ (事实源)    │
+                    │ documents   │
+                    │ chunks      │
+                    └──────┬──────┘
+                           │
+           ┌───────────────┼───────────────┐
+           │               │               │
+           ▼               ▼               ▼
+    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+    │   Milvus    │ │Elasticsearch│ │   Neo4j     │
+    │ chunk向量   │ │  全文索引   │ │ 结构索引    │
+    │ chunk文本   │ │  chunk文本  │ │ (仅存ID)    │
+    └─────────────┘ └─────────────┘ └─────────────┘
+           │               │               │
+           └───────────────┼───────────────┘
+                           │
+                    通过 chunk_id / doc_id 关联
+```
+
+### Data Flow
+1. Load documents from `DATA_PATH` (default: `./docs`)
+2. Split into chunks and save to MongoDB
+3. Generate embeddings → Milvus
+4. Index full-text → Elasticsearch
+5. Extract graph → Neo4j (entities & relations)
+
+### Supported Formats
+`.txt`, `.md`, `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.csv`, `.json` (incl. ChatGPT/DeepSeek), code files (`.py`, `.java`, etc.)
 
 ## Usage
 
@@ -177,7 +213,7 @@ if have problem with:
 
 ```bash
 from .CrossEncoder import CrossEncoder
-File "{user}\miniforge3\envs\python3.12\Lib\site-packages\sentence_transformers\cross_encoder\CrossEncoder.py", in <module>
+File "{user}\miniforge3\envs\python3.12\Lib\site-packages\sentence_transformers\cross_encoder\CrossEncoder.py", line 1, in <module>
     from transformers import (
 ImportError: cannot import name 'PreTrainedModel' from 'transformers'
 ```
@@ -194,3 +230,4 @@ if not hasattr(transformers, "PreTrainedTokenizer"):
     from transformers.tokenization_utils import PreTrainedTokenizer
     transformers.PreTrainedTokenizer = PreTrainedTokenizer
 ```
+
