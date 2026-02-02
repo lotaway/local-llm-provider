@@ -29,4 +29,4 @@ MONGO_PASSWORD = os.getenv("MONGO_PASSWORD", "")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "rag_system")
 
 # Data Path Configuration
-DATA_PATH = os.getenv("DATA_PATH", os.getenv("DOCS_PATH", "./docs"))
+DATA_PATH = os.getenv("DOCS_PATH", "./docs")
