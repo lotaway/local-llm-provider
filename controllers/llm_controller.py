@@ -11,7 +11,22 @@ from typing import cast
 
 import globals as backend_globals
 from auth import get_multimodal_headers
-from model_providers import LocalLLModel
+from model_providers import (
+    LocalLLModel,
+    PoeModelProvider,
+    OpenAIModelProvider,
+    OpenAISettings,
+)
+from constants import (
+    POE_API_KEY,
+    POE_DEFAULT_MODEL,
+    OPENAI_API_KEY,
+    OPENAI_BASE_URL,
+    OPENAI_ORGANIZATION,
+    OPENAI_PROJECT,
+    OPENAI_PROXY_URL,
+    OPENAI_TIMEOUT,
+)
 from schemas import Message, ChatRequest
 from rag import LocalRAG
 from utils import ContentType
@@ -19,6 +34,86 @@ from utils import ContentType
 router = APIRouter()
 logger = logging.getLogger(__name__)
 OTHER_VERSION = "v1"
+
+
+def _has_value(value: str) -> bool:
+    return value.strip() != ""
+
+
+def _none_if_empty(value: str):
+    return value.strip() or None
+
+
+def _parse_timeout(value: str):
+    if value.strip() == "":
+        return None
+    return float(value)
+
+
+def _get_poe_models():
+    if not _has_value(POE_API_KEY):
+        return []
+    if POE_DEFAULT_MODEL.strip() == "":
+        return []
+    return [POE_DEFAULT_MODEL]
+
+
+def _get_openai_models():
+    if not _has_value(OPENAI_API_KEY):
+        return []
+    return _build_openai_provider().list_models()
+
+
+def _is_remote_model(model: str) -> bool:
+    return model in _get_poe_models() or model in _get_openai_models()
+
+
+def _build_openai_provider() -> OpenAIModelProvider:
+    settings = OpenAISettings(
+        api_key=OPENAI_API_KEY,
+        base_url=OPENAI_BASE_URL,
+        organization=_none_if_empty(OPENAI_ORGANIZATION),
+        project=_none_if_empty(OPENAI_PROJECT),
+        proxy_url=_none_if_empty(OPENAI_PROXY_URL),
+        timeout=_parse_timeout(OPENAI_TIMEOUT),
+    )
+    return OpenAIModelProvider(settings)
+
+
+def _build_poe_provider() -> PoeModelProvider:
+    return PoeModelProvider()
+
+
+def _get_remote_provider(model: str):
+    if model in _get_poe_models():
+        if not _has_value(POE_API_KEY):
+            raise HTTPException(status_code=400, detail="POE_API_KEY is required")
+        return _build_poe_provider()
+    if model in _get_openai_models():
+        if not _has_value(OPENAI_API_KEY):
+            raise HTTPException(status_code=400, detail="OPENAI_API_KEY is required")
+        return _build_openai_provider()
+    raise HTTPException(status_code=400, detail="Unsupported remote model")
+
+
+def _stream_response(resp: httpx.Response):
+    def event_stream():
+        for chunk in resp.iter_text():
+            if chunk:
+                yield chunk
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+async def _proxy_remote_chat(body_data: dict, request: Request, model: str):
+    provider = _get_remote_provider(model)
+    resp = await provider.handle_request("chat/completions", request, body_data)
+    if isinstance(resp, str):
+        return StreamingResponse(content=resp, media_type="text/event-stream")
+    if body_data.get("stream", False):
+        return _stream_response(cast(httpx.Response, resp))
+    return JSONResponse(content=resp.json(), status_code=resp.status_code)
 
 
 class CompletionRequest(BaseModel):
@@ -29,7 +124,6 @@ class CompletionRequest(BaseModel):
 
 @router.post("/chat/completions", tags=["chat"])
 async def chat_completions(req: ChatRequest, request: Request):
-
     if req.files:
         from utils import FileProcessor
 
@@ -37,6 +131,10 @@ async def chat_completions(req: ChatRequest, request: Request):
         req.messages = file_processor.inject_file_context_to_messages(
             req.messages, req.files
         )
+
+    if _is_remote_model(req.model):
+        payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+        return await _proxy_remote_chat(payload, request, req.model)
 
     has_images = False
     for m in req.messages:
@@ -382,7 +480,6 @@ async def chat_completions(req: ChatRequest, request: Request):
 
 @router.post("/completions", tags=["completions"])
 async def completions(req: CompletionRequest):
-
     local_model = LocalLLModel.init_local_model(req.model)
 
     if req.enable_rag:

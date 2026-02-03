@@ -37,3 +37,12 @@ LEARNING = os.getenv("LEARNING", "false").lower() == "true"
 LLP_SKILLS_DIRS = os.getenv("LLP_SKILLS_DIRS", "")
 LLP_ENABLE_CLAUDE_GLOBAL = os.getenv("LLP_ENABLE_CLAUDE_GLOBAL", "0")
 LLP_CLAUDE_SKILLS_DIR = os.getenv("LLP_CLAUDE_SKILLS_DIR", "")
+
+POE_API_KEY = os.getenv("POE_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+POE_DEFAULT_MODEL = os.getenv("POE_DEFAULT_MODEL", "Claude-Sonnet-4.5")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+OPENAI_ORGANIZATION = os.getenv("OPENAI_ORGANIZATION", "")
+OPENAI_PROJECT = os.getenv("OPENAI_PROJECT", "")
+OPENAI_PROXY_URL = os.getenv("OPENAI_PROXY_URL", "")
+OPENAI_TIMEOUT = os.getenv("OPENAI_TIMEOUT", "")

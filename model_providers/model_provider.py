@@ -15,7 +15,11 @@ from utils import (
 )
 from .inference_engine import InferenceEngine
 from .unified_model_loader import UnifiedModelLoader
-from constants import QUANTIZATION, TORCH_DTYPE, DEFAULT_CONTEXT_LENGTH
+from constants import (
+    QUANTIZATION,
+    TORCH_DTYPE,
+    DEFAULT_CONTEXT_LENGTH,
+)
 import asyncio
 
 models = discover_models()
@@ -36,7 +40,6 @@ local_model = None
 
 
 class LocalLLModel:
-
     cur_model_name: str = ""
     embedding_model_name: str = ""
     embedding_model: SentenceTransformer | None = None
@@ -44,6 +47,10 @@ class LocalLLModel:
 
     @staticmethod
     def get_models():
+        return list(models.keys())
+
+    @staticmethod
+    def get_local_models():
         return list(models.keys())
 
     @staticmethod
@@ -148,7 +155,9 @@ class LocalLLModel:
                 role = (
                     "user"
                     if msg.type == "human"
-                    else "assistant" if msg.type == "ai" else "system"
+                    else "assistant"
+                    if msg.type == "ai"
+                    else "system"
                 )
                 content = msg.content
             elif isinstance(msg, dict):

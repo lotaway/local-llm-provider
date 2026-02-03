@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(check_multimodal_health())
     PRELOAD_MODEL = os.getenv("PRELOAD_MODEL")
     if PRELOAD_MODEL:
-        available_models = LocalLLModel.get_models()
+        available_models = LocalLLModel.get_local_models()
         if PRELOAD_MODEL in available_models:
             logger.info(f"Preloading model: {PRELOAD_MODEL}")
             LocalLLModel.init_local_model(PRELOAD_MODEL).load_model()
@@ -86,10 +86,10 @@ async def lifespan(app: FastAPI):
         # We need a model for LocalRAG. Use PRELOAD_MODEL or the first available one.
         rag_model_name = PRELOAD_MODEL
         if not rag_model_name:
-            available_models = LocalLLModel.get_models()
+            available_models = LocalLLModel.get_local_models()
             if available_models:
                 rag_model_name = available_models[0]
-        
+
         if rag_model_name:
             logger.info(f"Using model '{rag_model_name}' for RAG pre-initialization.")
             model = LocalLLModel.init_local_model(rag_model_name)
@@ -97,13 +97,17 @@ async def lifespan(app: FastAPI):
             # Use a task to not block startup if it takes long
             asyncio.create_task(backend_globals.local_rag.get_or_create_vectorstore())
         else:
-            logger.warning("PRE_INIT_RAG enabled but no models found to initialize RAG.")
+            logger.warning(
+                "PRE_INIT_RAG enabled but no models found to initialize RAG."
+            )
 
     yield
     # Shutdown
     import model_providers
+
     try:
         from utils.mcp_loader import stop_all
+
         stop_all()
     except Exception:
         pass
@@ -173,7 +177,6 @@ async def manifest():
 
 @app.get("/mcp")
 async def query_rag(request: Request):
-
     query = request.query_params.get("query")
     if query is None:
         raise HTTPException(

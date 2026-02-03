@@ -5,6 +5,7 @@ import json
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 from fastapi import Request
 
+
 class PoeModelProvider:
     def __init__(self):
         proxy_url = os.getenv("HTTP_PROXY")
@@ -31,14 +32,25 @@ class PoeModelProvider:
             messages=[{"role": "user", "content": message}],
         )
         return chat.choices[0].message.content
-    
 
-    async def handle_request(self, path, request: Request):
-        """Process original URL, remove /poe path, forward to API with API_KEY"""
-        body_data = await request.json()
+    async def handle_request(
+        self, path, request: Request, body_data: dict | None = None
+    ):
+        if body_data is None:
+            body_data = await request.json()
+        if body_data is None:
+            body_data = {}
+        if not isinstance(body_data, dict):
+            raise ValueError("request body must be a JSON object")
+        request_body = body_data
         try:
-            resp = self.client.post(path=path, body=body_data or {}, cast_to=httpx.Response, stream=body_data.get("stream", False))
+            resp = self.client.post(
+                path=path,
+                body=request_body,
+                cast_to=httpx.Response,
+                stream=request_body.get("stream", False),
+            )
             resp.raise_for_status()
             return resp
         except Exception as e:
-            return f"data: {json.dumps({'error': str(e)})}\n\n"
+            raise RuntimeError(str(e)) from e
