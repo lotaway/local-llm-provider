@@ -1,10 +1,12 @@
-一个完整落地的长期记忆实现计划，基于你当前已经采用的技术栈：MongoDB + Milvus + Elasticsearch + Neo4j，并补充你原类脑规范中缺失的三个关键能力：
+# 长期记忆实现计划
+
+基于当前已经采用的技术栈：MongoDB + Milvus + Elasticsearch + Neo4j，并补充原类脑规范中缺失的三个关键能力：
 
 👉 抽象 (Abstraction)
 👉 反馈机制 (Feedback)
 👉 记忆衰减/时间维度与版本迭代 (Decay / Versions)
 
-这个方案既保留你原来的设计重点，也兼顾工程可实现性，并在每个层级说明该用哪个组件、怎么用以及之间的关系。
+这个方案既保留原来的设计重点，也兼顾工程可实现性，并在每个层级说明该用哪个组件、怎么用以及之间的关系。
 
 🚀 整体架构图（高层）
        Agent 输入事件
@@ -71,7 +73,7 @@ rehearsal count 影响淘汰顺序
 
 🔹 M3 短期记忆 / 经验记忆（Episodic）
 
-这是你原先提到的“向量 + 图 + Meta 信息”的主要层。
+这是原先提到的“向量 + 图 + Meta 信息”的主要层。
 
 组件组合：
 
@@ -144,7 +146,7 @@ Neo4j 存的是实体/事件之间的结构关系：
 
 🔹 Long-Term Memory（LTM）
 
-这是你要真正保存抽象知识的层。当前技术栈可以支撑，但需加入下面三个机制：
+这是要真正保存抽象知识的层。当前技术栈可以支撑，但需加入下面三个机制：
 
 🏆 LTM 的核心实质
 
@@ -313,3 +315,206 @@ Molt 策略调整	recall 成效指标改善
 时间维度与版本迭代管理
 
 这些能力缺一不可，否则记忆就会无限增长/失真/混乱。
+
+# V2版本
+
+1. 系统总体架构
+User Input
+   ↓
+Agent Core（多级推理 + 输出生成）
+   ↓
+Response
+   ↓
+Feedback Judge（独立模型/模块）
+   ↓
+Evolution Dispatcher
+   ↓
+Memory / Skill / Strategy Callback
+
+核心原则
+
+职责分离
+
+Agent Core：推理、生成、执行任务
+
+Feedback Judge：评估用户反馈、生成信号
+
+Evolution Dispatcher：决定记忆或技能调整
+
+Memory/Skill：被动接收、慢慢调整
+
+非侵入式调整
+
+不在单轮直接修改记忆
+
+调整依赖多轮一致信号或置信度
+
+多级记忆对齐
+
+M1：感觉缓存（本轮短期状态）
+
+M2：工作记忆（短期、临时权重调整）
+
+M3：稳定记忆（长期、需多源验证）
+
+2. Agent Core
+功能目标
+
+多轮推理
+
+支持工具调用（技能 Skill）
+
+可生成元信息（上下文标记、信心评分、执行日志）
+
+支持回调接口：将输出交给 Feedback Judge
+
+输入输出
+
+输入：用户输入 + M1/M2/M3 记忆快照 + 上下文元数据
+
+输出：
+
+{
+  "response_text": "...",
+  "meta": {
+      "reasoning_path": "...",
+      "skills_used": ["skillA", "skillB"],
+      "confidence": 0.0-1.0,
+      "execution_log": "..."
+  }
+}
+
+3. Feedback Judge
+职责
+
+独立模型或模块
+
+只分析用户输入 + Agent 输出 + 上下文短窗口
+
+输出信号，而非直接改动
+
+输入
+{
+  "user_input": "...",
+  "agent_response": "...",
+  "context_window": ["prev_user", "prev_agent", ...]
+}
+
+输出 Signal Schema
+{
+  "feedback_detected": true,
+  "type": "negative | positive | neutral | mixed",
+  "confidence": 0.0-1.0,
+  "targets": ["reasoning", "final_answer", "style", "tool_choice"],
+  "action_hint": ["penalty", "invalidate", "prefer"]
+}
+
+Judge 特点
+
+不参与对话内容生成
+
+可异步处理（延迟反馈）
+
+可独立升级模型
+
+信号可以触发 Dispatcher，但不直接修改记忆
+
+4. Evolution Dispatcher
+功能
+
+接收 Judge 输出信号
+
+决定触发的回调（Memory/Skill 调整）
+
+控制调整时机与粒度
+
+支持多轮聚合信号
+
+核心逻辑（伪代码）
+for signal in signal_pool:
+    if signal.confidence < threshold:
+        continue
+    if signal.type == 'negative':
+        emit_penalty(signal.targets)
+    elif signal.type == 'mixed':
+        split_targets(signal.targets)
+    # 延迟应用
+apply_aggregated_adjustments()
+
+5. Memory / Skill 调整策略
+层级	调整类型	触发条件
+M1 感觉缓存	本轮失败标记	Judge 信号即时反馈
+M2 工作记忆	临时权重调整 / 技能偏好	Judge 多轮确认 + 高置信度
+M3 稳定记忆	长期知识/技能调整	多源一致 + 高置信度 + 演化策略同意
+特性
+
+调整是渐进、可回滚的
+
+支持多信号累积
+
+可针对目标（reasoning / style / tool_choice）精细调整
+
+记录调整历史，便于审计和策略优化
+
+6. 进化 v2 改进功能整合列表
+
+多级记忆压缩 + 遗忘曲线
+
+M1/M2/M3 分级存储与管理
+
+知识图谱结合
+
+知识关系建模辅助决策
+
+技能与策略可调
+
+Dispatcher 可控制技能权重
+
+回调与事件驱动
+
+Judge → Dispatcher → Memory / Skill
+
+异步反馈聚合
+
+单轮负反馈不直接影响长期记忆
+
+用户反馈信号化（新加入）
+
+单独模块评估用户输入
+
+输出可量化信号
+
+置信度与目标细化
+
+可针对 reasoning / style / tool_choice 独立调整
+
+延迟与安全策略
+
+防止噪声和一次性反馈破坏记忆
+
+7. 系统接口规范
+Agent Core → Judge
+judge_input = {
+    "user_input": user_text,
+    "agent_response": agent_output,
+    "context_window": context_window
+}
+feedback_signal = judge.evaluate(judge_input)
+
+Judge → Dispatcher
+dispatcher.enqueue(feedback_signal)
+dispatcher.aggregate_and_apply()
+
+Dispatcher → Memory/Skill
+memory.apply_adjustments(aggregated_signals)
+skill_manager.adjust_weights(aggregated_signals)
+
+8. 安全与监控
+
+所有调整有历史记录
+
+调整策略可配置阈值
+
+支持回滚/撤销
+
+信号和调整可统计分析，便于优化 Judge 模型
