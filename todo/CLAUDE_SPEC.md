@@ -103,11 +103,12 @@ connections:
   - 验证 planning_hints 中的 requires_approval 提示被 Planner 正确使用
  
 ## 迁移步骤
-- 第一步：实现 utils/mcp_loader.py 与 skill_registry.py 的环境变量扩展
-- 第二步：在 agent_runtime.py 注入加载流程，并填充 runtime.state.context
-- 第三步：新增测试用例，完善 .env.example（仅文档中说明，不影响当前提交）
-- 第四步：验证在 macOS/Linux/WSL 环境下的路径与进程管理稳定性
- - 第五步（增强）：实现 MCP 协议 initialize/tools.list 与退化策略（DEGRADED）
+- [x] 第一步：实现 utils/mcp_loader.py 与 skill_registry.py 的环境变量扩展
+- [x] 第二步：在 agent_runtime.py 注入加载流程，并填充 runtime.state.context
+- [x] 第三步：新增测试用例，完善 .env.example（仅文档中说明，不影响当前提交）
+- [x] 第三步补充：验证全局技能自动加载（tests/verify_global_skills_loading.py）
+- [x] 第四步：验证在 macOS/Linux/WSL 环境下的路径与进程管理稳定性
+- [ ] 第五步（增强）：实现 MCP 协议 initialize/tools.list 与退化策略（DEGRADED）
  
 ## 示例环境变量
 ```bash

@@ -15,6 +15,7 @@ dependencies = [
   "httpx>=0.28.1",
   "python-dotenv>=1.1.1",
   "psutil>=5.9.0",
+  "PyYAML>=6.0.3",
   # RAG dependencies
   "langchain>=1.0.8",
   "langchain-community>=0.4.1",

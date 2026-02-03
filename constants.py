@@ -33,3 +33,7 @@ DATA_PATH = os.getenv("DOCS_PATH", "./docs")
 
 # MOLT Learning Configuration
 LEARNING = os.getenv("LEARNING", "false").lower() == "true"
+
+LLP_SKILLS_DIRS = os.getenv("LLP_SKILLS_DIRS", "")
+LLP_ENABLE_CLAUDE_GLOBAL = os.getenv("LLP_ENABLE_CLAUDE_GLOBAL", "0")
+LLP_CLAUDE_SKILLS_DIR = os.getenv("LLP_CLAUDE_SKILLS_DIR", "")

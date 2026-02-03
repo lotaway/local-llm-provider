@@ -6,6 +6,11 @@ import importlib.util
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Type
 import os
+from constants import (
+    LLP_SKILLS_DIRS,
+    LLP_ENABLE_CLAUDE_GLOBAL,
+    LLP_CLAUDE_SKILLS_DIR,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +242,9 @@ def load_skills_from_directory(directory: str) -> List[SkillManifest]:
                                 manifests.append(manifest)
                                 logger.info(f"Loaded directory skill: {manifest.name}")
                     except Exception as e:
-                        logger.debug(f"Failed to load directory {module_name} as module: {e}")
+                        logger.debug(
+                            f"Failed to load directory {module_name} as module: {e}"
+                        )
 
         except Exception as e:
             logger.warning(f"Failed to load skill from {filename}: {e}")
@@ -264,7 +271,7 @@ def init_skills():
             continue
         loaded_names.add(m.name)
         all_manifests.append(m)
-    env_dirs = os.getenv("LLP_SKILLS_DIRS", "")
+    env_dirs = LLP_SKILLS_DIRS
     if env_dirs:
         for d in [p for p in env_dirs.split(":") if p]:
             env_manifests = load_skills_from_directory(d)
@@ -274,8 +281,8 @@ def init_skills():
                     continue
                 loaded_names.add(m.name)
                 all_manifests.append(m)
-    enable_claude = os.getenv("LLP_ENABLE_CLAUDE_GLOBAL", "0")
-    claude_root = os.getenv("LLP_CLAUDE_SKILLS_DIR")
+    enable_claude = LLP_ENABLE_CLAUDE_GLOBAL
+    claude_root = LLP_CLAUDE_SKILLS_DIR
     if enable_claude == "1":
         if claude_root and os.path.exists(claude_root):
             claude_dir = claude_root
