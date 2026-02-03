@@ -58,6 +58,8 @@ class LLMTaskAgent(BaseAgent):
                 temperature=0.7,
                 max_new_tokens=2000,
             )
+            context["last_agent_type"] = "llm"
+            context.setdefault("skills_used", []).append("llm")
 
             return AgentResult(
                 status=AgentStatus.SUCCESS,

@@ -166,6 +166,10 @@ class LocalRAG:
         # Feedback service for memory lifecycle
         self.feedback_service = FeedbackService(self.mongo_repo)
 
+        # Track latest retrievals for feedback/evolution
+        self.last_retrieved_docs = []
+        self.last_retrieved_chunk_ids = []
+
     async def init_rag_chain(self):
         vectorstore = await self.get_or_create_vectorstore()
         if vectorstore is None:
@@ -192,13 +196,20 @@ class LocalRAG:
 
             def retrieve_and_rerank(query: str) -> List[Document]:
                 docs = retriever.invoke(query)
-                return cast(Reranker, self.reranker).adaptive_rerank(
+                docs = cast(Reranker, self.reranker).adaptive_rerank(
                     query, docs, top_k=5
                 )
+                self._capture_retrieval(docs)
+                return docs
 
             self.retrieval_runnable = RunnableLambda(retrieve_and_rerank)
         else:
-            self.retrieval_runnable = retriever
+            def retrieve_and_capture(query: str) -> List[Document]:
+                docs = retriever.invoke(query)
+                self._capture_retrieval(docs)
+                return docs
+
+            self.retrieval_runnable = RunnableLambda(retrieve_and_capture)
 
         format_messages_runnable = RunnableLambda(self.llm.format_messages)
 
@@ -231,6 +242,14 @@ class LocalRAG:
             | after_runnable
         )
         self.rag_chain = RunnableSequence(chain)
+
+    def _capture_retrieval(self, docs: List[Document]) -> None:
+        self.last_retrieved_docs = docs or []
+        self.last_retrieved_chunk_ids = [
+            d.metadata.get("chunk_id")
+            for d in self.last_retrieved_docs
+            if d.metadata and d.metadata.get("chunk_id")
+        ]
 
     async def add_document(
         self, title: str, content: str, source: str, content_type: str = "md", **kwargs

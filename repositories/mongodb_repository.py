@@ -200,6 +200,41 @@ class MongoDBRepository:
             query["memory_type"] = memory_type
         return list(self.chunks.find(query).limit(limit))
 
+    # IMemoryRepository compatibility helpers
+    def get_by_id(self, chunk_id: str) -> Optional[Dict[str, Any]]:
+        return self.get_chunk(chunk_id)
+
+    def get_by_type(self, memory_type: str) -> List[Dict[str, Any]]:
+        return self.get_chunks_by_memory_type(memory_type)
+
+    def get_by_importance(
+        self, memory_type: str = None, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        return self.get_chunks_by_importance(memory_type=memory_type, limit=limit)
+
+    def get_low_importance(
+        self, threshold: float = 0.1, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        return self.get_low_importance_chunks(threshold=threshold, limit=limit)
+
+    def update_importance(self, chunk_id: str, score: float) -> None:
+        self.update_importance_score(chunk_id, score)
+
+    def mark_reviewed(self, chunk_id: str) -> None:
+        self.update_last_reviewed(chunk_id)
+
+    def mark_discarded(self, chunk_id: str) -> None:
+        self.chunks.update_one(
+            {"chunk_id": chunk_id},
+            {
+                "$set": {
+                    "discarded": True,
+                    "discarded_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+
     def close(self):
         self.client.close()
         logger.info("MongoDB connection closed")

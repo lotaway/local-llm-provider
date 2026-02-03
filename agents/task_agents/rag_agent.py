@@ -66,6 +66,12 @@ class RAGTaskAgent(BaseAgent):
             answer = await self.rag.generate_answer(
                 query, stream_callback=stream_callback
             )
+            context["last_agent_type"] = "rag"
+            if hasattr(self.rag, "last_retrieved_chunk_ids"):
+                context["last_retrieved_chunk_ids"] = (
+                    self.rag.last_retrieved_chunk_ids or []
+                )
+            context.setdefault("skills_used", []).append("rag")
 
             return AgentResult(
                 status=AgentStatus.SUCCESS,

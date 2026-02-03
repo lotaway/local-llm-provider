@@ -146,7 +146,9 @@ async def agent_decision(req: AgentDecisionRequest):
         raise HTTPException(status_code=400, detail="Agent runtime not initialized")
 
     try:
-        result = agent_runtime.handle_decision(req.approved, req.feedback, req.data)
+        result = await agent_runtime.handle_decision(
+            req.approved, req.feedback, req.data
+        )
         return {"success": True, "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -250,6 +252,7 @@ async def agent_chat(req: ChatRequest):
                 "status": status,
                 "iterations": state.iteration_count,
                 "history_length": len(state.history),
+                "core_meta": state.final_meta or {},
             },
         }
 

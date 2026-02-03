@@ -154,6 +154,10 @@ class MCPTaskAgent(BaseAgent):
                     context=context,
                 )
 
+            context["last_agent_type"] = "mcp"
+            context["last_tool_name"] = tool_name
+            context.setdefault("skills_used", []).append(f"mcp:{tool_name}")
+
             return AgentResult(
                 status=AgentStatus.SUCCESS,
                 data=result,

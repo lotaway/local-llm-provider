@@ -33,6 +33,7 @@ class RuntimeState:
     private_contexts: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     history: List[Dict[str, Any]] = field(default_factory=list)
     final_result: Any = None
+    final_meta: Any = None
     error_message: str = ""
 
     def add_to_history(self, agent_name: str, result: AgentResult):
@@ -66,6 +67,7 @@ class RuntimeState:
             "private_contexts": self.private_contexts,
             "history": self.history,
             "final_result": self.final_result,
+            "final_meta": self.final_meta,
             "error_message": self.error_message,
         }
         if self.status == RuntimeStatus.MAX_ITERATIONS:
@@ -101,6 +103,7 @@ class RuntimeState:
         state.private_contexts = data.get("private_contexts", {})
         state.history = data.get("history", [])
         state.final_result = data.get("final_result")
+        state.final_meta = data.get("final_meta")
         state.error_message = data.get("error_message", "")
         return state
 
@@ -112,6 +115,8 @@ class AgentRuntime:
         max_iterations: int,
         context_storage: ContextStorage = None,
         session_id: str = None,
+        feedback_judge=None,
+        evolution_dispatcher=None,
     ):
         self.llm = llm_model
         self.agents: Dict[str, BaseAgent] = {}
@@ -119,6 +124,8 @@ class AgentRuntime:
         self.logger = logging.getLogger("agent.runtime")
         self.context_storage = context_storage
         self.session_id = session_id
+        self.feedback_judge = feedback_judge
+        self.evolution_dispatcher = evolution_dispatcher
         if self.session_id and self.context_storage:
             loaded_state = self._load_state()
             if loaded_state:
@@ -425,6 +432,13 @@ class AgentRuntime:
                 if result.status == AgentStatus.COMPLETE:
                     self.state.status = RuntimeStatus.COMPLETED
                     self.state.final_result = result.data
+                    self.state.final_meta = self._build_agent_core_meta()
+                    self.state.context["agent_core_meta"] = self.state.final_meta
+                    await self._run_feedback_pipeline(
+                        user_input=self._get_feedback_input(),
+                        agent_response=result.data,
+                        context_window=self._build_context_window(),
+                    )
                     self.logger.info(f"\n{'*' * 60}")
                     self.logger.info(
                         f"✓ Workflow completed successfully after {self.state.iteration_count} iterations"
@@ -532,6 +546,67 @@ class AgentRuntime:
         self.state = RuntimeState(max_iterations=self.state.max_iterations)
         self.logger.info("Runtime state reset")
 
+    async def handle_decision(
+        self, approved: bool, feedback: str = "", data: Dict[str, Any] = None
+    ):
+        decision_data = data or {}
+        decision_data["approved"] = approved
+        if feedback:
+            decision_data["feedback"] = feedback
+        if self.state.status == RuntimeStatus.MAX_ITERATIONS:
+            return await self.resume_after_max_iterations()
+        return await self.resume(decision_data)
+
+    def _build_agent_core_meta(self) -> Dict[str, Any]:
+        reasoning_path = " -> ".join(
+            [entry.get("agent", "") for entry in self.state.history]
+        )
+        skills_used = list(dict.fromkeys(self.state.context.get("skills_used", [])))
+        verifications = self.state.context.get("verifications", [])
+        confidence = verifications[-1].get("confidence", 0.0) if verifications else 0.0
+        execution_log = [
+            {
+                "agent": entry.get("agent"),
+                "status": entry.get("status"),
+                "message": entry.get("message"),
+            }
+            for entry in self.state.history
+        ]
+        return {
+            "reasoning_path": reasoning_path,
+            "skills_used": skills_used,
+            "confidence": confidence,
+            "execution_log": execution_log,
+        }
+
+    def _build_context_window(self) -> list:
+        window = []
+        for entry in self.state.history[-5:]:
+            window.append(
+                f"{entry.get('agent')}: {entry.get('message')} ({entry.get('status')})"
+            )
+        return window
+
+    def _get_feedback_input(self) -> str:
+        return self.state.context.get("human_feedback") or self.state.context.get("original_query", "")
+
+    async def _run_feedback_pipeline(self, user_input: str, agent_response: Any, context_window: list):
+        if not self.feedback_judge or not self.evolution_dispatcher:
+            return
+        try:
+            signal = self.feedback_judge.evaluate(
+                user_input=user_input,
+                agent_response=str(agent_response),
+                context_window=context_window,
+            )
+            self.evolution_dispatcher.enqueue(signal)
+            self.evolution_dispatcher.aggregate_and_apply(
+                context=self.state.context,
+                meta=self.state.final_meta or {},
+            )
+        except Exception as e:
+            self.logger.error(f"Feedback pipeline failed: {e}")
+
     @staticmethod
     def create_with_all_agents(
         llm_model,
@@ -561,11 +636,19 @@ class AgentRuntime:
             permission_manager = PermissionManager(
                 human_approval_threshold=SafetyLevel.HIGH
             )
+        from services.feedback_judge import FeedbackJudge
+        from services.evolution_dispatcher import EvolutionDispatcher
+
+        memory_repo = getattr(rag_instance, "mongo_repo", None)
+        feedback_judge = FeedbackJudge()
+        evolution_dispatcher = EvolutionDispatcher(memory_repo=memory_repo)
         runtime = AgentRuntime(
             llm_model,
             max_iterations=max_iterations,
             context_storage=context_storage,
             session_id=session_id,
+            feedback_judge=feedback_judge,
+            evolution_dispatcher=evolution_dispatcher,
         )
 
         # Register core agents

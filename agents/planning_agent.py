@@ -106,6 +106,19 @@ class PlanningAgent(BaseAgent):
                 + "\n".join(available_files)
                 + "\n"
             )
+        m2_adjustments = context.get("m2_adjustments", {})
+        agent_prefs = context.get("agent_type_preferences", {})
+        skill_prefs = context.get("skill_preferences", {})
+        m2_info = ""
+        if m2_adjustments:
+            lines = [f"- {k}: {v:+.2f}" for k, v in m2_adjustments.items()]
+            m2_info += "\n短期调整信号:\n" + "\n".join(lines) + "\n"
+        if agent_prefs:
+            lines = [f"- {k}: {v:.2f}" for k, v in agent_prefs.items()]
+            m2_info += "\nAgent偏好:\n" + "\n".join(lines) + "\n"
+        if skill_prefs:
+            lines = [f"- {k}: {v:.2f}" for k, v in skill_prefs.items()]
+            m2_info += "\n技能偏好:\n" + "\n".join(lines) + "\n"
 
         self.logger.info(f"Planning agent started")
         is_mcp_retry = (
@@ -124,10 +137,11 @@ class PlanningAgent(BaseAgent):
 之前尝试的任务：{input_data.get('original_task', '')}
 失败原因：{input_data.get('suggestion', '')}
 
-{mcp_tools_info}
-{skills_info}
-{caps_info}
-{files_info}
+                {mcp_tools_info}
+                {skills_info}
+                {caps_info}
+                {files_info}
+                {m2_info}
 
 请重新规划任务，只使用可用的工具（LLM、RAG或已注册的MCP工具）。
 """,
@@ -143,10 +157,11 @@ class PlanningAgent(BaseAgent):
 已完成的任务结果：
 {self._format_task_results(task_results)}
 
-{mcp_tools_info}
-{skills_info}
-{caps_info}
-{files_info}
+                {mcp_tools_info}
+                {skills_info}
+                {caps_info}
+                {files_info}
+                {m2_info}
 
 请判断是否已经完成用户的问题，如果完成则输出final_answer，否则规划下一步任务。
 """,
@@ -162,10 +177,11 @@ class PlanningAgent(BaseAgent):
 问题意图：{parsed_query.get('intent', '')}
 问题类型：{parsed_query.get('query_type', '')}
 
-{mcp_tools_info}
-{skills_info}
-{caps_info}
-{files_info}
+                {mcp_tools_info}
+                {skills_info}
+                {caps_info}
+                {files_info}
+                {m2_info}
 
 请为这个问题创建执行计划。
 """,
