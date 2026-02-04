@@ -20,7 +20,7 @@ from langchain_community.document_loaders import (
     UnstructuredPowerPointLoader,
     UnstructuredExcelLoader,
 )
-from langchain_text_splitters import TextSplitter
+from langchain_text_splitters import TextSplitter, RecursiveCharacterTextSplitter
 
 # from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -204,6 +204,7 @@ class LocalRAG:
 
             self.retrieval_runnable = RunnableLambda(retrieve_and_rerank)
         else:
+
             def retrieve_and_capture(query: str) -> List[Document]:
                 docs = retriever.invoke(query)
                 self._capture_retrieval(docs)
@@ -297,9 +298,7 @@ class LocalRAG:
             page_content=content,
             metadata={"source": source, "title": title, "doc_id": doc_id},
         )
-        text_splitter = AdaptiveTextSplitter(
-            min_chunk=500, max_chunk=2000, chunk_overlap=200
-        )
+        text_splitter = self._select_text_splitter(source, content_type)
         langchain_chunks = text_splitter.split_documents([doc])
 
         # Save chunks to MongoDB with stable IDs
@@ -636,10 +635,6 @@ class LocalRAG:
         return embeddings
 
     def build_vectorstore(self, docs: list[Document]):
-        text_splitter = AdaptiveTextSplitter(
-            min_chunk=500, max_chunk=2000, chunk_overlap=200
-        )
-
         all_chunks = []
 
         # Process each document
@@ -671,7 +666,10 @@ class LocalRAG:
                 )
 
             # Split into chunks
-            doc_chunks = text_splitter.split_documents([doc])
+            splitter = self._select_text_splitter(
+                doc.metadata.get("source"), doc.metadata.get("content_type")
+            )
+            doc_chunks = splitter.split_documents([doc])
 
             # Save chunks to MongoDB with stable IDs
             for idx, chunk in enumerate(doc_chunks):
@@ -727,10 +725,16 @@ class LocalRAG:
                 if chunk_id:
                     self.mongo_repo.update_chunk_embedding_status(chunk_id, "done")
 
+            logger.info(
+                f"完成第 {i + 1} 到 {min(i + batch_size, len(all_chunks))} 个文本块的向量化"
+            )
+
             # 清理显存
             del batch
             gc.collect()
             torch.cuda.empty_cache()
+
+        logger.info("所有文本块向量化完成")
 
         return vectorstore
 
@@ -793,16 +797,13 @@ class LocalRAG:
                     collection_name=self.collection,
                 )
 
-        text_splitter = AdaptiveTextSplitter(
-            min_chunk=500, max_chunk=2000, chunk_overlap=200
-        )
-        chunks = text_splitter.split_documents(docs)
+        chunks = self._split_documents(docs)
 
         vectorstore = None
 
         # Step 1: Ensure MongoDB has all documents and chunks
         logger.info("Ensuring MongoDB is up to date...")
-        self._sync_ensure_mongodb(docs, text_splitter)
+        self._sync_ensure_mongodb(docs)
 
         # Step 2: Handle Milvus
         if not has_milvus:
@@ -840,9 +841,7 @@ class LocalRAG:
 
         return vectorstore
 
-    def _sync_ensure_mongodb(
-        self, docs: list[Document], text_splitter: AdaptiveTextSplitter
-    ):
+    def _sync_ensure_mongodb(self, docs: list[Document]):
         """Ensure MongoDB has all documents and chunks, skip if already exists"""
         for doc in docs:
             content = doc.page_content
@@ -875,7 +874,10 @@ class LocalRAG:
             )
 
             # Split and save chunks
-            doc_chunks = text_splitter.split_documents([doc])
+            splitter = self._select_text_splitter(
+                doc.metadata.get("source"), doc.metadata.get("content_type")
+            )
+            doc_chunks = splitter.split_documents([doc])
             for idx, chunk in enumerate(doc_chunks):
                 chunk_id = f"{doc_id}_chunk_{idx:04d}"
 
@@ -931,6 +933,81 @@ class LocalRAG:
             logger.info("No missing chunks to add to Milvus")
 
         return vectorstore
+
+    def _select_text_splitter(
+        self, source: str | None, content_type: str | None
+    ) -> TextSplitter:
+        file_ext = ""
+        if content_type:
+            file_ext = f".{content_type.lstrip('.')}".lower()
+        elif source:
+            file_ext = os.path.splitext(source)[1].lower()
+
+        if file_ext in [".md", ".markdown"]:
+            return RecursiveCharacterTextSplitter(
+                chunk_size=1500,
+                chunk_overlap=200,
+                separators=[
+                    "\n## ",
+                    "\n# ",
+                    "\n\n",
+                    "\n",
+                    "。",
+                    "！",
+                    "？",
+                    ".",
+                    "!",
+                    "?",
+                    ";",
+                    "；",
+                    ",",
+                    "，",
+                    " ",
+                ],
+            )
+
+        if file_ext in [
+            ".py",
+            ".java",
+            ".kt",
+            ".rs",
+            ".js",
+            ".ts",
+            ".html",
+            ".css",
+            ".cs",
+            ".swift",
+        ]:
+            return RecursiveCharacterTextSplitter(
+                chunk_size=1800,
+                chunk_overlap=200,
+                separators=[
+                    "\nclass ",
+                    "\ndef ",
+                    "\nfunction ",
+                    "\n\n",
+                    "\n",
+                    " ",
+                ],
+            )
+
+        if file_ext in [".json", ".csv", ".xlsx", ".xls"]:
+            return RecursiveCharacterTextSplitter(
+                chunk_size=1200,
+                chunk_overlap=100,
+                separators=["\n\n", "\n", ",", " "],
+            )
+
+        return AdaptiveTextSplitter(min_chunk=500, max_chunk=2000, chunk_overlap=200)
+
+    def _split_documents(self, docs: list[Document]) -> list[Document]:
+        all_chunks = []
+        for doc in docs:
+            splitter = self._select_text_splitter(
+                doc.metadata.get("source"), doc.metadata.get("content_type")
+            )
+            all_chunks.extend(splitter.split_documents([doc]))
+        return all_chunks
 
     async def get_or_create_vectorstore(self):
         # Run all synchronous blocking operations in a thread pool

@@ -1,5 +1,6 @@
 import os
-from model_providers import PoeModelProvider, ComfyUIProvider
+from model_providers import ComfyUIProvider
+from remote_providers import PoeModelProvider
 from model_providers.multimodal_provider import MultimodalFactory
 from rag import LocalRAG
 

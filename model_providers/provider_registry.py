@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from typing import Callable, Dict, List
 from utils import discover_models
-from .provider_base import ModelProvider
+from providers.provider_base import ModelProvider
 from .local_model_provider import LocalModelProvider
 from .remote_model_provider import RemoteModelProvider, RemoteProviderConfig
-from .openai_model_provider import OpenAIModelProvider, OpenAISettings
+from remote_providers import OpenAIModelProvider, OpenAISettings
 
 
 @dataclass(frozen=True)

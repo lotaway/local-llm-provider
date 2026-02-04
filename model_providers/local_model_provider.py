@@ -1,6 +1,6 @@
 from typing import Callable, Dict, List
 from utils import discover_models
-from .provider_base import ModelProvider
+from providers.provider_base import ModelProvider
 
 
 class LocalModelProvider(ModelProvider):

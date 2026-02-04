@@ -3,7 +3,7 @@ from typing import Optional, Callable
 import httpx
 import openai
 from fastapi import Request
-from .provider_base import ModelProvider
+from providers.provider_base import ModelProvider
 
 
 class OpenAIProviderConfigError(ValueError):

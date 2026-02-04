@@ -11,12 +11,8 @@ from typing import cast
 
 import globals as backend_globals
 from auth import get_multimodal_headers
-from model_providers import (
-    LocalLLModel,
-    PoeModelProvider,
-    OpenAIModelProvider,
-    OpenAISettings,
-)
+from model_providers import LocalLLModel
+from remote_providers import PoeModelProvider, OpenAIModelProvider, OpenAISettings
 from constants import (
     POE_API_KEY,
     POE_DEFAULT_MODEL,

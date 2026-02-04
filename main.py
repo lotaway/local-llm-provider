@@ -35,7 +35,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 import globals as backend_globals
-from model_providers import LocalLLModel, PoeModelProvider
+from model_providers import LocalLLModel
+from remote_providers import PoeModelProvider
 from model_providers.multimodal_provider import MultimodalFactory
 from routers import version_router
 from controllers.base_controller import router as base_router

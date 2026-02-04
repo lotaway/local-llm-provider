@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import List
-from .provider_base import ModelProvider
+from providers.provider_base import ModelProvider
 
 
 @dataclass(frozen=True)
