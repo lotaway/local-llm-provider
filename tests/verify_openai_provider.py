@@ -27,10 +27,6 @@ def _parse_timeout(value: str):
 
 
 def main() -> int:
-    if OPENAI_API_KEY.strip() == "":
-        print("OPENAI_API_KEY is empty. Please set it in .env")
-        return 1
-
     settings = OpenAISettings(
         api_key=OPENAI_API_KEY,
         base_url=OPENAI_BASE_URL,
@@ -41,6 +37,12 @@ def main() -> int:
     )
 
     provider = OpenAIModelProvider(settings)
+
+    if not provider.is_available():
+        print(
+            "OpenAI credentials not available. Set OPENAI_API_KEY or provide OpenCode auth.json."
+        )
+        return 1
 
     try:
         models = provider.list_models()

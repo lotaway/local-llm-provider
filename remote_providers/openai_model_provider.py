@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 from typing import Optional, Callable
+import json
+import logging
+import os
+import sys
 import httpx
 import openai
 from fastapi import Request
@@ -33,6 +37,9 @@ class OpenAIModelProvider(ModelProvider):
         self._settings = self._validate_settings(settings)
         self._client_factory = http_client_factory or self._build_http_client
         self._client = None
+        self._cached_oauth_token = None
+
+        self._logger = logging.getLogger(__name__)
 
     def ping(self, model: str):
         return self.chat("Hello, introduce yourself.", model=model)
@@ -51,7 +58,7 @@ class OpenAIModelProvider(ModelProvider):
         return self._extract_model_ids(data)
 
     def is_available(self) -> bool:
-        return self._settings.api_key.strip() != ""
+        return self._resolve_api_key().strip() != ""
 
     async def handle_request(
         self, path: str, request: Request, body_data: dict | None = None
@@ -76,7 +83,7 @@ class OpenAIModelProvider(ModelProvider):
     ):
         http_client = http_client_factory(self._settings)
         return openai.OpenAI(
-            api_key=self._settings.api_key,
+            api_key=self._resolve_api_key(),
             base_url=self._settings.base_url,
             organization=self._settings.organization,
             project=self._settings.project,
@@ -101,6 +108,69 @@ class OpenAIModelProvider(ModelProvider):
         if settings.timeout is not None and settings.timeout <= 0:
             raise OpenAIProviderConfigError("timeout must be positive")
         return settings
+
+    def _resolve_api_key(self) -> str:
+        api_key = self._settings.api_key.strip()
+        if api_key:
+            return api_key
+        if self._cached_oauth_token is None:
+            self._cached_oauth_token = self._load_opencode_access_token() or ""
+        return self._cached_oauth_token
+
+    def _load_opencode_access_token(self) -> Optional[str]:
+        auth_path = os.getenv("OPENCODE_AUTH_PATH")
+        candidates = []
+
+        if auth_path:
+            candidates.append(auth_path)
+        else:
+            home = os.path.expanduser("~")
+            if sys.platform == "darwin":
+                candidates.append(
+                    os.path.join(
+                        home,
+                        "Library",
+                        "Application Support",
+                        "opencode",
+                        "auth.json",
+                    )
+                )
+            elif os.name == "nt":
+                appdata = os.getenv("APPDATA") or os.getenv("LOCALAPPDATA")
+                if appdata:
+                    candidates.append(os.path.join(appdata, "opencode", "auth.json"))
+                else:
+                    candidates.append(
+                        os.path.join(
+                            home, "AppData", "Roaming", "opencode", "auth.json"
+                        )
+                    )
+            else:
+                xdg_data_home = os.getenv("XDG_DATA_HOME")
+                if xdg_data_home:
+                    candidates.append(
+                        os.path.join(xdg_data_home, "opencode", "auth.json")
+                    )
+                candidates.append(
+                    os.path.join(home, ".local", "share", "opencode", "auth.json")
+                )
+
+        for path in candidates:
+            try:
+                if not path or not os.path.exists(path):
+                    continue
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                openai_auth = data.get("openai", {}) if isinstance(data, dict) else {}
+                access = openai_auth.get("access") or openai_auth.get("access_token")
+                if access and isinstance(access, str):
+                    self._logger.info("Loaded OpenCode OpenAI auth token")
+                    return access.strip()
+            except Exception as exc:
+                self._logger.warning(f"Failed to read OpenCode auth token: {exc}")
+                continue
+
+        return None
 
     def _extract_model_ids(self, data) -> list[str]:
         models = getattr(data, "data", [])
