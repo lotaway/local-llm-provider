@@ -18,7 +18,6 @@ class ESBM25Retriever(BaseRetriever):
     Indexes documents into Elasticsearch and retrieves them using BM25 scoring.
     """
 
-    es_client: Elasticsearch
     index_name: str = ""
     k: int = 5
 
@@ -32,7 +31,6 @@ class ESBM25Retriever(BaseRetriever):
         port: int = ES_PORT1,
         api_key: Optional[str] = os.getenv("ES_API_KEY"),
         k: int = 5,
-        **kwargs,
     ):
         """
         Initialize the Elasticsearch client.
@@ -44,15 +42,17 @@ class ESBM25Retriever(BaseRetriever):
             api_key: Elasticsearch service account token.
             k: Number of documents to retrieve.
         """
-        super().__init__(**kwargs)
-        self.index_name = index_name
-        self.k = k
+        object.__setattr__(self, "index_name", index_name)
+        object.__setattr__(self, "k", k)
+
         try:
-            if api_key:
-                self.es_client = Elasticsearch(f"http://{host}:{port}", api_key=api_key)
-            else:
-                self.es_client = Elasticsearch(f"http://{host}:{port}")
-            info = self.es_client.info()
+            es_client = (
+                Elasticsearch(f"http://{host}:{port}", api_key=api_key)
+                if api_key
+                else Elasticsearch(f"http://{host}:{port}")
+            )
+            object.__setattr__(self, "es_client", es_client)
+            info = es_client.info()
             logger.info(
                 f"Connected to Elasticsearch {info['version']['number']} at {host}:{port}"
             )

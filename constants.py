@@ -1,4 +1,8 @@
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file first
+load_dotenv()
 
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
 MODEL_DIR = os.getenv("MODEL_DIR", "models")
