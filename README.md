@@ -91,6 +91,40 @@ Install Vscode Continue Plugin and connect to the server.
 uv pip install .
 ```
 
+## Voice ASR (VibeVoice) Integration
+
+This project integrates VibeVoice‑ASR via environment variables. You need a local checkout of the official repository and point the paths accordingly.
+
+- Environment variables
+  - `VIBEVOICE_DIR`: absolute path to VibeVoice repo (e.g. `/opt/VibeVoice`)
+  - `VIBEVOICE_MODEL`: ASR model id (default `microsoft/VibeVoice-ASR`)
+  - `VIBEVOICE_SCRIPT`: path to `demo/vibevoice_asr_inference_from_file.py` under `VIBEVOICE_DIR`
+
+Example `.env`:
+
+```env
+VIBEVOICE_DIR=/opt/VibeVoice
+VIBEVOICE_MODEL=microsoft/VibeVoice-ASR
+VIBEVOICE_SCRIPT=/opt/VibeVoice/demo/vibevoice_asr_inference_from_file.py
+```
+
+Install VibeVoice:
+
+```bash
+git clone https://github.com/microsoft/VibeVoice.git
+cd VibeVoice
+pip install -e .
+```
+
+API endpoints (versioned under `/v1`):
+- `POST /v1/voice/to/text`
+  - Upload whole audio: form-data `audio=@file`
+  - Streaming session: form-data `session_id=abc`, `stream=true` (SSE subscription)
+  - Chunk upload: form-data `session_id=abc`, `chunk=@part.raw`
+- `POST /v1/voice/chat/completions`
+  - Upload short audio (<1min): form-data `audio=@file`, optional `model`, `stream`
+  - Transcribes with VibeVoice then forwards to chat completions
+
 ## AMD Required
 
 ### Linux/WSL

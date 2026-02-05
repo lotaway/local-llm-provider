@@ -50,3 +50,12 @@ OPENAI_ORGANIZATION = os.getenv("OPENAI_ORGANIZATION", "")
 OPENAI_PROJECT = os.getenv("OPENAI_PROJECT", "")
 OPENAI_PROXY_URL = os.getenv("OPENAI_PROXY_URL", "")
 OPENAI_TIMEOUT = os.getenv("OPENAI_TIMEOUT", "")
+
+VIBEVOICE_DIR = os.getenv("VIBEVOICE_DIR", "")
+VIBEVOICE_MODEL = os.getenv("VIBEVOICE_MODEL", "microsoft/VibeVoice-ASR")
+VIBEVOICE_SCRIPT = os.getenv(
+    "VIBEVOICE_SCRIPT",
+    os.path.join(VIBEVOICE_DIR, "demo", "vibevoice_asr_inference_from_file.py")
+    if VIBEVOICE_DIR
+    else "",
+)

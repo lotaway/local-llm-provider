@@ -6,6 +6,7 @@ from controllers.llm_controller import router as llm_router
 from controllers.agent_controller import router as agent_router
 from controllers.rag_controller import router as rag_router
 from controllers.file_controller import router as file_router
+from controllers.voice_controller import router as voice_router
 
 
 def parse_version(version: str):
@@ -23,3 +24,4 @@ router.include_router(llm_router)
 router.include_router(agent_router)
 router.include_router(rag_router)
 router.include_router(file_router)
+router.include_router(voice_router)
