@@ -296,4 +296,20 @@ def init_skills():
                     continue
                 loaded_names.add(m.name)
                 all_manifests.append(m)
+
+    enable_openclaw = os.getenv("LLP_ENABLE_OPENCLAW", "0")
+    openclaw_root = os.getenv("LLP_OPENCLAW_ROOT", "")
+    if enable_openclaw == "1" and openclaw_root:
+        # Load both skills and extensions from OpenClaw
+        for subdir in ["skills", "extensions"]:
+            oc_dir = os.path.join(openclaw_root, subdir)
+            if os.path.exists(oc_dir):
+                oc_manifests = load_skills_from_directory(oc_dir)
+                for m in oc_manifests:
+                    if m.name in loaded_names:
+                        logger.warning(f"Duplicate OpenClaw skill skipped: {m.name}")
+                        continue
+                    loaded_names.add(m.name)
+                    all_manifests.append(m)
+
     return all_manifests

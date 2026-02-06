@@ -41,6 +41,8 @@ LEARNING = os.getenv("LEARNING", "false").lower() == "true"
 LLP_SKILLS_DIRS = os.getenv("LLP_SKILLS_DIRS", "")
 LLP_ENABLE_CLAUDE_GLOBAL = os.getenv("LLP_ENABLE_CLAUDE_GLOBAL", "0")
 LLP_CLAUDE_SKILLS_DIR = os.getenv("LLP_CLAUDE_SKILLS_DIR", "")
+LLP_ENABLE_OPENCLAW = os.getenv("LLP_ENABLE_OPENCLAW", "0")
+LLP_OPENCLAW_ROOT = os.getenv("LLP_OPENCLAW_ROOT", "")
 
 POE_API_KEY = os.getenv("POE_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

@@ -20,6 +20,8 @@ services:
       # - ${HOME}/local-llm-provider:/app
       - ${PWD}:/app
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.openclaw:/root/.openclaw
     ports:
       - "0.0.0.0:${PORT:-8434}:${PORT:-8434}"
     environment:
@@ -34,6 +36,10 @@ services:
       - PYTORCH_HIP_ALLOC_CONF=max_split_size_mb:512
       - NEO4J_BOLT_URL=${NEO4J_BOLT_URL:-bolt://neo4j:7687}
       - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/123123123}
+      - LLP_ENABLE_CLAUDE_GLOBAL=1
+      - LLP_CLAUDE_SKILLS_DIR=/root/.claude/skills
+      - LLP_ENABLE_OPENCLAW=1
+      - LLP_OPENCLAW_ROOT=/root/.openclaw
 
 
     working_dir: /app
