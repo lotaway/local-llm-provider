@@ -1,13 +1,8 @@
-"""Verification Agent - Validates agent outputs"""
-
-from typing import Any, Dict
+from typing import Any, Dict, List
 from .agent_base import BaseAgent, AgentResult, AgentStatus
 
-
 class VerificationAgent(BaseAgent):
-    """Agent for validating task execution results"""
-
-    SYSTEM_PROMPT = """你是一个结果验证助手。你的任务是：
+    SYSTEM_PROMPT = """你是一个结果验证助手。任务：
 1. 检查答案质量和相关性
 2. 验证事实一致性
 3. 检测可能的幻觉或错误
@@ -16,13 +11,13 @@ class VerificationAgent(BaseAgent):
 
 输出JSON格式：
 {
-    "is_valid": true/false,
-    "confidence": 0.0-1.0,
-    "quality_score": 0.0-1.0,
-    "issues": ["问题1", "问题2"],
-    "needs_retry": true/false,
-    "retry_reason": "如果需要重试，说明原因",
-    "verification_notes": "验证说明"
+    "is_valid": true,
+    "confidence": 0.9,
+    "quality_score": 0.9,
+    "issues": [],
+    "needs_retry": false,
+    "retry_reason": "",
+    "verification_notes": ""
 }"""
 
     async def execute(
@@ -32,100 +27,52 @@ class VerificationAgent(BaseAgent):
         private_context: Dict[str, Any],
         stream_callback=None,
     ) -> AgentResult:
-        """
-        Verify task execution result
+        messages = self._build_verify_messages(input_data, context)
+        
+        try:
+            llm_res = await self._call_llm(messages, stream_callback, temperature=0.1)
+            return self._analyze_verification(llm_res, input_data, context)
+        except Exception as e:
+            return self._handle_error(e, input_data)
 
-        Args:
-            input_data: Task execution result
-            context: Runtime context
-            stream_callback: Optional callback for streaming LLM outputs
-
-        Returns:
-            AgentResult with verification status
-        """
-        task_result = input_data
-        current_task = context.get("current_task", {})
-        original_query = context.get("original_query", "")
-
-        messages = [
+    def _build_verify_messages(self, data: Any, context: Dict[str, Any]) -> List[Dict]:
+        task = context.get("current_task", {})
+        query = context.get("original_query", "")
+        content = f"问题：{query}\n描述：{task.get('description')}\n结果：{data}"
+        
+        return [
             {"role": "system", "content": self.SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": f"""
-原始问题：{original_query}
-任务描述：{current_task.get('description', '')}
-任务结果：{task_result}
-
-请验证这个结果的质量和正确性。
-""",
-            },
+            {"role": "user", "content": content}
         ]
 
-        try:
-            response = await self._call_llm(
-                messages,
-                stream_callback=stream_callback,
-                temperature=0.1,
-                max_new_tokens=1000,
-            )
-            verification = self._parse_json_response(response)
+    def _analyze_verification(self, llm_res: Dict[str, str], data: Any, context: Dict[str, Any]) -> AgentResult:
+        res = self._parse_json_response(llm_res["response"])
+        thought = llm_res["thought"]
+        
+        context.setdefault("verifications", []).append(res)
+        
+        if res.get("needs_retry"):
+            return self._create_retry_result(res, context, thought)
+            
+        if not res.get("is_valid"):
+            return AgentResult(AgentStatus.FAILURE, None, f"VerifyFailed: {res.get('issues')}", thought_process=thought)
+            
+        self._record_success(data, res, context)
+        return AgentResult(AgentStatus.SUCCESS, data, "Verified", next_agent="risk", thought_process=thought)
 
-            # Store verification in context
-            if "verifications" not in context:
-                context["verifications"] = []
-            context["verifications"].append(verification)
+    def _create_retry_result(self, res: Dict, context: Dict, thought: str) -> AgentResult:
+        task = context.get("current_task")
+        return AgentResult(AgentStatus.NEEDS_RETRY, task, f"Retry: {res.get('retry_reason')}", next_agent="router", thought_process=thought)
 
-            # Check if retry needed
-            if verification.get("needs_retry", False):
-                return AgentResult(
-                    status=AgentStatus.NEEDS_RETRY,
-                    data=current_task,
-                    message=f"需要重试: {verification.get('retry_reason', 'unknown')}",
-                    next_agent="router",
-                    metadata=verification,
-                )
+    def _record_success(self, data: Any, res: Dict, context: Dict):
+        task = context.get("current_task", {})
+        context.setdefault("task_results", []).append({
+            "task_id": task.get("task_id"),
+            "description": task.get("description"),
+            "result": data,
+            "verification": res
+        })
+        context.setdefault("completed_tasks", []).append(task.get("task_id"))
 
-            # Check if valid
-            if not verification.get("is_valid", False):
-                return AgentResult(
-                    status=AgentStatus.FAILURE,
-                    data=None,
-                    message=f"验证失败: {', '.join(verification.get('issues', []))}",
-                    metadata=verification,
-                )
-
-            # Valid result, proceed to risk assessment
-            # Store task result
-            if "task_results" not in context:
-                context["task_results"] = []
-            context["task_results"].append(
-                {
-                    "task_id": current_task.get("task_id", ""),
-                    "description": current_task.get("description", ""),
-                    "result": task_result,
-                    "verification": verification,
-                }
-            )
-
-            # Mark task as completed
-            if "completed_tasks" not in context:
-                context["completed_tasks"] = []
-            context["completed_tasks"].append(current_task.get("task_id", ""))
-
-            return AgentResult(
-                status=AgentStatus.SUCCESS,
-                data=task_result,
-                message=f"验证通过 (置信度: {verification.get('confidence', 0):.2f})",
-                next_agent="risk",
-                metadata=verification,
-            )
-
-        except Exception as e:
-            self.logger.error(f"Verification failed: {e}")
-            # On verification error, assume result is valid but log the issue
-            return AgentResult(
-                status=AgentStatus.SUCCESS,
-                data=task_result,
-                message=f"验证过程出错，假定结果有效: {str(e)}",
-                next_agent="risk",
-            )
+    def _handle_error(self, error: Exception, data: Any) -> AgentResult:
+        return AgentResult(AgentStatus.SUCCESS, data, f"VerifyError: {str(error)}", next_agent="risk")

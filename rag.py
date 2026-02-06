@@ -1021,74 +1021,53 @@ class LocalRAG:
         )
         return vectorstore
 
-    async def generate_answer(self, question, stream_callback=None):
+    async def generate_answer(self, question, stream_callback=None) -> Dict[str, str]:
         if self.rag_chain is None:
             await self.init_rag_chain()
 
         if stream_callback is None:
-            # Non-streaming mode - use the existing chain with await
-            return await cast(RunnableSequence, self.rag_chain).ainvoke(question)
+            full_response = await cast(RunnableSequence, self.rag_chain).ainvoke(question)
+            return {
+                "answer": self.llm.extract_after_think(full_response),
+                "thought": self.llm.extract_thought(full_response)
+            }
         else:
-            logger.info("Starting RAG generation...")
-            if hasattr(self, "retrieval_runnable"):
-                retrieval_runnable = self.retrieval_runnable
-            else:
-                logger.info("Initializing RAG chain for retrieval...")
-                await self.init_rag_chain()
-                retrieval_runnable = self.retrieval_runnable
-            logger.info("Retrieving context...")
-            # retrieval_runnable might be synchronous so we wrap it or just invoke if it's CPU bound but fast
-            # RunnableSequence.ainvoke handles sync steps in threadpool usually
-            # But here we are invoking runnable directly.
-            # If retrieval_runnable is standard LangChain runnable, invoke is sync.
-            # Best to run in thread if blocking.
-            import asyncio
+            return await self._generate_stream(question, stream_callback)
 
-            context_docs = await asyncio.to_thread(retrieval_runnable.invoke, question)
+    async def _generate_stream(self, question, stream_callback) -> Dict[str, str]:
+        retrieval_runnable = getattr(self, "retrieval_runnable", None)
+        if not retrieval_runnable:
+            await self.init_rag_chain()
+            retrieval_runnable = self.retrieval_runnable
 
-            context = "\n\n".join([doc.page_content for doc in context_docs])
+        context_docs = await asyncio.to_thread(retrieval_runnable.invoke, question)
+        context = "\n\n".join([doc.page_content for doc in context_docs])
+        graph_context = await self.graph_retriever.retrieve_context(question)
+        if graph_context:
+            context = f"{context}\n\n{graph_context}"
 
-            # Augment with Graph Context
-            graph_context = await self.graph_retriever.retrieve_context(question)
-            if graph_context:
-                logger.info("Adding graph context to prompt...")
-                context = f"{context}\n\n{graph_context}"
+        prompt_str = ChatPromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
+        prompt_value = prompt_str.invoke({"context": context, "question": question})
+        messages = self.llm.format_messages(prompt_value)
 
-            logger.info("Formatting prompt...")
+        full_response = ""
+        async for chunk in self.llm.chat(messages, temperature=0.1):
+            if isinstance(chunk, str) and chunk:
+                full_response += chunk
+                await self._notify_rag_stream(stream_callback, chunk)
 
-            prompt_str = ChatPromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
-            # prompt_str.invoke is fast
-            prompt_value = prompt_str.invoke({"context": context, "question": question})
-            messages = self.llm.format_messages(prompt_value)
-            logger.info("Starting LLM chat stream...")
+        return {
+            "answer": self.llm.extract_after_think(full_response),
+            "thought": self.llm.extract_thought(full_response)
+        }
 
-            full_response = ""
-            logger.info("Entering stream loop...")
-            try:
-                async for chunk in self.llm.chat(
-                    messages, temperature=0.1, top_p=0.95, top_k=40
-                ):
-                    if isinstance(chunk, int):
-                        continue
-                    if chunk:
-                        if isinstance(chunk, dict):
-                            text = chunk.get(
-                                "content", chunk.get("reasoning_content", "")
-                            )
-                        else:
-                            text = chunk
-                        full_response += text
-                        if stream_callback:
-                            if asyncio.iscoroutinefunction(stream_callback):
-                                await stream_callback(chunk)
-                            else:
-                                stream_callback(chunk)
-            except Exception as e:
-                logger.error(f"Stream error: {e}")
-                raise e
-            logger.info("Stream finished.")
-
-            return self.llm.extract_after_think(full_response)
+    async def _notify_rag_stream(self, callback, chunk):
+        if not callback:
+            return
+        if asyncio.iscoroutinefunction(callback):
+            await callback(chunk)
+        else:
+            callback(chunk)
 
     def get_document_context(self, doc_id: str) -> str:
         """Retrieve full document context from MongoDB by doc_id"""
@@ -1158,8 +1137,8 @@ def command_line_rag():
                 query = await asyncio.to_thread(input, "\n问：")
                 if query.lower() in ["exit", "quit"]:
                     break
-                answer = await local_rag.generate_answer(query)
-                print("答：", answer)
+                res = await local_rag.generate_answer(query)
+                print("答：", res.get("answer"))
             except KeyboardInterrupt:
                 break
             except Exception as e:

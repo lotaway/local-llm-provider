@@ -1,27 +1,9 @@
-"""RAG Task Agent - RAG-based retrieval and generation"""
-
-from typing import Any, Dict
-import sys
-import os
+from typing import Any, Dict, List
+from .agent_base import BaseAgent, AgentResult, AgentStatus
 from constants import DATA_PATH
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
-from agents.agent_base import BaseAgent, AgentResult, AgentStatus
-
-
 class RAGTaskAgent(BaseAgent):
-    """Agent for RAG-based retrieval and generation"""
-
     def __init__(self, llm_model, rag_instance=None, name: str = None):
-        """
-        Initialize RAG task agent
-
-        Args:
-            llm_model: LocalLLModel instance
-            rag_instance: LocalRAG instance (optional, will be created if needed)
-            name: Agent name
-        """
         super().__init__(llm_model, name)
         self.rag = rag_instance
 
@@ -32,56 +14,38 @@ class RAGTaskAgent(BaseAgent):
         private_context: Dict[str, Any],
         stream_callback=None,
     ) -> AgentResult:
-        """
-        Execute RAG task
-
-        Args:
-            input_data: Task definition
-            context: Runtime context
-            stream_callback: Optional callback for streaming LLM outputs
-
-        Returns:
-            AgentResult with RAG response
-        """
-        task = input_data if isinstance(input_data, dict) else {}
-        task_description = task.get("description", "")
-        original_query = context.get("original_query", "")
-
-        # Construct query for RAG
-        query = (
-            f"{original_query}\n任务：{task_description}"
-            if task_description
-            else original_query
-        )
-
+        query = self._format_query(input_data, context)
+        
         try:
-            # Initialize RAG if not already done
-            if self.rag is None:
-                from rag import LocalRAG
-
-                data_path = DATA_PATH
-                self.rag = LocalRAG(self.llm, data_path=data_path)
-
-            # Execute RAG query with streaming support
-            answer = await self.rag.generate_answer(
-                query, stream_callback=stream_callback
-            )
-            context["last_agent_type"] = "rag"
-            if hasattr(self.rag, "last_retrieved_chunk_ids"):
-                context["last_retrieved_chunk_ids"] = (
-                    self.rag.last_retrieved_chunk_ids or []
-                )
-            context.setdefault("skills_used", []).append("rag")
-
-            return AgentResult(
-                status=AgentStatus.SUCCESS,
-                data=answer,
-                message="RAG任务完成",
-                next_agent="verification",
-            )
-
+            self._ensure_rag()
+            res = await self.rag.generate_answer(query, stream_callback)
+            return self._wrap_result(res, context)
         except Exception as e:
-            self.logger.error(f"RAG task failed: {e}")
-            return AgentResult(
-                status=AgentStatus.FAILURE, data=None, message=f"RAG任务失败: {str(e)}"
-            )
+            return AgentResult(AgentStatus.FAILURE, None, f"RAGError: {str(e)}")
+
+    def _format_query(self, input_data: Any, context: Dict[str, Any]) -> str:
+        task = input_data if isinstance(input_data, dict) else {}
+        desc = task.get("description", "")
+        origin = context.get("original_query", "")
+        return f"{origin}\nTask: {desc}" if desc else origin
+
+    def _ensure_rag(self):
+        if self.rag:
+            return
+        from rag import LocalRAG
+        self.rag = LocalRAG(self.llm, data_path=DATA_PATH)
+
+    def _wrap_result(self, res: Dict[str, str], context: Dict[str, Any]) -> AgentResult:
+        context["last_agent_type"] = "rag"
+        if hasattr(self.rag, "last_retrieved_chunk_ids"):
+            context["last_retrieved_chunk_ids"] = self.rag.last_retrieved_chunk_ids or []
+            
+        context.setdefault("skills_used", []).append("rag")
+        
+        return AgentResult(
+            AgentStatus.SUCCESS, 
+            res.get("answer"), 
+            "RAGTaskComplete", 
+            next_agent="verification", 
+            thought_process=res.get("thought")
+        )

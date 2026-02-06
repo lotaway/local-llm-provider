@@ -30,10 +30,14 @@ class AgentResult:
     metadata: Dict[str, Any] = None
     next_agent: Optional[str] = None
     private_data: Optional[Dict[str, Any]] = None
+    thought_process: Optional[str] = None
+    tool_calls: list = None
 
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
+        if self.tool_calls is None:
+            self.tool_calls = []
 
 
 class BaseAgent(ABC):
@@ -70,77 +74,37 @@ class BaseAgent(ABC):
 
     async def _call_llm(
         self, messages: list[dict], stream_callback=None, **kwargs
-    ) -> str:
-        import time
-
-        self.logger.debug(f"LLM call started with {len(messages)} messages")
-        for i, msg in enumerate(messages):
-            content_preview = (
-                msg.get("content", "")[:200] + "..."
-                if len(msg.get("content", "")) > 200
-                else msg.get("content", "")
-            )
-            self.logger.debug(f"  Message {i} [{msg.get('role')}]: {content_preview}")
-
-        start_time = time.time()
-        try:
-            if stream_callback:
-                # Use streaming mode
-                response = await self._call_llm_stream(
-                    messages, stream_callback, **kwargs
-                )
-            else:
-                # Use non-streaming mode
-                response = await self.llm.chat_at_once(messages, **kwargs)
-                response = self.llm.extract_after_think(response)
-
-            elapsed = time.time() - start_time
-            response_preview = (
-                response[:200] + "..." if len(response) > 200 else response
-            )
-            self.logger.debug(
-                f"LLM call completed in {elapsed:.2f}s, response length: {len(response)} chars"
-            )
-            self.logger.debug(f"  Response preview: {response_preview}")
-
-            return response
-        except Exception as e:
-            elapsed = time.time() - start_time
-            self.logger.error(
-                f"LLM call failed after {elapsed:.2f}s: {e}", exc_info=True
-            )
-            raise
+    ) -> Dict[str, str]:
+        if stream_callback:
+            return await self._call_llm_stream(messages, stream_callback, **kwargs)
+        
+        raw_response = await self.llm.chat_at_once(messages, **kwargs)
+        thought = self.llm.extract_thought(raw_response)
+        response = self.llm.extract_after_think(raw_response)
+        
+        return {"response": response, "thought": thought}
 
     async def _call_llm_stream(
         self, messages: list[dict], stream_callback, **kwargs
-    ) -> str:
-        try:
-            self.logger.debug("Starting LLM streaming call")
-            full_response = ""
-            chunk_count = 0
+    ) -> Dict[str, str]:
+        full_response = ""
+        async for chunk in self.llm.chat(messages, **kwargs):
+            if isinstance(chunk, str) and chunk:
+                full_response += chunk
+                await self._notify_stream(stream_callback, chunk)
 
-            import asyncio
+        return {
+            "response": self.llm.extract_after_think(full_response),
+            "thought": self.llm.extract_thought(full_response)
+        }
 
-            async for chunk in self.llm.chat(messages, **kwargs):
-                if isinstance(chunk, int):
-                    continue
-
-                if chunk:
-                    full_response += chunk
-                    chunk_count += 1
-                    if stream_callback:
-                        if asyncio.iscoroutinefunction(stream_callback):
-                            await stream_callback(chunk)
-                        else:
-                            stream_callback(chunk)
-
-            self.logger.debug(
-                f"LLM streaming completed: {chunk_count} chunks, {len(full_response)} total chars"
-            )
-            return self.llm.extract_after_think(full_response)
-        except Exception as e:
-            self.logger.error(f"LLM streaming call failed: {e}", exc_info=True)
-            raise
+    async def _notify_stream(self, callback, chunk):
+        if not callback:
+            return
+        if asyncio.iscoroutinefunction(callback):
+            await callback(chunk)
+        else:
+            callback(chunk)
 
     def _parse_json_response(self, response: str) -> Dict[str, Any]:
         import json

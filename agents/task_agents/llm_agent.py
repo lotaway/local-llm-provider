@@ -1,16 +1,8 @@
-"""LLM Task Agent - Direct LLM query execution"""
-
-from typing import Any, Dict
-import sys
-import os
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
-from agents.agent_base import BaseAgent, AgentResult, AgentStatus
-
+from typing import Any, Dict, List
+from .agent_base import BaseAgent, AgentResult, AgentStatus
 
 class LLMTaskAgent(BaseAgent):
-    """Agent for direct LLM queries without RAG or tools"""
+    SYSTEM_PROMPT = "你是一个有帮助的AI助手，请提供准确、清晰的回答。"
 
     async def execute(
         self,
@@ -19,57 +11,33 @@ class LLMTaskAgent(BaseAgent):
         private_context: Dict[str, Any],
         stream_callback=None,
     ) -> AgentResult:
-        """
-        Execute LLM task
+        messages = self._build_task_messages(input_data, context)
+        
+        try:
+            llm_res = await self._call_llm(messages, stream_callback)
+            return self._create_success_result(llm_res, context)
+        except Exception as e:
+            return AgentResult(AgentStatus.FAILURE, None, f"LLMError: {str(e)}")
 
-        Args:
-            input_data: Task definition
-            context: Runtime context
-            stream_callback: Optional callback for streaming LLM outputs
-
-        Returns:
-            AgentResult with LLM response
-        """
+    def _build_task_messages(self, input_data: Any, context: Dict[str, Any]) -> List[Dict]:
         task = input_data if isinstance(input_data, dict) else {}
-        task_description = task.get("description", "")
-        original_query = context.get("original_query", "")
-
-        # Build prompt from task and context
-        messages = [
-            {
-                "role": "system",
-                "content": "你是一个有帮助的AI助手，请根据用户的问题提供准确、清晰的回答。",
-            },
-            {
-                "role": "user",
-                "content": f"""
-原始问题：{original_query}
-具体任务：{task_description}
-
-请回答这个问题。
-""",
-            },
+        desc = task.get("description", "")
+        query = context.get("original_query", "")
+        
+        content = f"原始问题：{query}\n具体任务：{desc}"
+        return [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "user", "content": content}
         ]
 
-        try:
-            response = await self._call_llm(
-                messages,
-                stream_callback=stream_callback,
-                temperature=0.7,
-                max_new_tokens=2000,
-            )
-            context["last_agent_type"] = "llm"
-            context.setdefault("skills_used", []).append("llm")
-
-            return AgentResult(
-                status=AgentStatus.SUCCESS,
-                data=response,
-                message="LLM任务完成",
-                next_agent="verification",
-            )
-
-        except Exception as e:
-            self.logger.error(f"LLM task failed: {e}")
-            return AgentResult(
-                status=AgentStatus.FAILURE, data=None, message=f"LLM任务失败: {str(e)}"
-            )
+    def _create_success_result(self, llm_res: Dict[str, str], context: Dict[str, Any]) -> AgentResult:
+        context["last_agent_type"] = "llm"
+        context.setdefault("skills_used", []).append("llm")
+        
+        return AgentResult(
+            AgentStatus.SUCCESS, 
+            llm_res["response"], 
+            "LLMTaskComplete", 
+            next_agent="verification", 
+            thought_process=llm_res["thought"]
+        )
