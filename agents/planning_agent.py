@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from .agent_base import BaseAgent, AgentResult, AgentStatus
 
 class PlanningAgent(BaseAgent):

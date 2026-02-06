@@ -30,7 +30,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnableSequence
 from model_providers import LocalLLModel
-from typing import Callable, List, cast
+from typing import Callable, List, cast, Dict
 from retrievers import HybridRetriever, Reranker, ESBM25Retriever
 from file_loaders import ChatGPTLoader, DeepSeekLoader
 from repositories.neo4j_repository import Neo4jRepository
