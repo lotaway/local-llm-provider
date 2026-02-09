@@ -1,6 +1,6 @@
 # Local LLM Provider
 
-This is use for [for VSCode Continue Plugin](https://docs.continue.dev), to provider a local LLM to provide code completion and chat, agent(edit,apply) ability.
+This is use for [Meta Note](https://github.com/lotaway/meta-note.git) Client, as a local LLM to provide code completion and chat, agent(edit,apply) ability.
 
 ## Directory Structure
 
