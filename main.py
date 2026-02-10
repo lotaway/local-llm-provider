@@ -205,7 +205,7 @@ async def query_rag(request: Request):
             "1. Embedding 模型缓存文件损坏\n"
             "2. 模型下载不完整\n\n"
             "建议解决方案:\n"
-            "1. 清理缓存: rm -rf ~/.cache/huggingface/hub/models--Alibaba-NLP--gte-Qwen2-1.5B-instruct\n"
+            "1. 清理缓存: rm -rf ~/.cache/huggingface/hub\n"
             "2. 重新启动服务以重新下载模型\n"
             "3. 检查网络连接"
         )

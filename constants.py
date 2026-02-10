@@ -61,3 +61,5 @@ VIBEVOICE_SCRIPT = os.getenv(
     if VIBEVOICE_DIR
     else "",
 )
+
+EMBEDDING_MODEL="Alibaba-NLP/gte-Qwen2-1.5B-instruct"

@@ -19,6 +19,7 @@ from constants import (
     QUANTIZATION,
     TORCH_DTYPE,
     DEFAULT_CONTEXT_LENGTH,
+    EMBEDDING_MODEL,
 )
 import asyncio
 
@@ -66,7 +67,7 @@ class LocalLLModel:
     def __init__(
         self,
         model_name="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-        embedding_model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
+        embedding_model_name=EMBEDDING_MODEL,
     ):
         self.embedding_model_name = embedding_model_name
         self.cur_model_name = model_name

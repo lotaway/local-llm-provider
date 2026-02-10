@@ -4,7 +4,7 @@ import re
 import logging
 import hashlib
 from pymilvus import connections, utility
-from constants import DATA_PATH, DB_HOST, DB_PORT, DB_COLLECTION
+from constants import DATA_PATH, DB_HOST, DB_PORT, DB_COLLECTION, EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
 import gc
@@ -627,7 +627,7 @@ class LocalRAG:
         logger.info(f"Loading embedding model on {device}")
 
         embeddings = HuggingFaceEmbeddings(
-            model_name="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
+            model_name=EMBEDDING_MODEL,
             model_kwargs={"device": device},
             encode_kwargs={"batch_size": 8},
         )
