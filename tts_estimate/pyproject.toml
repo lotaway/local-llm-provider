@@ -1,0 +1,23 @@
+[project]
+name = "tts-estimate"
+version = "0.1.0"
+description = "TTS Quality Estimation Tool"
+dependencies = [
+    "openai-whisper",
+    "jiwer",
+    "numpy",
+    "scipy",
+    "torch",
+    "torchaudio",
+    "onnxruntime",
+    "pydantic",
+    "pydantic-settings",
+    "speechbrain",
+    "resemblyzer",
+    "librosa"
+]
+requires-python = ">=3.12"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
