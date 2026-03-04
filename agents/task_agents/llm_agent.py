@@ -1,5 +1,5 @@
 from typing import Any, Dict, List
-from .agent_base import BaseAgent, AgentResult, AgentStatus
+from ..agent_base import BaseAgent, AgentResult, AgentStatus
 
 class LLMTaskAgent(BaseAgent):
     SYSTEM_PROMPT = "你是一个有帮助的AI助手，请提供准确、清晰的回答。"

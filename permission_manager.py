@@ -7,13 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class SafetyLevel(Enum):
-    """Tool safety levels"""
-    SAFE = 0  # Read-only, no side effects
-    LOW = 1  # Minimal risk (e.g., simple calculations)
-    MEDIUM = 2  # Moderate risk (e.g., file read)
-    HIGH = 3  # High risk (e.g., file write, network requests)
-    CRITICAL = 4  # Critical risk (e.g., system commands, delete operations)
+from schemas.permission import SafetyLevel, PermissionNames
 
 
 class Permission:
@@ -53,66 +47,66 @@ class PermissionManager:
         """Register default tool permissions"""
         # LLM operations
         self.register_permission(Permission(
-            name="llm.query",
+            name=PermissionNames.LLM_QUERY,
             safety_level=SafetyLevel.SAFE,
             description="Direct LLM query without tools"
         ))
         
         # RAG operations
         self.register_permission(Permission(
-            name="rag.query",
+            name=PermissionNames.RAG_QUERY,
             safety_level=SafetyLevel.SAFE,
             description="RAG document retrieval and query"
         ))
         
         # MCP tools
         self.register_permission(Permission(
-            name="mcp.web_search",
+            name=PermissionNames.MCP_WEB_SEARCH,
             safety_level=SafetyLevel.MEDIUM,
             description="Web search via MCP"
         ))
         
         self.register_permission(Permission(
-            name="mcp.file_read",
+            name=PermissionNames.MCP_FILE_READ,
             safety_level=SafetyLevel.MEDIUM,
             description="Read local files"
         ))
         
         self.register_permission(Permission(
-            name="mcp.file_write",
+            name=PermissionNames.MCP_FILE_WRITE,
             safety_level=SafetyLevel.HIGH,
             description="Write to local files",
             requires_human=True
         ))
         
         self.register_permission(Permission(
-            name="mcp.file_delete",
+            name=PermissionNames.MCP_FILE_DELETE,
             safety_level=SafetyLevel.CRITICAL,
             description="Delete files",
             requires_human=True
         ))
         
         self.register_permission(Permission(
-            name="mcp.system_command",
+            name=PermissionNames.MCP_SYSTEM_COMMAND,
             safety_level=SafetyLevel.CRITICAL,
             description="Execute system commands",
             requires_human=True
         ))
         
         self.register_permission(Permission(
-            name="mcp.ocr",
+            name=PermissionNames.MCP_OCR,
             safety_level=SafetyLevel.LOW,
             description="OCR image text extraction"
         ))
         
         self.register_permission(Permission(
-            name="mcp.image_recognition",
+            name=PermissionNames.MCP_IMAGE_RECOGNITION,
             safety_level=SafetyLevel.LOW,
             description="Image recognition and analysis"
         ))
         
         self.register_permission(Permission(
-            name="mcp.audio_recognition",
+            name=PermissionNames.MCP_AUDIO_RECOGNITION,
             safety_level=SafetyLevel.LOW,
             description="Audio transcription"
         ))
@@ -210,14 +204,14 @@ def test_permission_manager():
     
     # Test various permissions
     test_cases = [
-        "llm.query",           # SAFE - should not need human
-        "rag.query",           # SAFE - should not need human
-        "mcp.web_search",      # MEDIUM - should not need human (threshold is HIGH)
-        "mcp.file_read",       # MEDIUM - should not need human
-        "mcp.file_write",      # HIGH - should need human
-        "mcp.file_delete",     # CRITICAL - should need human
-        "mcp.system_command",  # CRITICAL - should need human
-        "unknown.permission",  # UNKNOWN - should need human
+        PermissionNames.LLM_QUERY,           # SAFE - should not need human
+        PermissionNames.RAG_QUERY,           # SAFE - should not need human
+        PermissionNames.MCP_WEB_SEARCH,      # MEDIUM - should not need human (threshold is HIGH)
+        PermissionNames.MCP_FILE_READ,       # MEDIUM - should not need human
+        PermissionNames.MCP_FILE_WRITE,      # HIGH - should need human
+        PermissionNames.MCP_FILE_DELETE,     # CRITICAL - should need human
+        PermissionNames.MCP_SYSTEM_COMMAND,  # CRITICAL - should need human
+        "unknown.permission",                # UNKNOWN - should need human
     ]
     
     print("\nTesting permissions with HIGH threshold:")
@@ -242,7 +236,7 @@ def test_permission_manager():
     
     pm_medium = PermissionManager(human_approval_threshold=SafetyLevel.MEDIUM)
     
-    for permission in ["mcp.web_search", "mcp.file_read", "mcp.file_write"]:
+    for permission in [PermissionNames.MCP_WEB_SEARCH, PermissionNames.MCP_FILE_READ, PermissionNames.MCP_FILE_WRITE]:
         result = pm_medium.check_permission(permission)
         status = "✅ Auto-approve" if not result['needs_human'] else "⚠️  Needs human"
         print(f"{permission:25} | {result['safety_level']:10} | {status}")

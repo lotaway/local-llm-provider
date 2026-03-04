@@ -14,7 +14,8 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from permission_manager import PermissionManager, SafetyLevel
+from permission_manager import PermissionManager
+from schemas.permission import SafetyLevel, PermissionNames
 
 
 def demo_basic_usage():
@@ -32,13 +33,13 @@ def demo_basic_usage():
     
     # 测试各种权限
     tools = [
-        ("llm.query", "直接 LLM 查询"),
-        ("rag.query", "RAG 文档查询"),
-        ("mcp.web_search", "网络搜索"),
-        ("mcp.file_read", "文件读取"),
-        ("mcp.file_write", "文件写入"),
-        ("mcp.file_delete", "文件删除"),
-        ("mcp.system_command", "系统命令"),
+        (PermissionNames.LLM_QUERY, "直接 LLM 查询"),
+        (PermissionNames.RAG_QUERY, "RAG 文档查询"),
+        (PermissionNames.MCP_WEB_SEARCH, "网络搜索"),
+        (PermissionNames.MCP_FILE_READ, "文件读取"),
+        (PermissionNames.MCP_FILE_WRITE, "文件写入"),
+        (PermissionNames.MCP_FILE_DELETE, "文件删除"),
+        (PermissionNames.MCP_SYSTEM_COMMAND, "系统命令"),
     ]
     
     print("检查各种工具的权限:")
@@ -66,7 +67,7 @@ def demo_different_thresholds():
         (SafetyLevel.CRITICAL, "CRITICAL（最严格）"),
     ]
     
-    test_tool = "mcp.file_write"
+    test_tool = PermissionNames.MCP_FILE_WRITE
     
     print(f"\n测试工具: {test_tool} (安全级别: HIGH)")
     print("-" * 70)
@@ -91,11 +92,11 @@ def demo_audit_log():
     
     # 执行一系列权限检查
     operations = [
-        "llm.query",
-        "mcp.web_search",
-        "mcp.file_write",
-        "mcp.file_delete",
-        "rag.query",
+        PermissionNames.LLM_QUERY,
+        PermissionNames.MCP_WEB_SEARCH,
+        PermissionNames.MCP_FILE_WRITE,
+        PermissionNames.MCP_FILE_DELETE,
+        PermissionNames.RAG_QUERY,
     ]
     
     print("\n执行一系列操作...")
@@ -170,10 +171,10 @@ def demo_test_method():
     pm = PermissionManager(human_approval_threshold=SafetyLevel.HIGH)
     
     print("\n测试安全操作:")
-    pm.test_permission("rag.query")
+    pm.test_permission(PermissionNames.RAG_QUERY)
     
     print("\n测试高风险操作:")
-    pm.test_permission("mcp.file_delete")
+    pm.test_permission(PermissionNames.MCP_FILE_DELETE)
 
 
 def main():

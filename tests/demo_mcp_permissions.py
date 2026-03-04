@@ -14,7 +14,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from model_providers import LocalLLModel
-from permission_manager import PermissionManager, SafetyLevel
+from permission_manager import PermissionManager
+from schemas.permission import SafetyLevel, PermissionNames
 from agents.task_agents.mcp_agent import MCPTaskAgent
 from agents.agent_base import AgentStatus
 
@@ -50,9 +51,9 @@ def demo_mcp_with_permissions():
     
     # 2. 注册工具（带权限）
     print("\n2. 注册 MCP 工具...")
-    mcp_agent.register_tool("web_search", example_web_search_tool, "mcp.web_search")
-    mcp_agent.register_tool("file_write", example_file_write_tool, "mcp.file_write")
-    mcp_agent.register_tool("system_command", example_system_command_tool, "mcp.system_command")
+    mcp_agent.register_tool("web_search", example_web_search_tool, PermissionNames.MCP_WEB_SEARCH)
+    mcp_agent.register_tool("file_write", example_file_write_tool, PermissionNames.MCP_FILE_WRITE)
+    mcp_agent.register_tool("system_command", example_system_command_tool, PermissionNames.MCP_SYSTEM_COMMAND)
     
     print("   ✓ 已注册 3 个工具")
     
@@ -168,10 +169,10 @@ def demo_permission_testing():
     
     # 使用 test_permission 方法
     print("\n使用 test_permission 方法测试单个权限:")
-    pm.test_permission("mcp.web_search")
+    pm.test_permission(PermissionNames.MCP_WEB_SEARCH)
     
     print("\n测试高风险权限:")
-    pm.test_permission("mcp.file_delete")
+    pm.test_permission(PermissionNames.MCP_FILE_DELETE)
 
 
 if __name__ == "__main__":

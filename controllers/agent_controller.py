@@ -17,6 +17,7 @@ from model_providers import LocalLLModel
 from schemas import ChatRequest
 from agents.context_storage import create_context_storage, MemoryContextStorage
 from agents.agent_runtime import AgentRuntime
+from agents.runtime_factory import RuntimeFactory
 from utils import ContentType
 from rag import LocalRAG
 
@@ -28,6 +29,7 @@ class AgentRequest(BaseModel):
     model: str
     messages: list[str]
     session_id: str = None
+    stream: bool = False
     files: list[str] = []
 
 
@@ -64,19 +66,17 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
         local_model = LocalLLModel.init_local_model()
         if local_rag is None:
             local_rag = LocalRAG(local_model)
-        agent_runtime = AgentRuntime.create_with_all_agents(
+        agent_runtime = RuntimeFactory.create_with_all_agents(
             local_model,
             rag_instance=local_rag,
             permission_manager=permission_manager,
             context_storage=context_storage,
             session_id=session_id,
         )
-    else:
+    elif agent_runtime.session_id != session_id:
         agent_runtime.session_id = session_id
-        loaded_state = agent_runtime._load_state()
-        if loaded_state:
-            agent_runtime.state = loaded_state
-            logger.info(f"Resumed existing session {session_id}")
+        agent_runtime._load_saved_state()
+        logger.info(f"Resumed session {session_id}")
 
     initial_context = {}
     if agentRequest.files:
@@ -105,8 +105,8 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
 
         async def run_agent():
             try:
-                await agent_runtime.execute_async(
-                    query, initial_context, stream_callback
+                await agent_runtime.execute(
+                    query, stream_callback=stream_callback, initial_context=initial_context
                 )
             except Exception as e:
                 logger.error(f"Agent execution failed: {e}")
@@ -130,7 +130,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
         return StreamingResponse(event_stream(), media_type="text/event-stream")
     else:
         try:
-            state = agent_runtime.execute(
+            state = await agent_runtime.execute(
                 query, start_agent="qa", initial_context=initial_context
             )
             return JSONResponse(content=state.to_dict())
@@ -149,7 +149,7 @@ async def agent_decision(req: AgentDecisionRequest):
         result = await agent_runtime.handle_decision(
             req.approved, req.feedback, req.data
         )
-        return {"success": True, "result": result}
+        return {"success": True, "result": result.to_dict()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -166,9 +166,9 @@ async def agent_chat(req: ChatRequest):
 
             data_path = DATA_PATH
             local_rag = LocalRAG(local_model, data_path=data_path)
-        from agents.agent_runtime import AgentRuntime
+        from agents.runtime_factory import RuntimeFactory
 
-        agent_runtime = AgentRuntime.create_with_all_agents(
+        agent_runtime = RuntimeFactory.create_with_all_agents(
             local_model, rag_instance=local_rag
         )
 
@@ -181,7 +181,6 @@ async def agent_chat(req: ChatRequest):
         query = req.messages[-1].content
 
     has_images = False
-    multimodal_messages = []
     for m in req.messages:
         if isinstance(m.content, list):
             for part in m.content:
@@ -194,8 +193,6 @@ async def agent_chat(req: ChatRequest):
             break
 
     if has_images:
-        from globals import multimodal_model, default_vlm, MultimodalFactory
-
         multimodal_prompt = "请分析所提供的图像，并返回一个包含视觉内容详细描述的 JSON 对象，内容涵盖物体、文字、颜色以及空间位置关系。如果图像中主体信息包含大量文字，请提取出文字内容。"
 
         system_msg = {"role": "system", "content": multimodal_prompt}
@@ -205,9 +202,12 @@ async def agent_chat(req: ChatRequest):
         multimodal_messages = [system_msg] + msgs_dicts
 
         # Determine which model to use for description
+        from globals import default_vlm
+
         target_vlm_name = default_vlm
 
         if multimodal_model is None or multimodal_model.model_name != target_vlm_name:
+            from globals import MultimodalFactory, multimodal_model
             multimodal_model = MultimodalFactory.get_model(target_vlm_name)
 
         def run_multimodal():
@@ -222,7 +222,7 @@ async def agent_chat(req: ChatRequest):
         query = f"{text_query}\n\n[Image Analysis]: {description}"
 
     try:
-        state = agent_runtime.execute(query, start_agent="qa")
+        state = await agent_runtime.execute(query, start_agent="qa")
 
         if state.status.value == "completed":
             answer = state.final_result

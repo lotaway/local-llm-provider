@@ -1,5 +1,5 @@
 from typing import Any, Dict, List
-from .agent_base import BaseAgent, AgentResult, AgentStatus
+from ..agent_base import BaseAgent, AgentResult, AgentStatus
 from constants import DATA_PATH
 
 class RAGTaskAgent(BaseAgent):

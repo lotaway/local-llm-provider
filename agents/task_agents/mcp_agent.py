@@ -1,8 +1,9 @@
 from typing import Any, Dict, List, Optional
 import asyncio
 import time
-from agents.agent_base import BaseAgent, AgentResult, AgentStatus
+from ..agent_base import BaseAgent, AgentResult, AgentStatus
 from schemas.evolution_trace import ToolCallTrace
+from schemas.permission import PermissionNames
 
 class MCPTaskAgent(BaseAgent):
     def __init__(self, llm_model, name: str = None):
@@ -13,13 +14,13 @@ class MCPTaskAgent(BaseAgent):
 
     def _register_default_tools(self):
         self.register_tool(
-            "read_file", self._read_file_tool, permission_name="mcp.read_file"
+            "read_file", self._read_file_tool, permission_name=PermissionNames.MCP_FILE_READ
         )
 
     def register_tool(self, tool_name: str, tool_callable, permission_name: str = None):
         self.tools[tool_name] = {
             "callable": tool_callable,
-            "permission": permission_name or f"mcp.{tool_name}",
+            "permission": permission_name or PermissionNames.from_tool_name(tool_name),
         }
 
     def get_available_tools(self) -> list:

@@ -165,3 +165,22 @@ class AgentRuntime:
     def _save_current_state(self):
         if self.session_id and self.context_storage:
             self.context_storage.save(self.session_id, self.state.to_dict())
+
+    async def handle_decision(self, approved: bool, feedback: str, data: Any = None) -> RuntimeState:
+        if self.state.status != RuntimeStatus.WAITING_HUMAN:
+            raise Exception("Agent is not waiting for human decision")
+
+        self.state.context["human_decision"] = {
+            "approved": approved,
+            "feedback": feedback,
+            "data": data,
+        }
+
+        # Determine current input for resumption
+        if not approved:
+            current_input = feedback or "User rejected the previous step."
+        else:
+            current_input = data if data is not None else (self.state.history[-1]["data"] if self.state.history else None)
+
+        self.state.status = RuntimeStatus.RUNNING
+        return await self._run_loop(current_input)

@@ -74,10 +74,11 @@ def test_mcp_agent_with_registered_tool():
     mcp_agent = MCPTaskAgent(llm)
     
     # Register a mock tool
+    from schemas.permission import PermissionNames
     def mock_tool(query, task, context):
         return {"result": "Mock tool executed"}
     
-    mcp_agent.register_tool("test_tool", mock_tool, "mcp.test_tool")
+    mcp_agent.register_tool("test_tool", mock_tool, PermissionNames.from_tool_name("test_tool"))
     
     # Verify tool is available
     available_tools = mcp_agent.get_available_tools()

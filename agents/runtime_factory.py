@@ -56,7 +56,8 @@ class RuntimeFactory:
     def _ensure_permission_manager(pm):
         if pm is not None:
             return pm
-        from permission_manager import PermissionManager, SafetyLevel
+        from permission_manager import PermissionManager
+        from schemas.permission import SafetyLevel
         return PermissionManager(human_approval_threshold=SafetyLevel.HIGH)
 
     @staticmethod

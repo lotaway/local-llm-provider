@@ -114,6 +114,7 @@ def _heartbeat(conn: MCPConnection) -> None:
 
 
 def load_from_env(mcp_agent) -> List[MCPConnection]:
+    from schemas.permission import PermissionNames
     configs = _parse_config()
     conns: List[MCPConnection] = []
     for cfg in configs:
@@ -123,7 +124,7 @@ def load_from_env(mcp_agent) -> List[MCPConnection]:
         _heartbeat(conn)
         if conn.status == ConnectionStatus.READY:
             for t in conn.tools:
-                perm = f"mcp.{t}"
+                perm = PermissionNames.from_tool_name(t)
                 mcp_agent.register_tool(t, lambda query, task, context: {"ok": True}, perm)
             conns.append(conn)
     return conns
