@@ -20,6 +20,7 @@ def ensure_admin_token():
     token = f"sk-{secrets.token_hex(16)}"
     with open(token_file, "w") as f:
         f.write(token)
+    os.chmod(token_file, 0o600)
     ADMIN_TOKEN = token
     logger.info(f"Generated new admin token and saved to {token_file}: {token}")
 
