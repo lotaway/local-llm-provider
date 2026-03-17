@@ -11,14 +11,13 @@ class Neo4jRepository:
     def __init__(self):
         uri = NEO4J_BOLT_URL
         auth_env = NEO4J_AUTH
-        try:
-            parts = auth_env.split("/")
-            user = parts[0]
-            password = parts[1]
-        except (IndexError, AttributeError):
-            user = "neo4j"
-            password = "password"
-            logger.warning(f"Invalid NEO4J_AUTH format: {auth_env}. Using defaults.")
+        if not auth_env or "/" not in auth_env:
+            raise ValueError(
+                f"Invalid NEO4J_AUTH format: {auth_env}. Expected 'user/password'."
+            )
+        parts = auth_env.split("/")
+        user = parts[0]
+        password = parts[1]
 
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
 
