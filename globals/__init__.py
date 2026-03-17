@@ -16,6 +16,8 @@ remote_multimodal_status = False
 multimodal_model = None
 default_vlm = os.getenv("PRELOAD_MULTIMODAL_MODEL")
 
+limiter = None  # Rate limiter for API endpoints
+
 if default_vlm is not None:
     multimodal_model = MultimodalFactory.get_model(default_vlm)
     multimodal_model.load_model()

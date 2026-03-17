@@ -10,6 +10,7 @@ import json
 from typing import Optional
 from pydantic import BaseModel
 from schemas import ChatRequest, Message
+from globals import limiter
 from controllers.llm_controller import chat_completions as llm_chat_completions
 from constants import VIBEVOICE_DIR, VIBEVOICE_MODEL, VIBEVOICE_SCRIPT
 
@@ -152,6 +153,7 @@ async def start_stream(sid: str, request: Request):
 
 
 @router.post("/to/text")
+@limiter.limit("10/minute")
 async def to_text(
     request: Request,
     audio: Optional[UploadFile] = File(None),
@@ -187,6 +189,7 @@ async def to_text(
 
 
 @router.post("/chat/completions")
+@limiter.limit("15/minute")
 async def chat_from_voice(
     request: Request,
     audio: UploadFile = File(...),

@@ -9,6 +9,7 @@ import httpx
 import json
 from typing import cast
 
+from globals import limiter
 import globals as backend_globals
 from auth import get_multimodal_headers
 from model_providers import LocalLLModel
@@ -119,6 +120,7 @@ class CompletionRequest(BaseModel):
 
 
 @router.post("/chat/completions", tags=["chat"])
+@limiter.limit("20/minute")
 async def chat_completions(req: ChatRequest, request: Request):
     if req.files:
         from utils import FileProcessor

@@ -8,10 +8,8 @@ from model_providers import LocalLLModel
 from rag import LocalRAG
 
 router = APIRouter(prefix="/rag", tags=["rag"])
-logger = logging.getLogger(__name__)
-
-
-class ImportDocumentRequest(BaseModel):
+from globals import limiter
+logger = logging.getLogger(__name__)\n\n\nclass ImportDocumentRequest(BaseModel):
     title: str
     source: str
     content: str
@@ -38,6 +36,7 @@ async def check_document(req: DocumentCheckRequest):
 
 
 @router.post("/document/import")
+@limiter.limit("5/minute")
 async def import_document(req: ImportDocumentRequest):
     global local_rag
 
