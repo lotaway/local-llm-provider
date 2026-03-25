@@ -8,6 +8,7 @@ import time
 from constants import DATA_PATH
 
 from globals import (
+    limiter,
     local_rag,
     agent_runtime,
     context_storage,
@@ -40,6 +41,7 @@ class AgentDecisionRequest(BaseModel):
 
 
 @router.post("/run")
+@limiter.limit("10/minute")
 async def query_agent(agentRequest: AgentRequest, request: Request):
     global local_rag
     global agent_runtime
@@ -106,7 +108,9 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
         async def run_agent():
             try:
                 await agent_runtime.execute(
-                    query, stream_callback=stream_callback, initial_context=initial_context
+                    query,
+                    stream_callback=stream_callback,
+                    initial_context=initial_context,
                 )
             except Exception as e:
                 logger.error(f"Agent execution failed: {e}")
@@ -139,6 +143,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
 
 
 @router.post("/decision")
+@limiter.limit("5/minute")
 async def agent_decision(req: AgentDecisionRequest):
     global agent_runtime
 
@@ -155,6 +160,7 @@ async def agent_decision(req: AgentDecisionRequest):
 
 
 @router.post("/chat")
+@limiter.limit("15/minute")
 async def agent_chat(req: ChatRequest):
     global agent_runtime
     global local_rag
@@ -208,6 +214,7 @@ async def agent_chat(req: ChatRequest):
 
         if multimodal_model is None or multimodal_model.model_name != target_vlm_name:
             from globals import MultimodalFactory, multimodal_model
+
             multimodal_model = MultimodalFactory.get_model(target_vlm_name)
 
         def run_multimodal():

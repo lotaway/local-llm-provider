@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 class DeviceUtils:
-
     @staticmethod
     def platform_is_mac():
         return os.sys.platform == "darwin"
@@ -114,7 +113,10 @@ class FileProcessor:
         file_id = str(uuid.uuid4())
 
         # Create filename with ID prefix to avoid collisions
-        saved_filename = f"{file_id}_{original_filename}"
+        safe_filename = os.path.basename(original_filename).replace("\x00", "")
+        if not safe_filename:
+            safe_filename = "upload"
+        saved_filename = f"{file_id}_{safe_filename}"
         file_path = os.path.join(self.upload_dir, saved_filename)
 
         # Save file

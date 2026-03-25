@@ -23,6 +23,9 @@ from rag import LocalRAG
 # import triton
 # import triton.language as tl
 from dotenv import load_dotenv
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
@@ -42,6 +45,8 @@ from routers import version_router
 from controllers.base_controller import router as base_router
 import auth
 from auth import get_multimodal_headers
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 async def check_multimodal_health():
@@ -66,8 +71,13 @@ async def check_multimodal_health():
             await asyncio.sleep(10)
 
 
+def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.limiter = limiter
     # Startup
     if backend_globals.MULTIMODAL_PROVIDER_URL:
         asyncio.create_task(check_multimodal_health())
@@ -119,6 +129,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -177,6 +189,7 @@ async def manifest():
 
 
 @app.get("/mcp")
+@app.state.limiter.limit("30/minute")
 async def query_rag(request: Request):
     query = request.query_params.get("query")
     if query is None:
@@ -234,6 +247,7 @@ async def query_rag(request: Request):
 
 
 @app.post("/poe/v1/{path:path}")
+@app.state.limiter.limit("20/minute")
 async def poe(request: Request, path: str):
     if backend_globals.poe_model_provider is None:
         backend_globals.poe_model_provider = PoeModelProvider()
