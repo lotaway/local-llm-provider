@@ -63,3 +63,12 @@ VIBEVOICE_SCRIPT = os.getenv(
 )
 
 EMBEDDING_MODEL="Alibaba-NLP/gte-Qwen2-1.5B-instruct"
+
+# TTS Configuration
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+REDIS_TTS_PREFIX = "tts:" # Strict Scheme B prefix
+
+# MongoDB TTS Collections (Isolated from RAG/Brain)
+TTS_MONGO_COLLECTION_SPEAKERS = "tts_speakers"
+TTS_MONGO_COLLECTION_PROFILES = "tts_user_profiles"
