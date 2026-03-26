@@ -16,7 +16,10 @@ remote_multimodal_status = False
 multimodal_model = None
 default_vlm = os.getenv("PRELOAD_MULTIMODAL_MODEL")
 
-limiter = None  # Rate limiter for API endpoints
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)  # Rate limiter for API endpoints
 
 if default_vlm is not None:
     multimodal_model = MultimodalFactory.get_model(default_vlm)

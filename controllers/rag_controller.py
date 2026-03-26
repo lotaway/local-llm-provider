@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 import logging
 from pydantic import BaseModel
@@ -9,7 +9,10 @@ from rag import LocalRAG
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 from globals import limiter
-logger = logging.getLogger(__name__)\n\n\nclass ImportDocumentRequest(BaseModel):
+logger = logging.getLogger(__name__)
+
+
+class ImportDocumentRequest(BaseModel):
     title: str
     source: str
     content: str
@@ -37,7 +40,7 @@ async def check_document(req: DocumentCheckRequest):
 
 @router.post("/document/import")
 @limiter.limit("5/minute")
-async def import_document(req: ImportDocumentRequest):
+async def import_document(req: ImportDocumentRequest, request: Request):
     global local_rag
 
     if req.content == "":
