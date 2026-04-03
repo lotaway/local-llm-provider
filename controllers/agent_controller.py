@@ -144,7 +144,7 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
 
 @router.post("/decision")
 @limiter.limit("5/minute")
-async def agent_decision(req: AgentDecisionRequest):
+async def agent_decision(req: AgentDecisionRequest, request: Request):
     global agent_runtime
 
     if agent_runtime is None:
@@ -161,7 +161,7 @@ async def agent_decision(req: AgentDecisionRequest):
 
 @router.post("/chat")
 @limiter.limit("15/minute")
-async def agent_chat(req: ChatRequest):
+async def agent_chat(req: ChatRequest, request: Request):
     global agent_runtime
     global local_rag
 

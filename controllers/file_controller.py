@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse
 from globals import limiter
 import logging
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/upload")
 @limiter.limit("3/minute")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(request: Request, file: UploadFile = File(...)):
     from utils import FileProcessor
 
     try:
