@@ -177,14 +177,16 @@ async def agent_chat(req: ChatRequest, request: Request):
         agent_runtime = RuntimeFactory.create_with_all_agents(
             local_model, rag_instance=local_rag
         )
+    else:
+        local_model = LocalLLModel.init_local_model()
 
     query = ""
     for m in reversed(req.messages):
         if m.role == "user":
-            query = m.content
+            query = local_model._extract_text_from_content(m.content)
             break
     if not query and req.messages:
-        query = req.messages[-1].content
+        query = local_model._extract_text_from_content(req.messages[-1].content)
 
     has_images = False
     for m in req.messages:

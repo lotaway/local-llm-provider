@@ -265,10 +265,10 @@ async def chat_completions(req: ChatRequest, request: Request):
         query = ""
         for m in reversed(req.messages):
             if m.role == "user":
-                query = m.content
+                query = local_model._extract_text_from_content(m.content)
                 break
         if not query and req.messages:
-            query = req.messages[-1].content
+            query = local_model._extract_text_from_content(req.messages[-1].content)
 
         if req.stream:
             event_queue = asyncio.Queue()

@@ -250,8 +250,14 @@ class LocalLLModel:
         tokenizer = getattr(self.engine, "tokenizer", None)
         is_last_assistant = messages and messages[-1].get("role") == "assistant"
         if tokenizer and hasattr(tokenizer, "apply_chat_template"):
+            normalized = []
+            for msg in messages:
+                normalized.append({
+                    "role": msg.get("role", "user"),
+                    "content": self._extract_text_from_content(msg.get("content", ""))
+                })
             return tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=not is_last_assistant
+                normalized, tokenize=False, add_generation_prompt=not is_last_assistant
             )
 
         prompt = ""
