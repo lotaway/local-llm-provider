@@ -45,13 +45,28 @@ LLP_ENABLE_OPENCLAW = os.getenv("LLP_ENABLE_OPENCLAW", "0")
 LLP_OPENCLAW_ROOT = os.getenv("LLP_OPENCLAW_ROOT", "")
 
 POE_API_KEY = os.getenv("POE_API_KEY", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 POE_DEFAULT_MODEL = os.getenv("POE_DEFAULT_MODEL", "Claude-Sonnet-4.5")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-OPENAI_ORGANIZATION = os.getenv("OPENAI_ORGANIZATION", "")
-OPENAI_PROJECT = os.getenv("OPENAI_PROJECT", "")
-OPENAI_PROXY_URL = os.getenv("OPENAI_PROXY_URL", "")
-OPENAI_TIMEOUT = os.getenv("OPENAI_TIMEOUT", "")
+CUSTOM_LLM_API_KEY = os.getenv("CUSTOM_LLM_API_KEY", "")
+CUSTOM_LLM_BASE_URL = os.getenv("CUSTOM_LLM_BASE_URL", "")
+CUSTOM_LLM_MODEL = os.getenv("CUSTOM_LLM_MODEL", "")
+CUSTOM_LLM_PROTOCOL = os.getenv("CUSTOM_LLM_PROTOCOL", "openai")
+
+# Protocol to Base URL mapping for common providers
+PROTOCOL_BASE_URL_MAP = {
+    "openai": "https://api.openai.com/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "doubao": "https://ark.cn-beijing.volces.com/api/v3",
+    "groq": "https://api.groq.com/openai/v1",
+    "ollama": "http://localhost:11434/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "copilot": "https://api.githubcopilot.com",
+}
+
+# Auto-fallback for common protocols if BASE_URL is missing
+if not CUSTOM_LLM_BASE_URL:
+    CUSTOM_LLM_BASE_URL = PROTOCOL_BASE_URL_MAP.get(CUSTOM_LLM_PROTOCOL.lower(), "")
 
 VIBEVOICE_DIR = os.getenv("VIBEVOICE_DIR", "")
 VIBEVOICE_MODEL = os.getenv("VIBEVOICE_MODEL", "microsoft/VibeVoice-ASR")

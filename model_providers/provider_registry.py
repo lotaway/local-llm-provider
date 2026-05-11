@@ -10,13 +10,11 @@ from remote_providers import OpenAIModelProvider, OpenAISettings
 @dataclass(frozen=True)
 class ProviderRegistrySettings:
     poe_api_key: str
-    openai_api_key: str
     poe_default_model: str
-    openai_base_url: str
-    openai_organization: str
-    openai_project: str
-    openai_proxy_url: str
-    openai_timeout: str
+    custom_llm_api_key: str
+    custom_llm_base_url: str
+    custom_llm_model: str
+    custom_llm_protocol: str
 
 
 class ModelProviderRegistry:
@@ -69,14 +67,13 @@ def build_default_registry(
                 model_names=_model_list_from_default(settings.poe_default_model),
             )
         ),
-        OpenAIModelProvider(
-            OpenAISettings(
-                api_key=settings.openai_api_key,
-                base_url=settings.openai_base_url,
-                organization=_none_if_empty(settings.openai_organization),
-                project=_none_if_empty(settings.openai_project),
-                proxy_url=_none_if_empty(settings.openai_proxy_url),
-                timeout=_parse_timeout(settings.openai_timeout),
+        RemoteModelProvider(
+            RemoteProviderConfig(
+                provider_id="custom",
+                api_key=settings.custom_llm_api_key,
+                model_names=_model_list_from_default(settings.custom_llm_model),
+                base_url=settings.custom_llm_base_url,
+                protocol=settings.custom_llm_protocol,
             )
         ),
     ]

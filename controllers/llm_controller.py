@@ -12,17 +12,15 @@ from typing import cast
 from globals import limiter
 import globals as backend_globals
 from auth import get_multimodal_headers
-from model_providers import LocalLLModel
+from model_providers import LocalLLModel, RemoteModelProvider
 from remote_providers import PoeModelProvider, OpenAIModelProvider, OpenAISettings
 from constants import (
     POE_API_KEY,
     POE_DEFAULT_MODEL,
-    OPENAI_API_KEY,
-    OPENAI_BASE_URL,
-    OPENAI_ORGANIZATION,
-    OPENAI_PROJECT,
-    OPENAI_PROXY_URL,
-    OPENAI_TIMEOUT,
+    CUSTOM_LLM_API_KEY,
+    CUSTOM_LLM_BASE_URL,
+    CUSTOM_LLM_MODEL,
+    CUSTOM_LLM_PROTOCOL,
 )
 from schemas import Message, ChatRequest
 from rag import LocalRAG
@@ -55,30 +53,31 @@ def _get_poe_models():
     return [POE_DEFAULT_MODEL]
 
 
-def _get_openai_models():
-    if not _has_value(OPENAI_API_KEY):
+def _get_custom_models():
+    if not _has_value(CUSTOM_LLM_MODEL):
         return []
-    return _build_openai_provider().list_models()
+    return [CUSTOM_LLM_MODEL]
 
 
 def _is_remote_model(model: str) -> bool:
-    return model in _get_poe_models() or model in _get_openai_models()
-
-
-def _build_openai_provider() -> OpenAIModelProvider:
-    settings = OpenAISettings(
-        api_key=OPENAI_API_KEY,
-        base_url=OPENAI_BASE_URL,
-        organization=_none_if_empty(OPENAI_ORGANIZATION),
-        project=_none_if_empty(OPENAI_PROJECT),
-        proxy_url=_none_if_empty(OPENAI_PROXY_URL),
-        timeout=_parse_timeout(OPENAI_TIMEOUT),
-    )
-    return OpenAIModelProvider(settings)
+    return model in _get_poe_models() or model in _get_custom_models()
 
 
 def _build_poe_provider() -> PoeModelProvider:
     return PoeModelProvider()
+
+
+def _build_custom_provider() -> OpenAIModelProvider:
+    if CUSTOM_LLM_PROTOCOL == "openai":
+        settings = OpenAISettings(
+            api_key=CUSTOM_LLM_API_KEY,
+            base_url=CUSTOM_LLM_BASE_URL,
+            timeout=60.0,
+        )
+        return OpenAIModelProvider(settings)
+    raise HTTPException(
+        status_code=400, detail=f"Unsupported custom protocol: {CUSTOM_LLM_PROTOCOL}"
+    )
 
 
 def _get_remote_provider(model: str):
@@ -86,10 +85,8 @@ def _get_remote_provider(model: str):
         if not _has_value(POE_API_KEY):
             raise HTTPException(status_code=400, detail="POE_API_KEY is required")
         return _build_poe_provider()
-    if model in _get_openai_models():
-        if not _has_value(OPENAI_API_KEY):
-            raise HTTPException(status_code=400, detail="OPENAI_API_KEY is required")
-        return _build_openai_provider()
+    if model in _get_custom_models():
+        return _build_custom_provider()
     raise HTTPException(status_code=400, detail="Unsupported remote model")
 
 
@@ -130,7 +127,7 @@ async def chat_completions(req: ChatRequest, request: Request):
             req.messages, req.files
         )
 
-    if _is_remote_model(req.model):
+    if _is_remote_model(req.model) and not req.enable_rag:
         payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
         return await _proxy_remote_chat(payload, request, req.model)
 
@@ -239,7 +236,10 @@ async def chat_completions(req: ChatRequest, request: Request):
         }
         return JSONResponse(content=response)
 
-    local_model = LocalLLModel.init_local_model(req.model)
+    if _is_remote_model(req.model):
+        local_model = RemoteModelProvider(req.model)
+    else:
+        local_model = LocalLLModel.init_local_model(req.model)
 
     try:
         msgs_dicts = [
@@ -259,7 +259,10 @@ async def chat_completions(req: ChatRequest, request: Request):
             raise HTTPException(status_code=500, detail=f"Model loading failed: {e}")
 
     if req.enable_rag:
-        if backend_globals.local_rag is None:
+        if backend_globals.local_rag is None or (
+            hasattr(backend_globals.local_rag, "llm")
+            and backend_globals.local_rag.llm != local_model
+        ):
             backend_globals.local_rag = LocalRAG(local_model)
 
         query = ""

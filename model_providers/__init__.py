@@ -5,6 +5,7 @@ from .comfyui_provider import ComfyUIProvider
 from .multimodal_provider import JanusModel, LlavaModel, QwenVLModel, MultimodalFactory
 from .inference_engine import InferenceEngine
 from .unified_model_loader import UnifiedModelLoader
+from .remote_model_provider import RemoteModelProvider
 
 __all__ = [
     "LocalLLModel",
@@ -16,4 +17,5 @@ __all__ = [
     "MultimodalFactory",
     "InferenceEngine",
     "UnifiedModelLoader",
+    "RemoteModelProvider",
 ]
