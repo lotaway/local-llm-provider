@@ -11,13 +11,11 @@ class DeepSeekLoader(BaseChatLoader):
     
     
     def load(self, data: list, source_file: str) -> List[Document]:
-        """解析 DeepSeek 导出的 JSON 数据"""
         docs = []
         for conversation in data:
             title = conversation.get("title", "Untitled Conversation")
             mapping = conversation.get("mapping", {})
             
-            # 寻找根节点
             root_id = None
             for node_id, node in mapping.items():
                 if node.get("parent") is None:
@@ -27,7 +25,6 @@ class DeepSeekLoader(BaseChatLoader):
             if not root_id:
                 continue
                 
-            # 遍历对话树
             current_id = root_id
             messages = []
             
@@ -52,7 +49,6 @@ class DeepSeekLoader(BaseChatLoader):
                         if role and content:
                             messages.append({"role": role, "content": content})
 
-                # 移动到下一个节点
                 children = node.get("children", [])
                 if children:
                     current_id = children[0]
@@ -67,7 +63,6 @@ class DeepSeekLoader(BaseChatLoader):
             for i, msg in enumerate(messages):
                 role = msg["role"]
                 
-                # 如果是 User 消息，且当前 buffer 中已有 Assistant 消息，说明上一轮对话结束，先保存
                 if role == "user":
                     if current_doc_messages and current_doc_messages[-1]["role"] == "assistant":
                         docs.append(self._create_chat_doc(title, current_doc_messages, source_file))
@@ -75,14 +70,12 @@ class DeepSeekLoader(BaseChatLoader):
                 
                 current_doc_messages.append(msg)
             
-            # 处理剩余的消息
             if current_doc_messages:
                 docs.append(self._create_chat_doc(title, current_doc_messages, source_file))
                 current_doc_messages = [] 
         return docs
 
     def _create_chat_doc(self, title, messages, source):
-        """构建 Document 对象"""
         content_parts = [f"Title: {title}"]
         for msg in messages:
             role_prefix = "Question" if msg["role"] == "user" else "Answer"

@@ -183,7 +183,6 @@ class AgentRuntime:
             "data": data,
         }
 
-        # Determine current input for resumption
         if not approved:
             current_input = feedback or "User rejected the previous step."
         else:

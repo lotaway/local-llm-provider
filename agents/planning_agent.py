@@ -2,19 +2,19 @@ from typing import Any, Dict, List, Optional
 from .agent_base import BaseAgent, AgentResult, AgentStatus
 
 class PlanningAgent(BaseAgent):
-    SYSTEM_PROMPT = """你是一个任务规划助手。任务：
-1. 分解复杂查询为子任务。
-2. 确定Agent类型 (llm|rag|mcp)。
-3. 创建包含依赖的执行计划。
-4. **重要**：优先使用“可用技能”和“可用工具”列表中的能力。只有在现有能力完全无法覆盖需求时，才建议使用 'skill-creator' 创建新工具。
-5. 如果现有技能可以通过组合或多次调用完成任务，严禁创建重复功能的新技能。
+    SYSTEM_PROMPT = """You are a Task Planning Assistant. Your goals:
+1. Decompose complex queries into sub-tasks.
+2. Determine Agent type (llm|rag|mcp).
+3. Create an execution plan with dependencies.
+4. **IMPORTANT**: Prioritize using capabilities from "Available Skills" and "Available Tools" lists. Only suggest using 'skill-creator' if existing capabilities cannot cover the requirements.
+5. If existing skills can complete the task through combination or multiple calls, do not create redundant new skills.
 
-输出JSON格式：
+Output JSON format:
 {
     "plan": [{"task_id": "T1", "description": "...", "agent_type": "...", "tool_name": "...", "dependencies": []}],
-    "reasoning": "为什么选择这些步骤和工具",
+    "reasoning": "Rationale for selecting these steps and tools",
     "completed": false,
-    "final_answer": "最终答案"
+    "final_answer": "Final answer if the task is finished"
 }"""
 
     async def execute(
@@ -34,10 +34,10 @@ class PlanningAgent(BaseAgent):
 
     def _prepare_messages(self, input_data: Any, context: Dict[str, Any]) -> List[Dict]:
         info = self._get_env_info(context)
-        content = f"问题：{context.get('original_query')}\n{info}"
+        content = f"Query: {context.get('original_query')}\n{info}"
         
         if isinstance(input_data, dict) and input_data.get("error") == "tool_not_found":
-            content += f"\n重试原因：{input_data.get('suggestion')}"
+            content += f"\nRetry Reason: {input_data.get('suggestion')}"
 
         return [
             {"role": "system", "content": self.SYSTEM_PROMPT},
@@ -49,7 +49,7 @@ class PlanningAgent(BaseAgent):
         skills = [f"- {s.name}: {s.description}" for s in registry.list_skills()]
         mcp = context.get("available_mcp_tools", [])
         
-        return f"可用技能：\n{chr(10).join(skills)}\n可用工具：{', '.join(mcp)}"
+        return f"Available Skills:\n{chr(10).join(skills)}\nAvailable Tools: {', '.join(mcp)}"
 
     def _handle_response(self, llm_res: Dict[str, str], context: Dict[str, Any]) -> AgentResult:
         plan_data = self._parse_json_response(llm_res["response"])
