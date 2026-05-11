@@ -40,6 +40,12 @@ class AgentDecisionRequest(BaseModel):
     data: dict = None
 
 
+class AgentExecutionResultRequest(BaseModel):
+    success: bool
+    data: Any = None
+    error: str = ""
+
+
 @router.post("/run")
 @limiter.limit("10/minute")
 async def query_agent(agentRequest: AgentRequest, request: Request):
@@ -153,6 +159,23 @@ async def agent_decision(req: AgentDecisionRequest, request: Request):
     try:
         result = await agent_runtime.handle_decision(
             req.approved, req.feedback, req.data
+        )
+        return {"success": True, "result": result.to_dict()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/execute")
+@limiter.limit("20/minute")
+async def agent_execute_result(req: AgentExecutionResultRequest, request: Request):
+    global agent_runtime
+
+    if agent_runtime is None:
+        raise HTTPException(status_code=400, detail="Agent runtime not initialized")
+
+    try:
+        result = await agent_runtime.handle_client_result(
+            req.data, req.success, req.error
         )
         return {"success": True, "result": result.to_dict()}
     except Exception as e:

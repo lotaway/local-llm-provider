@@ -33,6 +33,12 @@ class MCPTaskAgent(BaseAgent):
         private_context: Dict[str, Any],
         stream_callback=None,
     ) -> AgentResult:
+        # Check if resuming from client execution
+        if context.get("last_client_execution"):
+            last_exec = context.pop("last_client_execution")
+            status = AgentStatus.SUCCESS if last_exec["success"] else AgentStatus.FAILURE
+            return AgentResult(status, last_exec["data"], f"Client tool execution result: {last_exec.get('error', 'Success')}", next_agent="verification")
+
         task = input_data if isinstance(input_data, dict) else {}
         name = task.get("tool_name", "")
         desc = task.get("description", "")
@@ -52,10 +58,10 @@ class MCPTaskAgent(BaseAgent):
     def _handle_missing_tool(self, name, desc, context) -> AgentResult:
         available = self.get_available_tools()
         return AgentResult(
-            status=AgentStatus.NEEDS_RETRY,
-            data={"error": "tool_not_found", "requested_tool": name, "available": available},
-            message=f"Tool {name} not found",
-            next_agent="planning"
+            status=AgentStatus.NEEDS_CLIENT_EXECUTION,
+            data={"tool_name": name, "arguments": {"description": desc}, "backend_available": available},
+            message=f"Tool {name} not found in backend. Requesting client execution.",
+            next_agent=self.name # Come back to this agent after client execution
         )
 
     def _check_permissions(self, name, desc, context) -> Optional[AgentResult]:

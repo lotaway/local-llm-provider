@@ -110,8 +110,20 @@ async def lifespan(app: FastAPI):
                 "PRE_INIT_RAG enabled but no models found to initialize RAG."
             )
 
+    # Init Scheduler
+    try:
+        from services.task_scheduler import TaskScheduler
+        backend_globals.task_scheduler = TaskScheduler()
+        await backend_globals.task_scheduler.initialize()
+        backend_globals.task_scheduler.start()
+    except Exception as e:
+        logger.error(f"Failed to start task scheduler: {e}")
+
     yield
     # Shutdown
+    if backend_globals.task_scheduler:
+        await backend_globals.task_scheduler.stop()
+
     import model_providers
 
     try:

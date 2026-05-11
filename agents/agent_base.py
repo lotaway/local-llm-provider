@@ -16,6 +16,7 @@ class AgentStatus(Enum):
     FAILURE = "failure"
     NEEDS_RETRY = "needs_retry"
     NEEDS_HUMAN = "needs_human"
+    NEEDS_CLIENT_EXECUTION = "needs_client_execution"
     CONTINUE = "continue"
     COMPLETE = "complete"
 

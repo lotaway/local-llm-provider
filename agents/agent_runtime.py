@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import time
 from typing import Dict, Any, List, Optional
 from .agent_base import BaseAgent, AgentResult, AgentStatus
 from .context_storage import ContextStorage
@@ -113,6 +114,7 @@ class AgentRuntime:
         handlers = {
             AgentStatus.COMPLETE: self._on_complete,
             AgentStatus.NEEDS_HUMAN: self._on_human_required,
+            AgentStatus.NEEDS_CLIENT_EXECUTION: self._on_client_execution_required,
             AgentStatus.FAILURE: self._on_failure,
             AgentStatus.NEEDS_RETRY: self._on_retry,
             AgentStatus.SUCCESS: self._on_continue,
@@ -138,6 +140,11 @@ class AgentRuntime:
     async def _on_human_required(self, result: AgentResult) -> Any:
         self.state.status = RuntimeStatus.WAITING_HUMAN
         self.state.current_agent = result.next_agent or "planning"
+        return result.data
+
+    async def _on_client_execution_required(self, result: AgentResult) -> Any:
+        self.state.status = RuntimeStatus.WAITING_CLIENT
+        self.state.current_agent = result.next_agent or self.state.current_agent
         return result.data
 
     async def _on_retry(self, result: AgentResult) -> Any:
@@ -182,5 +189,20 @@ class AgentRuntime:
         else:
             current_input = data if data is not None else (self.state.history[-1]["data"] if self.state.history else None)
 
+        self.state.status = RuntimeStatus.RUNNING
+        return await self._run_loop(current_input)
+
+    async def handle_client_result(self, result_data: Any, success: bool = True, error: str = "") -> RuntimeState:
+        if self.state.status != RuntimeStatus.WAITING_CLIENT:
+            raise Exception("Agent is not waiting for client execution result")
+
+        self.state.context["last_client_execution"] = {
+            "success": success,
+            "data": result_data,
+            "error": error,
+            "timestamp": time.time() if hasattr(time, "time") else 0
+        }
+
+        current_input = result_data if success else f"Error from client: {error}"
         self.state.status = RuntimeStatus.RUNNING
         return await self._run_loop(current_input)

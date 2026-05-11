@@ -8,6 +8,7 @@ class RuntimeStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     WAITING_HUMAN = "waiting_human"
+    WAITING_CLIENT = "waiting_client"
     MAX_ITERATIONS = "max_iterations"
 
 @dataclass

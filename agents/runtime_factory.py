@@ -34,15 +34,24 @@ class RuntimeFactory:
     def _build_runtime_instance(llm, max_iters, storage, session_id, rag) -> AgentRuntime:
         from services.feedback_judge import FeedbackJudge
         from services.evolution_dispatcher import EvolutionDispatcher
+        from services.skill_researcher import SkillResearcher, SkillCreatorBridge
+        from skills import registry
         
         memory_repo = getattr(rag, "mongo_repo", None)
+        researcher = SkillResearcher(llm)
+        creator = SkillCreatorBridge(registry)
+        
         return AgentRuntime(
             llm,
             max_iterations=max_iters,
             context_storage=storage,
             session_id=session_id,
             feedback_judge=FeedbackJudge(),
-            evolution_dispatcher=EvolutionDispatcher(memory_repo=memory_repo)
+            evolution_dispatcher=EvolutionDispatcher(
+                memory_repo=memory_repo,
+                skill_researcher=researcher,
+                skill_creator=creator
+            )
         )
 
     @staticmethod

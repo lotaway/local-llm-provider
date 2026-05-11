@@ -44,6 +44,11 @@ LLP_CLAUDE_SKILLS_DIR = os.getenv("LLP_CLAUDE_SKILLS_DIR", "")
 LLP_ENABLE_OPENCLAW = os.getenv("LLP_ENABLE_OPENCLAW", "0")
 LLP_OPENCLAW_ROOT = os.getenv("LLP_OPENCLAW_ROOT", "")
 
+# Task Scheduler & Root Task
+ROOT_TASK = os.getenv("ROOT_TASK", "")
+ROOT_TASK_INTERVAL = int(os.getenv("ROOT_TASK_INTERVAL", "3600"))
+ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "true").lower() == "true"
+
 POE_API_KEY = os.getenv("POE_API_KEY", "")
 POE_DEFAULT_MODEL = os.getenv("POE_DEFAULT_MODEL", "Claude-Sonnet-4.5")
 CUSTOM_LLM_API_KEY = os.getenv("CUSTOM_LLM_API_KEY", "")

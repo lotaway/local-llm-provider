@@ -16,10 +16,11 @@ class EvolutionConfig:
     history_limit: int = 200
 
 
-class EvolutionDispatcher(IEvolutionDispatcher):
-    def __init__(self, memory_repo=None, config: EvolutionConfig | None = None):
+    def __init__(self, memory_repo=None, config: EvolutionConfig | None = None, skill_researcher=None, skill_creator=None):
         self._memory_repo = memory_repo
         self._config = config or EvolutionConfig()
+        self._skill_researcher = skill_researcher
+        self._skill_creator = skill_creator
         self._signal_pool: List[Dict[str, Any]] = []
         self._history: List[Dict[str, Any]] = []
 
@@ -215,3 +216,22 @@ class EvolutionDispatcher(IEvolutionDispatcher):
 
     def _clamp(self, value: float) -> float:
         return max(0.0, min(1.0, value))
+
+    async def trigger_skill_evolution(self, task_description: str, error_context: str) -> Dict[str, Any]:
+        """Manually or automatically trigger the skill evolution loop."""
+        if not self._skill_researcher or not self._skill_creator:
+            return {"error": "Evolution services not configured"}
+
+        # 1. Research
+        research_result = await self._skill_researcher.research_missing_skill(task_description, error_context)
+        if "error" in research_result:
+            return research_result
+
+        # 2. Create and Deploy
+        success = await self._skill_creator.create_and_deploy(research_result)
+        
+        return {
+            "success": success,
+            "skill_ir": research_result,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
