@@ -13,10 +13,8 @@ from globals import limiter
 import globals as backend_globals
 from auth import get_multimodal_headers
 from model_providers import LocalLLModel, RemoteModelProvider
-from remote_providers import PoeModelProvider, OpenAIModelProvider, OpenAISettings
+from remote_providers import OpenAIModelProvider, OpenAISettings
 from constants import (
-    POE_API_KEY,
-    POE_DEFAULT_MODEL,
     CUSTOM_LLM_API_KEY,
     CUSTOM_LLM_BASE_URL,
     CUSTOM_LLM_MODEL,
@@ -46,11 +44,10 @@ def _parse_timeout(value: str):
 
 
 def _get_poe_models():
-    if not _has_value(POE_API_KEY):
-        return []
-    if POE_DEFAULT_MODEL.strip() == "":
-        return []
-    return [POE_DEFAULT_MODEL]
+    # Poe is now just a specific case of custom OpenAI protocol
+    if CUSTOM_LLM_PROTOCOL == "poe" and _has_value(CUSTOM_LLM_MODEL):
+        return [CUSTOM_LLM_MODEL]
+    return []
 
 
 def _get_custom_models():
@@ -63,29 +60,21 @@ def _is_remote_model(model: str) -> bool:
     return model in _get_poe_models() or model in _get_custom_models()
 
 
-def _build_poe_provider() -> PoeModelProvider:
-    return PoeModelProvider()
+# Removed _build_poe_provider as Poe uses OpenAIModelProvider
 
 
 def _build_custom_provider() -> OpenAIModelProvider:
-    if CUSTOM_LLM_PROTOCOL == "openai":
-        settings = OpenAISettings(
-            api_key=CUSTOM_LLM_API_KEY,
-            base_url=CUSTOM_LLM_BASE_URL,
-            timeout=60.0,
-        )
-        return OpenAIModelProvider(settings)
-    raise HTTPException(
-        status_code=400, detail=f"Unsupported custom protocol: {CUSTOM_LLM_PROTOCOL}"
+    settings = OpenAISettings(
+        api_key=CUSTOM_LLM_API_KEY,
+        base_url=CUSTOM_LLM_BASE_URL,
+        proxy_url=os.getenv("HTTP_PROXY"),
+        timeout=60.0,
     )
+    return OpenAIModelProvider(settings)
 
 
 def _get_remote_provider(model: str):
-    if model in _get_poe_models():
-        if not _has_value(POE_API_KEY):
-            raise HTTPException(status_code=400, detail="POE_API_KEY is required")
-        return _build_poe_provider()
-    if model in _get_custom_models():
+    if model == CUSTOM_LLM_MODEL:
         return _build_custom_provider()
     raise HTTPException(status_code=400, detail="Unsupported remote model")
 
@@ -119,420 +108,171 @@ class CompletionRequest(BaseModel):
 @router.post("/chat/completions", tags=["chat"])
 @limiter.limit("20/minute")
 async def chat_completions(req: ChatRequest, request: Request):
-    if req.files:
-        from utils import FileProcessor
-
-        file_processor = FileProcessor()
-        req.messages = file_processor.inject_file_context_to_messages(
-            req.messages, req.files
-        )
-
+    _inject_files(req)
+    
     if _is_remote_model(req.model) and not req.enable_rag:
-        payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
-        return await _proxy_remote_chat(payload, request, req.model)
+        return await _proxy_remote_chat(req.model_dump(), request, req.model)
 
-    has_images = False
-    for m in req.messages:
-        if isinstance(m.content, list):
-            for part in m.content:
-                if isinstance(part, dict) and (
-                    part.get("type") != ContentType.TEXT.value
-                ):
-                    has_images = True
-                    break
-        if has_images:
-            break
+    if _has_images(req.messages):
+        return await _handle_multimodal_flow(req)
 
-    if has_images:
-        multimodal_prompt = "请分析所提供的图像，并返回一个包含视觉内容详细描述的 JSON 对象，内容涵盖物体、文字、颜色以及空间位置关系。如果图像中主体信息包含大量文字，请提取出文字内容。"
-
-        system_msg = {"role": "system", "content": multimodal_prompt}
-        msgs_dicts = [
-            m.model_dump() if hasattr(m, "model_dump") else m for m in req.messages
-        ]
-        multimodal_messages = [system_msg] + msgs_dicts
-
-        if (
-            backend_globals.remote_multimodal_status
-            and backend_globals.MULTIMODAL_PROVIDER_URL
-        ):
-            try:
-                payload = req.model_dump()
-                payload["messages"] = multimodal_messages
-
-                if req.stream:
-
-                    async def remote_stream():
-                        async with httpx.AsyncClient() as client:
-                            async with client.stream(
-                                "POST",
-                                f"{backend_globals.MULTIMODAL_PROVIDER_URL}/{OTHER_VERSION}/chat/completions",
-                                json=payload,
-                                headers=get_multimodal_headers(),
-                                timeout=60.0,
-                            ) as resp:
-                                async for chunk in resp.aiter_text():
-                                    yield chunk
-
-                    return StreamingResponse(
-                        remote_stream(), media_type="text/event-stream"
-                    )
-                else:
-                    async with httpx.AsyncClient() as client:
-                        resp = await client.post(
-                            f"{backend_globals.MULTIMODAL_PROVIDER_URL}/{OTHER_VERSION}/chat/completions",
-                            json=payload,
-                            headers=get_multimodal_headers(),
-                            timeout=60.0,
-                        )
-                        return JSONResponse(
-                            content=resp.json(), status_code=resp.status_code
-                        )
-
-            except Exception as e:
-                logger.error(
-                    f"Remote multimodal failed: {e}, falling back to local if available"
-                )
-
-        is_vlm_request = (
-            req.model in backend_globals.vlm_models
-            or "janus" in req.model.lower()
-            or "llava" in req.model.lower()
-            or "vl" in req.model.lower()
-        )
-
-        target_model_name = req.model if is_vlm_request else backend_globals.default_vlm
-
-        if (
-            backend_globals.multimodal_model is None
-            or backend_globals.multimodal_model.model_name != target_model_name
-        ):
-            backend_globals.multimodal_model = (
-                backend_globals.MultimodalFactory.get_model(target_model_name)
-            )
-
-        def run_multimodal():
-            return backend_globals.multimodal_model.chat(multimodal_messages)
-
-        output = await asyncio.to_thread(run_multimodal)
-
-        response = {
-            "id": f"chatcmpl-janus-{uuid.uuid4().hex}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": req.model,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": output},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {
-                "prompt_tokens": 0,
-                "completion_tokens": len(str(output).split()),
-                "total_tokens": len(str(output).split()),
-            },
-        }
-        return JSONResponse(content=response)
-
-    if _is_remote_model(req.model):
-        local_model = RemoteModelProvider(req.model)
-    else:
-        local_model = LocalLLModel.init_local_model(req.model)
-
-    try:
-        msgs_dicts = [
-            m.model_dump() if hasattr(m, "model_dump") else m for m in req.messages
-        ]
-        truncated_dicts = local_model.smart_truncate_messages(msgs_dicts)
-        if len(truncated_dicts) < len(msgs_dicts) or (
-            len(truncated_dicts) > 0
-            and len(msgs_dicts) > 0
-            and truncated_dicts[0]["content"] != msgs_dicts[0]["content"]
-        ):
-            req.messages = [Message(**m) for m in truncated_dicts]
-
-    except Exception as e:
-        logger.warning(f"Context truncation process failed: {e}")
-        if "incomplete metadata" in str(e) or "file not fully covered" in str(e):
-            raise HTTPException(status_code=500, detail=f"Model loading failed: {e}")
-
+    model = _get_llm_instance(req.model)
+    _truncate_context(req, model)
+    
     if req.enable_rag:
-        if backend_globals.local_rag is None or (
-            hasattr(backend_globals.local_rag, "llm")
-            and backend_globals.local_rag.llm != local_model
-        ):
-            backend_globals.local_rag = LocalRAG(local_model)
+        return await _handle_rag_flow(req, model, request)
+    return await _handle_standard_chat_flow(req, model, request)
 
-        query = ""
-        for m in reversed(req.messages):
-            if m.role == "user":
-                query = local_model._extract_text_from_content(m.content)
-                break
-        if not query and req.messages:
-            query = local_model._extract_text_from_content(req.messages[-1].content)
+def _inject_files(req: ChatRequest):
+    if not req.files: return
+    from utils import FileProcessor
+    req.messages = FileProcessor().inject_file_context_to_messages(req.messages, req.files)
 
-        if req.stream:
-            event_queue = asyncio.Queue()
+def _has_images(messages: list) -> bool:
+    for m in messages:
+        if not isinstance(m.content, list): continue
+        for part in m.content:
+            if isinstance(part, dict) and part.get("type") != ContentType.TEXT.value:
+                return True
+    return False
 
-            async def stream_callback(chunk):
-                await event_queue.put(chunk)
+async def _handle_multimodal_flow(req: ChatRequest):
+    prompt = "Analyze the provided image and return a JSON object describing visual content (objects, text, colors, spatial relations). Extract text if present."
+    history = [{"role": "system", "content": prompt}] + [m.model_dump() for m in req.messages]
+    
+    if backend_globals.remote_multimodal_status and backend_globals.MULTIMODAL_PROVIDER_URL:
+        try: return await _proxy_remote_multimodal(req, history)
+        except Exception: logger.error("Remote multimodal failed, falling back")
 
-            async def run_rag():
-                try:
-                    await cast(LocalRAG, backend_globals.local_rag).generate_answer(
-                        query, stream_callback=stream_callback
-                    )
-                except Exception as e:
-                    logger.error(f"RAG Error: {e}")
-                finally:
-                    await event_queue.put(None)
+    vlm = _get_vlm_instance(req.model)
+    output = await asyncio.to_thread(lambda: vlm.chat(history))
+    return JSONResponse(content=_format_vlm_response(output, req.model))
 
-            asyncio.create_task(run_rag())
+async def _proxy_remote_multimodal(req: ChatRequest, history: list):
+    payload = req.model_dump()
+    payload["messages"] = history
+    if req.stream: return await _stream_remote_vlm(payload)
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(f"{backend_globals.MULTIMODAL_PROVIDER_URL}/{OTHER_VERSION}/chat/completions", json=payload, headers=get_multimodal_headers(), timeout=60.0)
+        return JSONResponse(content=resp.json(), status_code=resp.status_code)
 
-            async def event_stream():
-                while True:
-                    if await request.is_disconnected():
-                        break
-                    try:
-                        try:
-                            chunk = await asyncio.wait_for(
-                                event_queue.get(), timeout=0.1
-                            )
-                        except asyncio.TimeoutError:
-                            continue
+async def _stream_remote_vlm(payload: dict):
+    async def stream():
+        async with httpx.AsyncClient() as client:
+            async with client.stream("POST", f"{backend_globals.MULTIMODAL_PROVIDER_URL}/{OTHER_VERSION}/chat/completions", json=payload, headers=get_multimodal_headers(), timeout=60.0) as resp:
+                async for chunk in resp.aiter_text(): yield chunk
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
-                        if chunk is None:
-                            break
+def _get_vlm_instance(model_name: str):
+    is_vlm = model_name in backend_globals.vlm_models or any(x in model_name.lower() for x in ["janus", "llava", "vl"])
+    target = model_name if is_vlm else backend_globals.default_vlm
+    if backend_globals.multimodal_model is None or backend_globals.multimodal_model.model_name != target:
+        backend_globals.multimodal_model = backend_globals.MultimodalFactory.get_model(target)
+    return backend_globals.multimodal_model
 
-                        delta = {"content": chunk} if isinstance(chunk, str) else chunk
-                        data = {
-                            "id": f"chatcmpl-{uuid.uuid4().hex}",
-                            "object": "chat.completion.chunk",
-                            "created": int(time.time()),
-                            "model": req.model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": delta,
-                                    "finish_reason": None,
-                                }
-                            ],
-                        }
-                        yield f"data: {json.dumps(data)}\n\n"
-                    except Exception as e:
-                        logger.error(f"Stream error: {e}")
-                        break
+def _format_vlm_response(output: str, model_name: str) -> dict:
+    return {
+        "id": f"chatcmpl-vlm-{uuid.uuid4().hex}", "object": "chat.completion", "created": int(time.time()), "model": model_name,
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": output}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 0, "completion_tokens": len(str(output).split()), "total_tokens": len(str(output).split())}
+    }
 
-                data = {
-                    "id": f"chatcmpl-{uuid.uuid4().hex}",
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": req.model,
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                }
-                yield f"data: {json.dumps(data)}\n\n"
-                yield "data: [DONE]\n\n"
+def _get_llm_instance(model_name: str):
+    if _is_remote_model(model_name): return RemoteModelProvider(model_name)
+    return LocalLLModel.init_local_model(model_name)
 
-            return StreamingResponse(event_stream(), media_type="text/event-stream")
-        else:
-            try:
-                result = await backend_globals.local_rag.generate_answer(query)
-                response = {
-                    "id": f"chatcmpl-{uuid.uuid4().hex}",
-                    "object": "chat.completion",
-                    "created": int(time.time()),
-                    "model": req.model,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "message": {"role": "assistant", "content": result},
-                            "finish_reason": "stop",
-                        }
-                    ],
-                    "usage": {
-                        "prompt_tokens": 0,
-                        "completion_tokens": len(str(result).split()),
-                        "total_tokens": len(str(result).split()),
-                    },
-                }
-                return JSONResponse(content=response)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
-    else:
-        if req.stream:
-            event_queue = asyncio.Queue()
+def _truncate_context(req: ChatRequest, model):
+    try:
+        msgs = [m.model_dump() for m in req.messages]
+        truncated = model.smart_truncate_messages(msgs)
+        if len(truncated) < len(msgs) or (truncated and msgs and truncated[0]["content"] != msgs[0]["content"]):
+            req.messages = [Message(**m) for m in truncated]
+    except Exception as e:
+        logger.warning(f"Truncation failed: {e}")
 
-            async def stream_callback(chunk):
-                await event_queue.put(chunk)
+async def _handle_rag_flow(req: ChatRequest, model, request: Request):
+    if backend_globals.local_rag is None or backend_globals.local_rag.llm != model:
+        backend_globals.local_rag = LocalRAG(model)
+    query = _extract_query(req.messages, model)
+    if req.stream: return await _stream_rag_answer(query, req.model, request)
+    result = await backend_globals.local_rag.generate_answer(query)
+    return JSONResponse(content=_format_chat_response(result, req.model))
 
-            async def run_chat():
-                try:
-                    async for chunk in local_model.chat(
-                        req.messages,
-                        max_new_tokens=req.max_tokens,
-                        temperature=req.temperature,
-                        top_p=req.top_p,
-                    ):
-                        if isinstance(chunk, int):
-                            continue
-                        await stream_callback(chunk)
-                except Exception as e:
-                    logger.error(f"Chat Error: {e}")
-                finally:
-                    await event_queue.put(None)
+async def _handle_standard_chat_flow(req: ChatRequest, model, request: Request):
+    if req.stream: return await _stream_chat_answer(model, req, request)
+    result = await model.chat_at_once(req.messages, max_new_tokens=req.max_tokens, temperature=req.temperature, top_p=req.top_p)
+    return JSONResponse(content=_format_chat_response(result, req.model))
 
-            asyncio.create_task(run_chat())
+def _extract_query(messages: list, model) -> str:
+    for m in reversed(messages):
+        if m.role == "user": return model._extract_text_from_content(m.content)
+    return model._extract_text_from_content(messages[-1].content) if messages else ""
 
-            async def event_stream():
-                last_finish_reason = None
-                while True:
-                    if await request.is_disconnected():
-                        break
-                    try:
-                        try:
-                            chunk = await asyncio.wait_for(
-                                event_queue.get(), timeout=0.1
-                            )
-                        except asyncio.TimeoutError:
-                            continue
+async def _stream_rag_answer(query: str, model_name: str, request: Request):
+    queue = asyncio.Queue()
+    async def callback(chunk): await queue.put(chunk)
+    async def run():
+        try: await backend_globals.local_rag.generate_answer(query, stream_callback=callback)
+        finally: await queue.put(None)
+    asyncio.create_task(run())
+    return StreamingResponse(_chat_stream_generator(queue, model_name, request), media_type="text/event-stream")
 
-                        if chunk is None:
-                            break
+async def _stream_chat_answer(model, req: ChatRequest, request: Request):
+    queue = asyncio.Queue()
+    async def run():
+        try:
+            async for chunk in model.chat(req.messages, max_new_tokens=req.max_tokens, temperature=req.temperature, top_p=req.top_p):
+                if not isinstance(chunk, int): await queue.put(chunk)
+        finally: await queue.put(None)
+    asyncio.create_task(run())
+    return StreamingResponse(_chat_stream_generator(queue, req.model, request), media_type="text/event-stream")
 
-                        finish_reason = None
-                        if isinstance(chunk, dict):
-                            delta = {
-                                k: v for k, v in chunk.items() if k != "finish_reason"
-                            }
-                            finish_reason = chunk.get("finish_reason")
-                        else:
-                            delta = {"content": chunk}
+async def _chat_stream_generator(queue: asyncio.Queue, model_name: str, request: Request):
+    last_reason = None
+    while True:
+        if await request.is_disconnected(): break
+        try: chunk = await asyncio.wait_for(queue.get(), 0.1)
+        except asyncio.TimeoutError: continue
+        if chunk is None: break
+        
+        delta, reason = _parse_chat_chunk(chunk)
+        if reason: last_reason = reason
+        yield f"data: {json.dumps(_format_chat_chunk(delta, reason, model_name))}\n\n"
+    
+    yield f"data: {json.dumps(_format_chat_chunk({}, last_reason or 'stop', model_name))}\n\n"
+    yield "data: [DONE]\n\n"
 
-                        if finish_reason:
-                            last_finish_reason = finish_reason
+def _parse_chat_chunk(chunk):
+    if isinstance(chunk, dict):
+        return {k: v for k, v in chunk.items() if k != "finish_reason"}, chunk.get("finish_reason")
+    return {"content": chunk}, None
 
-                        data = {
-                            "id": f"chatcmpl-{uuid.uuid4().hex}",
-                            "object": "chat.completion.chunk",
-                            "created": int(time.time()),
-                            "model": req.model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": delta,
-                                    "finish_reason": finish_reason,
-                                }
-                            ],
-                        }
-                        yield f"data: {json.dumps(data)}\n\n"
-                    except Exception as e:
-                        logger.error(f"Stream error: {e}")
-                        break
+def _format_chat_chunk(delta: dict, reason: str | None, model: str) -> dict:
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex}", "object": "chat.completion.chunk", "created": int(time.time()),
+        "model": model, "choices": [{"index": 0, "delta": delta, "finish_reason": reason}]
+    }
 
-                data = {
-                    "id": f"chatcmpl-{uuid.uuid4().hex}",
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": req.model,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "delta": {},
-                            "finish_reason": last_finish_reason or "stop",
-                        }
-                    ],
-                }
-                yield f"data: {json.dumps(data)}\n\n"
-                yield "data: [DONE]\n\n"
-
-            return StreamingResponse(event_stream(), media_type="text/event-stream")
-        else:
-            try:
-                result = await local_model.chat_at_once(
-                    req.messages,
-                    max_new_tokens=req.max_tokens,
-                    temperature=req.temperature,
-                    top_p=req.top_p,
-                )
-                response = {
-                    "id": f"chatcmpl-{uuid.uuid4().hex}",
-                    "object": "chat.completion",
-                    "created": int(time.time()),
-                    "model": req.model,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "message": {"role": "assistant", "content": result},
-                            "finish_reason": "stop",
-                        }
-                    ],
-                    "usage": {
-                        "prompt_tokens": 0,
-                        "completion_tokens": len(str(result).split()),
-                        "total_tokens": len(str(result).split()),
-                    },
-                }
-                return JSONResponse(content=response)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
-
+def _format_chat_response(content: str, model: str) -> dict:
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex}", "object": "chat.completion", "created": int(time.time()), "model": model,
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 0, "completion_tokens": len(str(content).split()), "total_tokens": len(str(content).split())}
+    }
 
 @router.post("/completions", tags=["completions"])
 async def completions(req: CompletionRequest):
-    local_model = LocalLLModel.init_local_model(req.model)
-
+    model = LocalLLModel.init_local_model(req.model)
     if req.enable_rag:
-        if backend_globals.local_rag is None:
-            backend_globals.local_rag = LocalRAG(local_model)
+        if backend_globals.local_rag is None: backend_globals.local_rag = LocalRAG(model)
+        result = await backend_globals.local_rag.generate_answer(req.prompt)
+        return JSONResponse(content=_format_completion_response(result, req.model))
+    result = await model.complete(req.prompt)
+    return JSONResponse(content=_format_completion_response(result, req.model))
 
-        try:
-            result = await backend_globals.local_rag.generate_answer(req.prompt)
-            response = {
-                "id": f"cmpl-{uuid.uuid4().hex}",
-                "object": "text_completion",
-                "created": int(time.time()),
-                "model": req.model,
-                "choices": [
-                    {
-                        "text": result,
-                        "index": 0,
-                        "logprobs": None,
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": 0,
-                    "completion_tokens": len(str(result).split()),
-                    "total_tokens": len(str(result).split()),
-                },
-            }
-            return JSONResponse(content=response)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    else:
-        try:
-            result = await local_model.complete(req.prompt)
-            response = {
-                "id": f"cmpl-{uuid.uuid4().hex}",
-                "object": "text_completion",
-                "created": int(time.time()),
-                "model": req.model,
-                "choices": [
-                    {
-                        "text": result,
-                        "index": 0,
-                        "logprobs": None,
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": 0,
-                    "completion_tokens": len(str(result).split()),
-                    "total_tokens": len(str(result).split()),
-                },
-            }
-            return JSONResponse(content=response)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+def _format_completion_response(text: str, model: str) -> dict:
+    return {
+        "id": f"cmpl-{uuid.uuid4().hex}", "object": "text_completion", "created": int(time.time()), "model": model,
+        "choices": [{"text": text, "index": 0, "logprobs": None, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 0, "completion_tokens": len(str(text).split()), "total_tokens": len(str(text).split())}
+    }

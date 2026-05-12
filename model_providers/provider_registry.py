@@ -9,8 +9,6 @@ from remote_providers import OpenAIModelProvider, OpenAISettings
 
 @dataclass(frozen=True)
 class ProviderRegistrySettings:
-    poe_api_key: str
-    poe_default_model: str
     custom_llm_api_key: str
     custom_llm_base_url: str
     custom_llm_model: str
@@ -60,13 +58,6 @@ def build_default_registry(
 ) -> ModelProviderRegistry:
     providers: List[ModelProvider] = [
         LocalModelProvider(model_discovery=model_discovery),
-        RemoteModelProvider(
-            RemoteProviderConfig(
-                provider_id="poe",
-                api_key=settings.poe_api_key,
-                model_names=_model_list_from_default(settings.poe_default_model),
-            )
-        ),
         RemoteModelProvider(
             RemoteProviderConfig(
                 provider_id="custom",

@@ -6,8 +6,6 @@ from model_providers.provider_registry import (
     ProviderRegistrySettings,
 )
 from constants import (
-    POE_API_KEY,
-    POE_DEFAULT_MODEL,
     CUSTOM_LLM_API_KEY,
     CUSTOM_LLM_BASE_URL,
     CUSTOM_LLM_MODEL,
@@ -32,32 +30,19 @@ async def api_show():
 
 @router.get("/tags")
 async def api_tags():
-    li = []
-    registry = build_default_registry(
-        ProviderRegistrySettings(
-            poe_api_key=POE_API_KEY,
-            poe_default_model=POE_DEFAULT_MODEL,
-            custom_llm_api_key=CUSTOM_LLM_API_KEY,
-            custom_llm_base_url=CUSTOM_LLM_BASE_URL,
-            custom_llm_model=CUSTOM_LLM_MODEL,
-            custom_llm_protocol=CUSTOM_LLM_PROTOCOL,
-        )
+    settings = ProviderRegistrySettings(
+        custom_llm_api_key=CUSTOM_LLM_API_KEY,
+        custom_llm_base_url=CUSTOM_LLM_BASE_URL,
+        custom_llm_model=CUSTOM_LLM_MODEL,
+        custom_llm_protocol=CUSTOM_LLM_PROTOCOL,
     )
-    for model in registry.list_models():
-        li.append(
-            {
-                **DEFAULT_MODEL_INFO,
-                "name": model,
-            }
-        )
-    return li
-
+    registry = build_default_registry(settings)
+    return [{**DEFAULT_MODEL_INFO, "name": m} for m in registry.list_models()]
 
 @router.get("/version")
 async def api_version():
-    li = await api_tags()
-    if local_model is None or local_model.cur_model_name == "":
+    tags = await api_tags()
+    if not local_model or not local_model.cur_model_name:
         return DEFAULT_MODEL_INFO
-    _local_model = cast(LocalLLModel, local_model)
-    cur = next(model for model in li if model["name"] == _local_model.cur_model_name)
-    return cur
+    name = cast(LocalLLModel, local_model).cur_model_name
+    return next((t for t in tags if t["name"] == name), DEFAULT_MODEL_INFO)

@@ -11,64 +11,35 @@ class ChatGPTLoader(BaseChatLoader):
     def load(self, data: list, source_file: str) -> List[Document]:
         docs = []
         for conversation in data:
-            title = conversation.get("title", "Untitled Conversation")
-            mapping = conversation.get("mapping", {})
-            
-            root_id = None
-            for node_id, node in mapping.items():
-                if node.get("parent") is None:
-                    root_id = node_id
-                    break
-            
-            if not root_id:
-                continue
-                
-            current_id = root_id
-            messages = []
-            
-            while current_id:
-                node = mapping.get(current_id)
-                if not node:
-                    break
-                
-                message = node.get("message")
-                if message:
-                    author = message.get("author", {})
-                    role = author.get("role")
-                    content_dict = message.get("content", {})
-                    parts = content_dict.get("parts", [])
-                    
-                    text_content = ""
-                    if parts:
-                        text_content = "".join([str(p) for p in parts if p is not None])
-                    
-                    if text_content and role in ["user", "assistant"]:
-                        messages.append({"role": role, "content": text_content})
-                
-                children = node.get("children", [])
-                if children:
-                    current_id = children[0]
-                else:
-                    current_id = None
-            
-            if not messages:
-                continue
+            title = conversation.get("title", "Untitled")
+            messages = self._extract_messages(conversation.get("mapping", {}))
+            if messages:
+                docs.extend(self._segment_messages(title, messages, source_file))
+        return docs
 
-            current_doc_messages = []
-            
-            for i, msg in enumerate(messages):
-                role = msg["role"]
-                
-                if role == "user":
-                    if current_doc_messages and current_doc_messages[-1]["role"] == "assistant":
-                        docs.append(self._create_chat_doc(title, current_doc_messages, source_file))
-                        current_doc_messages = []
-                
-                current_doc_messages.append(msg)
-            
-            if current_doc_messages:
-                docs.append(self._create_chat_doc(title, current_doc_messages, source_file))
-                current_doc_messages = [] 
+    def _extract_messages(self, mapping: dict) -> list:
+        root_id = next((nid for nid, n in mapping.items() if not n.get("parent")), None)
+        if not root_id: return []
+        
+        msgs, curr = [], root_id
+        while curr:
+            node = mapping.get(curr)
+            if not node: break
+            msg = node.get("message")
+            if msg and msg.get("author", {}).get("role") in ["user", "assistant"]:
+                text = "".join(str(p) for p in msg.get("content", {}).get("parts", []) if p)
+                if text: msgs.append({"role": msg["author"]["role"], "content": text})
+            curr = node.get("children", [None])[0]
+        return msgs
+
+    def _segment_messages(self, title: str, messages: list, source: str) -> List[Document]:
+        docs, current = [], []
+        for msg in messages:
+            if msg["role"] == "user" and current and current[-1]["role"] == "assistant":
+                docs.append(self._create_chat_doc(title, current, source))
+                current = []
+            current.append(msg)
+        if current: docs.append(self._create_chat_doc(title, current, source))
         return docs
 
     def _create_chat_doc(self, title, messages, source):
