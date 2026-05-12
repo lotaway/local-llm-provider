@@ -88,7 +88,7 @@ Install Vscode Continue Plugin and connect to the server.
 ### Install Requirements
 
 ```bash
-uv pip install .
+uv pip install -e .
 ```
 
 ## Voice ASR (VibeVoice) Integration
