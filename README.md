@@ -186,30 +186,53 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ### Updating Environment
 
-When updating the Windows AMD driver (which may bundle a newer ROCm version):
+Updating the Windows AMD driver may change the bundled ROCm version (e.g., 7.2 → 7.4). This breaks the dependency chain:
 
-1. **Check the new ROCm version** bundled with the driver (e.g., 7.2 → 7.4).
-2. **Update WSL ROCm packages** to match:
-   ```bash
-   # Follow the ROCm install quick-start for the new version
-   sudo apt update && sudo apt upgrade rocm-*
-   ```
-   Or reinstall following the [ROCm Installation Quick Start](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/quick-start.html).
-3. **Rebuild librocdxg** (if needed):
-   ```bash
-   cd librocdxg && git pull
-   mkdir -p build && cd build
-   cmake .. -DWIN_SDK="${win_sdk}/shared"
-   make && sudo make install
-   ```
-4. **Update PyTorch** to match the new ROCm version:
-   ```bash
-   # Uninstall old torch first
-   pip uninstall -y torch torchvision torchaudio
-   # Install matching version
-   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm{version}
-   ```
-5. **Rebuild bitsandbytes** from source (see section below).
+```
+Windows Driver → ROCm Userspace Libs (/opt/rocm) → librocdxg → PyTorch ROCm → bitsandbytes
+```
+
+Each layer is compiled/linked against a specific ROCm version. A mismatch at any layer breaks GPU compute.
+
+**1. Check the new bundled ROCm version**
+
+If skipped: `rocminfo` fails to detect the GPU — the userspace libs (`libhip`, `librocblas`, etc.) mismatch the kernel driver.
+
+**2. Update ROCm packages in WSL**
+
+```bash
+sudo apt update && sudo apt upgrade rocm-*
+```
+
+Or reinstall following the [ROCm Installation Quick Start](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/quick-start.html).
+
+If skipped: Same as step 1 — GPU undetectable.
+
+**3. Rebuild librocdxg**
+
+```bash
+cd librocdxg && git pull
+mkdir -p build && cd build
+cmake .. -DWIN_SDK="${win_sdk}/shared"
+make && sudo make install
+```
+
+If skipped: HSA runtime can't find the DXG device → `torch.cuda.is_available()` returns `False`.
+
+**4. Update PyTorch ROCm**
+
+```bash
+pip uninstall -y torch torchvision torchaudio
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm{version}
+```
+
+If skipped: PyTorch is linked against old HIP libraries; loading GPU kernels causes segfaults or `undefined symbol` errors.
+
+**5. Rebuild bitsandbytes**
+
+See "About bitsandbytes → Build for Linux ROCm" below.
+
+If skipped: The old `libbitsandbytes_rocm{old}.so` looks for `libhipblas.so.2` but the new ROCm ships `libhipblas.so.3` → `OSError: cannot open shared object file` (the error you hit before).
 
 ### About bitsandbytes
 
