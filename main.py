@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 
 import globals as backend_globals
 from model_providers import LocalLLModel
-from remote_providers import PoeModelProvider
 from model_providers.multimodal_provider import MultimodalFactory
 from routers import version_router
 from controllers.base_controller import router as base_router
@@ -113,6 +112,7 @@ async def lifespan(app: FastAPI):
     # Init Scheduler
     try:
         from services.task_scheduler import TaskScheduler
+
         backend_globals.task_scheduler = TaskScheduler()
         await backend_globals.task_scheduler.initialize()
         backend_globals.task_scheduler.start()
@@ -254,35 +254,6 @@ async def query_rag(request: Request):
         raise HTTPException(status_code=500, detail=error_msg)
 
     return await backend_globals.comfyui_provider.proxy_request(request)
-
-
-@app.post("/poe/v1/{path:path}")
-@app.state.limiter.limit("20/minute")
-async def poe(request: Request, path: str):
-    if backend_globals.poe_model_provider is None:
-        backend_globals.poe_model_provider = PoeModelProvider()
-        res = backend_globals.poe_model_provider.ping()
-        logger.info(f"ping: {res}")
-    url = str(request.url)
-    logger.debug(f"url: {url}")
-    try:
-        resp = await backend_globals.poe_model_provider.handle_request(path, request)
-
-        if resp is str:
-            return StreamingResponse(content=resp, media_type="text/event-stream")
-
-        def event_stream(resp: httpx.Response):
-            for chunk in resp.iter_text():
-                if chunk:
-                    yield chunk
-            yield "data: [DONE]\n\n"
-
-        return StreamingResponse(
-            content=event_stream(cast(httpx.Response, resp)),
-            media_type="text/event-stream",
-        )
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 if __name__ == "__main__":

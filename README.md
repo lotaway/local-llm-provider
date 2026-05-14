@@ -125,117 +125,169 @@ API endpoints (versioned under `/v1`):
   - Upload short audio (<1min): form-data `audio=@file`, optional `model`, `stream`
   - Transcribes with VibeVoice then forwards to chat completions
 
-## AMD Required
+## AMD ROCm / WSL Setup
 
-### Linux/WSL
+### Overview
 
-Need install ROCm and [torch ROCm version](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/install-pytorch.html) in Linux/WSL with AMD GPU.
+This project runs under WSL2 with AMD GPUs via the [ROCDXG (librocdxg)](https://github.com/ROCm/librocdxg) solution — a user-mode library that bridges the Linux ROCm runtime and the Windows GPU driver stack through Microsoft's DXCore interface (`/dev/dxg`). It replaces the legacy roc4wsl packaging model and is loosely coupled from both ROCm releases and Windows driver versions.
 
-In ROCm 7.1.1, may need to manually install `hsa-runtime` with command:
-```bash
-sudo apt install -y hsa-runtime-rocr4wsl-amdgpu
-```
+### Initial Environment Setup
 
-### Window
+#### 1. Windows Side
 
-Use WSL ROCm is the best, either need install [Zluda](https://github.com/vosen/ZLUDA.git) or install microsoft dml with `pip install torch-directml`
+1. Install the compatible AMD Adrenalin driver from [AMD Drivers](https://www.amd.com/en/support/download/drivers.html) (minimum version recommended by the ROCDXG compatibility matrix).
+2. Install WSL2 (Ubuntu 24.04 or 22.04). See [Microsoft WSL docs](https://learn.microsoft.com/en-us/windows/wsl/install).
+3. Install the [Windows SDK](https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/) (needed for librocdxg build).
 
-If choose zluda, need to install torch with cuda version, use `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128`(util 2025/10/11, zluda not implemented cuda13.0 yep, 12.8 is the latest)
-
-For Window ROCm, after ROCm 7.0 can be install in window directly. See [ROCm in Window](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html)
-
-## About bitsandbytes
-
-*Only can use in cuda or amd with linux+rocm, amd with window+zluda no match, zluda did not support bitsandbytes*
-
-Official documents clearly state that AMD GPUs must be compiled from source:
+#### 2. WSL Side — Install ROCm + librocdxg
 
 ```bash
-git clone https://github.com/bitsandbytes-foundation/bitsandbytes.git
-cd bitsandbytes
+# Install ROCm packages (follow official quick-start)
+# https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/quick-start.html
+
+# Build and install librocdxg
+git clone https://github.com/ROCm/librocdxg.git
+cd librocdxg
+
+export win_sdk='/mnt/c/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/'
+mkdir -p build && cd build
+cmake .. -DWIN_SDK="${win_sdk}/shared"
+make
+sudo make install
+cd ../..
+
+# Verify GPU detection
+rocminfo
+# Expected: Agent with Name: gfx1100 (RX 7900 XTX)
 ```
 
-### for linux rocm
+#### 3. WSL Side — Environment Variables
 
-```base
-# Switch to the version you installed, such as 0.47.0
-git fetch origin rocm-build-update:rocm-build-update
-git switch rocm-build-update
+Add these to `~/.bashrc`:
 
-# Setup ROCm environment variables
-export BNB_ROCM_ARCH=1
+```bash
 export ROCM_HOME=/opt/rocm
-export PATH=$ROCM_HOME/bin:$PATH
 export HIP_PATH=$ROCM_HOME
-
-# compile
-cmake -DCOMPUTE_BACKEND=hip -DBNB_ROCM_ARCH="gfx90a;gfx942;gfx1100" .
-cmake --build .
+export PATH=$ROCM_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$ROCM_HOME/lib:$ROCM_HOME/lib64:$LD_LIBRARY_PATH
+export HSA_ENABLE_DXG_DETECTION=1   # Required for ROCDXG
+export HSA_ENABLE_SDMA=0
 ```
 
-If got error like:
+#### 4. Create Conda Environment & Install PyTorch
 
 ```bash
-CMake Error at /opt/rocm/lib/cmake/hsa-runtime64/hsa-runtime64Targets.cmake:80 (message):
-  The imported target "hsa-runtime64::hsa-runtime64" references the file
+mamba create -n ai python=3.12.12
+mamba activate ai
 
-     "/opt/rocm/lib/libhsa-runtime64.so.1.15.60400"
-
-  but this file does not exist.
+# Install PyTorch ROCm version (match your ROCm version)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
 ```
 
-Follow [Issue: cmake hsa-runtime64 in wsl2 not correctly set the library](https://github.com/ROCm/ROCm/issues/3606) to fix it with:
+### Updating Environment
 
-```bash
-cd /opt/rocm/lib/
-# Notice: Those number behind libhsa-runtime64.so, first one is the required version, second one is the installed version.
-ln -s libhsa-runtime64.so.1.14 libhsa-runtime64.so.1.15.60400
+Updating the Windows AMD driver may change the bundled ROCm version (e.g., 7.2 → 7.4). This breaks the dependency chain:
+
+```
+Windows Driver → ROCm Userspace Libs (/opt/rocm) → librocdxg → PyTorch ROCm → bitsandbytes
 ```
 
-After build success, you will see:
+Each layer is compiled/linked against a specific ROCm version. A mismatch at any layer breaks GPU compute.
+
+**1. Check the new bundled ROCm version**
+
+If skipped: `rocminfo` fails to detect the GPU — the userspace libs (`libhip`, `librocblas`, etc.) mismatch the kernel driver.
+
+**2. Update ROCm packages in WSL**
+
 ```bash
-[100%] Linking CXX shared library bitsandbytes/libbitsandbytes_rocm64.so
+sudo apt update && sudo apt upgrade rocm-*
+```
+
+Or reinstall following the [ROCm Installation Quick Start](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/quick-start.html).
+
+If skipped: Same as step 1 — GPU undetectable.
+
+**3. Rebuild librocdxg**
+
+```bash
+cd librocdxg && git pull
+mkdir -p build && cd build
+cmake .. -DWIN_SDK="${win_sdk}/shared"
+make && sudo make install
+```
+
+If skipped: HSA runtime can't find the DXG device → `torch.cuda.is_available()` returns `False`.
+
+**4. Update PyTorch ROCm**
+
+```bash
+pip uninstall -y torch torchvision torchaudio
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm{version}
+```
+
+If skipped: PyTorch is linked against old HIP libraries; loading GPU kernels causes segfaults or `undefined symbol` errors.
+
+**5. Rebuild bitsandbytes**
+
+See "About bitsandbytes → Build for Linux ROCm" below.
+
+If skipped: The old `libbitsandbytes_rocm{old}.so` looks for `libhipblas.so.2` but the new ROCm ships `libhipblas.so.3` → `OSError: cannot open shared object file` (the error you hit before).
+
+### About bitsandbytes
+
+AMD ROCm requires building bitsandbytes from source to match the exact ROCm version.
+
+#### Build for Linux ROCm
+
+```bash
+mamba activate ai
+cd /home/wayluk/bitsandbytes
+
+# Set ROCm environment
+export ROCM_HOME=/opt/rocm
+export HIP_PATH=$ROCM_HOME
+export PATH=$ROCM_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$ROCM_HOME/lib:$ROCM_HOME/lib64:$LD_LIBRARY_PATH
+
+# Install build dependencies
+pip install scikit-build-core setuptools wheel build
+
+# Build and install
+CMAKE_ARGS="-DCOMPUTE_BACKEND=hip" pip install . --no-build-isolation
+```
+
+After a successful build you'll see:
+```
+[100%] Linking CXX shared library bitsandbytes/libbitsandbytes_rocm{version}.so
 [100%] Built target bitsandbytes
 ```
 
-Take `libbitsandbytes_rocm64.so` file to `/home/{user}/miniforge3/envs/python{version}/lib/python{version}/site-packages/bitsandbytes` directory.
-Notice: I use miniforge3 as python environment here, if you use other python environment, you should change the directory accordingly. Such as if you're using `anaconda`, directory prefix are `/home/{user}/canda/`
+The compiled `.so` and all Python modules are automatically installed to the current conda environment's `site-packages`.
 
-Done all process, now you can use `bitsandbytes` in your python code.
+> **Note**: `pip install . --no-build-isolation` reuses the current environment's build deps. If you skip `--no-build-isolation`, pip will temporarily install isolated build deps which also works but takes slightly longer.
 
-### for window rocm
+#### Known Build Issue — hsa-runtime64
 
-Try this:
-
-```bash
-pip install bitsandbytes
+If cmake fails with:
+```
+CMake Error: The imported target "hsa-runtime64::hsa-runtime64" references the file
+  "/opt/rocm/lib/libhsa-runtime64.so.1.15.60400" but this file does not exist.
 ```
 
-If saw something like:
+Fix with a symlink:
 ```bash
-RuntimeError:
-🚨 Forgot to compile the bitsandbytes library? 🚨
-1. You're not using the package but checked-out the source code
-2. You MUST compile from source
-
-Attempted to use bitsandbytes native library functionality but it's not available.
-
-This typically happens when:
-1. bitsandbytes doesn't ship with a pre-compiled binary for your ROCm version
-2. The library wasn't compiled properly during installation from source
-
-To make bitsandbytes work, the compiled library version MUST exactly match the linked ROCm version.
-If your ROCm version doesn't have a pre-compiled binary, you MUST compile from source.
-
-You can COMPILE FROM SOURCE as mentioned here:
-   https://huggingface.co/docs/bitsandbytes/main/en/installation?backend=AMD+ROCm#amd-gpu
+cd /opt/rocm/lib/
+ln -s libhsa-runtime64.so.1.14 libhsa-runtime64.so.1.15.60400
 ```
 
-You need to follow the [guide](https://huggingface.co/docs/bitsandbytes/main/en/installation?backend=AMD+ROCm#rocm-pip), so far it just need this command:
+See [ROCm#3606](https://github.com/ROCm/ROCm/issues/3606) for details.
 
-```bash
-pip install --force-reinstall https://github.com/bitsandbytes-foundation/bitsandbytes/releases/download/continuous-release_main/bitsandbytes-1.33.7.preview-py3-none-win_amd64.whl
-```
+### Alternative: Windows without WSL
+
+- **ZLuda**: Install CUDA PyTorch (`pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128`). Note: ZLuda does not support bitsandbytes.
+- **DirectML**: `pip install torch-directml`
+- **Native Windows ROCm**: After ROCm 7.0, AMD provides native Windows ROCm. See [ROCm on Windows](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html).
 
 ## For Multiple Mac (Apple silicon) devices
 

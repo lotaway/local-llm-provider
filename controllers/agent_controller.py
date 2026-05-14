@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -53,12 +55,17 @@ async def query_agent(agentRequest: AgentRequest, request: Request):
     session_id = agentRequest.session_id or str(uuid.uuid4())
     runtime = _get_agent_runtime(session_id, storage)
     initial_context = _load_initial_context(agentRequest.files)
-    
+
     if agentRequest.stream:
-        return await _stream_agent_execution(runtime, agentRequest.messages, initial_context, request)
-    
-    state = await runtime.execute(agentRequest.messages, start_agent="qa", initial_context=initial_context)
+        return await _stream_agent_execution(
+            runtime, agentRequest.messages, initial_context, request
+        )
+
+    state = await runtime.execute(
+        agentRequest.messages, start_agent="qa", initial_context=initial_context
+    )
     return JSONResponse(content=state.to_dict())
+
 
 def _get_context_storage():
     global context_storage
@@ -69,24 +76,31 @@ def _get_context_storage():
             context_storage = MemoryContextStorage()
     return context_storage
 
+
 def _get_agent_runtime(session_id: str, storage):
     global agent_runtime, local_rag
     if agent_runtime is None:
         model = LocalLLModel.init_local_model()
         local_rag = local_rag or LocalRAG(model)
         agent_runtime = RuntimeFactory.create_with_all_agents(
-            model, rag_instance=local_rag, permission_manager=permission_manager,
-            context_storage=storage, session_id=session_id
+            model,
+            rag_instance=local_rag,
+            permission_manager=permission_manager,
+            context_storage=storage,
+            session_id=session_id,
         )
     elif agent_runtime.session_id != session_id:
         agent_runtime.session_id = session_id
         agent_runtime._load_saved_state()
     return agent_runtime
 
+
 def _load_initial_context(files: list[str]) -> dict:
-    if not files: return {}
+    if not files:
+        return {}
     file_map = {}
     from utils import FileProcessor
+
     processor = FileProcessor()
     for fid in files:
         try:
@@ -95,25 +109,38 @@ def _load_initial_context(files: list[str]) -> dict:
             continue
     return {"files": file_map}
 
+
 async def _stream_agent_execution(runtime, query, context, request):
     queue = asyncio.Queue()
-    async def callback(chunk): await queue.put(chunk)
-    
+
+    async def callback(chunk):
+        await queue.put(chunk)
+
     async def run():
-        try: await runtime.execute(query, stream_callback=callback, initial_context=context)
-        finally: await queue.put(None)
-    
+        try:
+            await runtime.execute(
+                query, stream_callback=callback, initial_context=context
+            )
+        finally:
+            await queue.put(None)
+
     asyncio.create_task(run())
-    return StreamingResponse(_event_generator(queue, request), media_type="text/event-stream")
+    return StreamingResponse(
+        _event_generator(queue, request), media_type="text/event-stream"
+    )
+
 
 async def _event_generator(queue, request):
     while True:
-        if await request.is_disconnected(): break
+        if await request.is_disconnected():
+            break
         try:
             chunk = await asyncio.wait_for(queue.get(), timeout=0.1)
-            if chunk is None: break
+            if chunk is None:
+                break
             yield f"data: {chunk}\n\n"
-        except asyncio.TimeoutError: continue
+        except asyncio.TimeoutError:
+            continue
 
 
 @router.post("/decision")
@@ -155,20 +182,24 @@ async def agent_execute_result(req: AgentExecutionResultRequest, request: Reques
 async def agent_chat(req: ChatRequest, request: Request):
     runtime = _ensure_chat_runtime()
     query = _extract_query_from_messages(req.messages)
-    
+
     if _has_images(req.messages):
         query = await _process_multimodal_query(query, req.messages)
-    
+
     state = await runtime.execute(query, start_agent="qa")
     return JSONResponse(content=_format_openai_response(state, req.model))
+
 
 def _ensure_chat_runtime():
     global agent_runtime, local_rag
     if agent_runtime is None:
         model = LocalLLModel.init_local_model()
         local_rag = local_rag or LocalRAG(model, data_path=DATA_PATH)
-        agent_runtime = RuntimeFactory.create_with_all_agents(model, rag_instance=local_rag)
+        agent_runtime = RuntimeFactory.create_with_all_agents(
+            model, rag_instance=local_rag
+        )
     return agent_runtime
+
 
 def _extract_query_from_messages(messages) -> str:
     model = LocalLLModel.init_local_model()
@@ -177,36 +208,64 @@ def _extract_query_from_messages(messages) -> str:
             return model._extract_text_from_content(m.content)
     return model._extract_text_from_content(messages[-1].content) if messages else ""
 
+
 def _has_images(messages) -> bool:
     for m in messages:
         if isinstance(m.content, list):
             for part in m.content:
-                if isinstance(part, dict) and part.get("type") != ContentType.TEXT.value:
+                if (
+                    isinstance(part, dict)
+                    and part.get("type") != ContentType.TEXT.value
+                ):
                     return True
     return False
 
+
 async def _process_multimodal_query(query, messages) -> str:
     from globals import default_vlm, MultimodalFactory, multimodal_model
+
     vlm = multimodal_model
     if vlm is None or vlm.model_name != default_vlm:
         vlm = MultimodalFactory.get_model(default_vlm)
-    
+
     prompt = "Analyze the provided image and return a JSON object describing visual content (objects, text, colors, spatial relations). Extract text if present."
-    history = [{"role": "system", "content": prompt}] + [m.model_dump() if hasattr(m, "model_dump") else m for m in messages]
-    
+    history = [{"role": "system", "content": prompt}] + [
+        m.model_dump() if hasattr(m, "model_dump") else m for m in messages
+    ]
+
     description = await asyncio.to_thread(lambda: vlm.chat(history))
     return f"{query}\n\n[Image Analysis]: {description}"
 
+
 def _format_openai_response(state, model_name) -> dict:
-    answer = state.final_result if state.status.value == "completed" else f"Workflow {state.status.value}: {state.error_message}"
+    answer = (
+        state.final_result
+        if state.status.value == "completed"
+        else f"Workflow {state.status.value}: {state.error_message}"
+    )
     return {
         "id": f"agent-chat-{uuid.uuid4().hex}",
         "object": "chat.completion",
         "created": int(time.time()),
         "model": model_name,
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
-        "usage": {"prompt_tokens": 0, "completion_tokens": len(str(answer).split()), "total_tokens": len(str(answer).split())},
-        "agent_metadata": {"status": state.status.value, "iterations": state.iteration_count, "history_length": len(state.history), "core_meta": state.final_meta or {}}
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": answer},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": len(str(answer).split()),
+            "total_tokens": len(str(answer).split()),
+        },
+        "agent_metadata": {
+            "status": state.status.value,
+            "iterations": state.iteration_count,
+            "history_length": len(state.history),
+            "core_meta": state.final_meta or {},
+        },
     }
 
 
@@ -216,7 +275,10 @@ async def agent_status():
         return {"status": "not_initialized"}
     state = agent_runtime.get_state()
     return {
-        "status": state.status.value, "current_agent": state.current_agent,
-        "iteration_count": state.iteration_count, "max_iterations": state.max_iterations,
-        "history_length": len(state.history), "context_keys": list(state.context.keys())
+        "status": state.status.value,
+        "current_agent": state.current_agent,
+        "iteration_count": state.iteration_count,
+        "max_iterations": state.max_iterations,
+        "history_length": len(state.history),
+        "context_keys": list(state.context.keys()),
     }
