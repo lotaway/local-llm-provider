@@ -8,6 +8,7 @@ import asyncio
 import httpx
 import json
 from typing import cast
+import os
 
 from globals import limiter
 import globals as backend_globals
@@ -213,9 +214,10 @@ async def _stream_rag_answer(query: str, model_name: str, request: Request):
     async def callback(chunk): await queue.put(chunk)
     async def run():
         try: await backend_globals.local_rag.generate_answer(query, stream_callback=callback)
+        except asyncio.CancelledError: pass
         finally: await queue.put(None)
-    asyncio.create_task(run())
-    return StreamingResponse(_chat_stream_generator(queue, model_name, request), media_type="text/event-stream")
+    task = asyncio.create_task(run())
+    return StreamingResponse(_chat_stream_generator(queue, model_name, request, task), media_type="text/event-stream")
 
 async def _stream_chat_answer(model, req: ChatRequest, request: Request):
     queue = asyncio.Queue()
@@ -223,14 +225,18 @@ async def _stream_chat_answer(model, req: ChatRequest, request: Request):
         try:
             async for chunk in model.chat(req.messages, max_new_tokens=req.max_tokens, temperature=req.temperature, top_p=req.top_p):
                 if not isinstance(chunk, int): await queue.put(chunk)
+        except asyncio.CancelledError: pass
         finally: await queue.put(None)
-    asyncio.create_task(run())
-    return StreamingResponse(_chat_stream_generator(queue, req.model, request), media_type="text/event-stream")
+    task = asyncio.create_task(run())
+    return StreamingResponse(_chat_stream_generator(queue, req.model, request, task), media_type="text/event-stream")
 
-async def _chat_stream_generator(queue: asyncio.Queue, model_name: str, request: Request):
+async def _chat_stream_generator(queue: asyncio.Queue, model_name: str, request: Request, bg_task: asyncio.Task = None):
     last_reason = None
     while True:
-        if await request.is_disconnected(): break
+        if await request.is_disconnected():
+            if bg_task:
+                bg_task.cancel()
+            break
         try: chunk = await asyncio.wait_for(queue.get(), 0.1)
         except asyncio.TimeoutError: continue
         if chunk is None: break

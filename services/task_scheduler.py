@@ -4,7 +4,7 @@ import time
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from constants import MONGO_URI, MONGO_DB_NAME, ROOT_TASK, ROOT_TASK_INTERVAL, ENABLE_SCHEDULER
+from constants import MONGO_URI, MONGO_DB_NAME, ROOT_TASK, ROOT_TASK_INTERVAL, ENABLE_SCHEDULER, MONGO_USER, MONGO_PASSWORD
 
 logger = logging.getLogger("service.scheduler")
 
@@ -23,7 +23,17 @@ class TaskScheduler:
 
         try:
             from pymongo import MongoClient
-            client = MongoClient(MONGO_URI)
+            
+            mongo_uri = MONGO_URI
+            if MONGO_USER and MONGO_PASSWORD:
+                if "@" not in mongo_uri:
+                    uri_parts = mongo_uri.replace("mongodb://", "").split("/")
+                    host_port = uri_parts[0]
+                    rest = "/" + "/".join(uri_parts[1:]) if len(uri_parts) > 1 else ""
+                    mongo_uri = f"mongodb://{MONGO_USER}:{MONGO_PASSWORD}@{host_port}{rest}"
+                    
+            client = MongoClient(mongo_uri)
+            self.client = client
             self._db = client[MONGO_DB_NAME]
             self._collection = self._db["scheduled_tasks"]
             logger.info("Scheduler initialized with MongoDB storage.")
@@ -64,6 +74,8 @@ class TaskScheduler:
                 await self._tasks_loop
             except asyncio.CancelledError:
                 pass
+        if hasattr(self, 'client') and self.client:
+            self.client.close()
         logger.info("Scheduler stopped.")
 
     async def _run_loop(self):

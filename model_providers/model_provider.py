@@ -311,12 +311,16 @@ class LocalLLModel:
                 "kwargs": kwargs,
             }
         )
-        yield rid
-        while True:
-            t = await q.get()
-            if t is None:
-                break
-            yield cast(str, t)
+        try:
+            yield rid
+            while True:
+                t = await q.get()
+                if t is None:
+                    break
+                yield cast(str, t)
+        finally:
+            await self.scheduler.quit(rid)
+            self._state.pop(rid, None)
 
     async def chat(self, messages: list[dict], **kwargs):
         messages = self.format_messages(messages)

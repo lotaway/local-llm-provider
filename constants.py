@@ -27,7 +27,13 @@ NEO4J_BOLT_URL = os.getenv("NEO4J_BOLT_URL", "bolt://localhost:7687")
 NEO4J_AUTH = os.getenv("NEO4J_AUTH", "neo4j/123123123")
 
 # MongoDB Configuration
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_PORT = os.getenv("MONGO_PORT")
+MONGO_URI = os.getenv("MONGO_URI")
+if not MONGO_URI:
+    if MONGO_PORT:
+        MONGO_URI = f"mongodb://localhost:{MONGO_PORT}"
+    else:
+        MONGO_URI = "mongodb://localhost:27017"
 MONGO_USER = os.getenv("MONGO_USER", "")
 MONGO_PASSWORD = os.getenv("MONGO_PASSWORD", "")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "rag_system")
