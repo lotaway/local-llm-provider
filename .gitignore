@@ -169,3 +169,5 @@ __marimo__/
 
 # third party imported or generated
 llama.cpp
+
+kernel_lab/build

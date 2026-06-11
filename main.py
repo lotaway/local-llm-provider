@@ -256,7 +256,37 @@ async def query_rag(request: Request):
     return await backend_globals.comfyui_provider.proxy_request(request)
 
 
+def test_kernel_lab_hip():
+    import sys
+    sys.path.append("./kernel_lab")
+    from kernel_lab import add
+    import torch
+    
+    a = torch.tensor(
+        [1, 2, 3, 4],
+        dtype=torch.float32,
+        device="cuda"
+    )
+    b = torch.tensor(
+        [5, 6, 7, 8],
+        dtype=torch.float32,
+        device="cuda"
+    )
+    result: torch.Tensor = add(a,b)
+    expected = torch.tensor(
+        [6, 8, 10, 12],
+        dtype=torch.float32,
+        device="cuda"
+    )
+    logger.error(f"test kernel lab result:{result} and expected:{expected}")
+    assert torch.allclose(
+        result,
+        expected
+    )
+
+
 if __name__ == "__main__":
+    # test_kernel_lab_hip()
     default_port = 8434
     host = os.getenv("HOST", "0.0.0.0")
     port = os.getenv("PORT", default_port)
