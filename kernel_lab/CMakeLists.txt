@@ -4,5 +4,5 @@ project(kernel_lab LANGUAGES CXX HIP)
 
 add_executable(
     kernel_lab
-    src/kernel_lab_hip.cpp
+    kernel_lab_hip.cpp
 )
