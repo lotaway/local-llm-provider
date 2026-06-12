@@ -2,11 +2,18 @@ cmake_minimum_required(VERSION 3.28)
 
 project(kernel_lab LANGUAGES CXX HIP)
 
-include_directories(
-    /opt/rocm/include
+find_package(Python REQUIRED)
+find_package(pybind11 REQUIRED)
+
+add_library(
+    kernel_lab_ext
+    MODULE
+    torch_ext/setup.cpp
+    src/kernel_lab.hip
 )
 
-add_executable(
-    kernel_lab
-    kernel_lab_hip.cpp
+target_include_directories(
+    kernel_lab_ext
+    PRIVATE
+    include
 )

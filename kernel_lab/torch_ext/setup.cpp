@@ -1,5 +1,6 @@
 #include <torch/extension.h>
 #include <pybind11/pybind11.h>
+#include "kernel_lab.hpp"
 
 torch::Tensor add(
     torch::Tensor a,
@@ -9,7 +10,7 @@ torch::Tensor add(
 
     int n = a.numel();
 
-    add_kernel<<<
+    kernel_lab::add_kernel<<<
         (n + 255) / 256,
         256
     >>>(
@@ -18,10 +19,12 @@ torch::Tensor add(
         c.data_ptr<float>(),
         n
     );
-    checkHipError(hipDeviceSynchronize());
+
+    hipDeviceSynchronize();
+
     return c;
 }
 
-PYBIND11_MODULE(kernel_lab_hip, m) {
+PYBIND11_MODULE(kernel_lab, m) {
     m.def("add", &add);
 }

@@ -1,4 +1,5 @@
 #include <hip/hip_runtime.h>
+#include <kernel_lab.hpp>
 #include <iostream>
 
 __global__ void add_kernel(

@@ -1,1 +1,1 @@
-from .kernel_lab_hip import add
+from .kernel_lab import add
