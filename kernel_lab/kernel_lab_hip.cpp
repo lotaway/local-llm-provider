@@ -1,105 +1,89 @@
 #include <hip/hip_runtime.h>
 #include <iostream>
-#include <torch/extension.h>
-#include <pybind11/pybind11.h>
 
-// For one dimension
-// threadIdx.x / dimWrap
 __global__ void add_kernel(
-    float* a,
-    float* b,
-    float* c,
-    int n
-) {
+    float *a,
+    float *b,
+    float *c,
+    int n)
+{
     int idx =
         blockIdx.x * blockDim.x +
         threadIdx.x;
 
-    if (idx < n) {
+    if (idx < n)
         c[idx] = a[idx] + b[idx];
-    }
-    // threadIdx.x / dimWrap
 }
 
-void checkHipError(hipError_t err) {
-    if (err != hipSuccess) {
+void checkHipError(hipError_t err)
+{
+    if (err != hipSuccess)
+    {
         std::cerr
-            << "HIP Error: "
             << hipGetErrorString(err)
             << std::endl;
 
-        std::exit(EXIT_FAILURE);
+        std::exit(1);
     }
 }
 
-// for test
-// int main()
-// {
-//     int host[4] = {1, 2, 3, 4};
+int main()
+{
+    constexpr int N = 4;
 
-//     int* device;
+    float hostA[N] = {1, 2, 3, 4};
+    float hostB[N] = {10, 20, 30, 40};
+    float hostC[N] = {0};
 
-//     checkHipError(hipMalloc(&device, sizeof(host)));
-//     hipMemcpy(
-//         device,
-//         host,
-//         sizeof(host),
-//         hipMemcpyHostToDevice
-//     );
+    float *devA;
+    float *devB;
+    float *devC;
 
-//     add<<<1, 4>>>(device);
+    checkHipError(
+        hipMalloc(&devA, sizeof(hostA)));
 
-//     hipDeviceSynchronize();
+    checkHipError(
+        hipMalloc(&devB, sizeof(hostB)));
 
-//     checkHipError(hipMemcpy(
-//         host,
-//         device,
-//         sizeof(host),
-//         hipMemcpyDeviceToHost
-//     ));
+    checkHipError(
+        hipMalloc(&devC, sizeof(hostC)));
 
-//     std::cout
-//         << host[0] << " "
-//         << host[1] << " "
-//         << host[2] << " "
-//         << host[3]
-//         << std::endl;
+    checkHipError(
+        hipMemcpy(
+            devA,
+            hostA,
+            sizeof(hostA),
+            hipMemcpyHostToDevice));
 
-//     hipFree(device);
-// }
+    checkHipError(
+        hipMemcpy(
+            devB,
+            hostB,
+            sizeof(hostB),
+            hipMemcpyHostToDevice));
 
-// kernel<<<blocks, threads>>>();
+    add_kernel<<<1, 4>>>(
+        devA,
+        devB,
+        devC,
+        N);
 
-// checkHip(
-//     hipGetLastError()
-// );
+    checkHipError(
+        hipDeviceSynchronize());
 
-// checkHip(
-//     hipDeviceSynchronize()
-// );
+    checkHipError(
+        hipMemcpy(
+            hostC,
+            devC,
+            sizeof(hostC),
+            hipMemcpyDeviceToHost));
 
-// for hip test
-torch::Tensor add(
-    torch::Tensor a,
-    torch::Tensor b
-) {
-    auto c = torch::zeros_like(a);
+    for (int i = 0; i < N; i++)
+        std::cout << hostC[i] << " ";
 
-    int n = a.numel();
+    std::cout << std::endl;
 
-    add_kernel<<<
-        (n + 255) / 256,
-        256
-    >>>(
-        a.data_ptr<float>(),
-        b.data_ptr<float>(),
-        c.data_ptr<float>(),
-        n
-    );
-    cudaDeviceAsynchronize();
-    return c;
-}
-
-PYBIND11_MODULE(kernel_lab_hip, m) {
-    m.def("add", &add);
+    hipFree(devA);
+    hipFree(devB);
+    hipFree(devC);
 }
