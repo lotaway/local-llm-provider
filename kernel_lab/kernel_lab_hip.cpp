@@ -3,6 +3,8 @@
 #include <torch/extension.h>
 #include <pybind11/pybind11.h>
 
+// For one dimension
+// threadIdx.x / dimWrap
 __global__ void add_kernel(
     float* a,
     float* b,
@@ -16,6 +18,7 @@ __global__ void add_kernel(
     if (idx < n) {
         c[idx] = a[idx] + b[idx];
     }
+    // threadIdx.x / dimWrap
 }
 
 void checkHipError(hipError_t err) {
