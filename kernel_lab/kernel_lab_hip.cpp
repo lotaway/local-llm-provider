@@ -96,7 +96,7 @@ torch::Tensor add(
         c.data_ptr<float>(),
         n
     );
-
+    cudaDeviceAsynchronize();
     return c;
 }
 
