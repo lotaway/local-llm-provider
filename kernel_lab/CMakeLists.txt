@@ -28,7 +28,7 @@ add_library(
     MODULE
     torch_ext/setup.cpp
     src/kernel_lab.hip
-    tests/test_add.cpp
+    tests/test_add.hip
 )
 
 target_include_directories(
