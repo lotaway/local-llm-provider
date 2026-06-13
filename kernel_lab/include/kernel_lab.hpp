@@ -3,7 +3,9 @@
 #include <hip/hip_runtime.h>
 
 namespace kernel_lab {
-    
-    __global__ void add_kernel(float *a, float *b, float *c, int n);
 
-}
+void launch_add(float *a, float *b, float *c, int n, int block_size);
+
+void checkHipError(hipError_t err);
+
+} // namespace kernel_lab
