@@ -1,0 +1,5 @@
+CompileFlags:
+  CompilationDatabase: kernel/build
+  Add:
+    - -D__HIP_PLATFORM_AMD__
+    - -I/opt/rocm/include
