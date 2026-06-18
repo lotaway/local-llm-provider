@@ -12,9 +12,17 @@ __global__ void add_kernel(float *a, float *b, float *c, int n) {
 void kernel_lab::checkHipError(hipError_t err) {
   if (err != hipSuccess) {
     std::cerr << hipGetErrorString(err) << std::endl;
-
+    __FILE__;
     std::exit(1);
   }
+}
+
+void kernel_lab::performance(hipEvent_t start, hipEvent_t stop) {
+    kernel_lab::checkHipError(hipEventCreate(&start));
+    kernel_lab::checkHipError(hipEventRecord(stop));
+    std::cout << stop - start << std::endl;
+    kernel_lab::checkHipError(hipEventDestroy(start));
+    kernel_lab::checkHipError(hipEventDestroy(stop));
 }
 
 void kernel_lab::launch_add(float *a, float *b, float *c, int n, int block_size) {
