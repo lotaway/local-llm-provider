@@ -9,24 +9,26 @@ __global__ void add_kernel(float *a, float *b, float *c, int n) {
     c[idx] = a[idx] + b[idx];
 }
 
-void kernel_lab::checkHipError(hipError_t err) {
+void kernel_lab::checkHipError(hipError_t err, const char fileName[], int line) {
   if (err != hipSuccess) {
-    std::cerr << hipGetErrorString(err) << std::endl;
+    std::cerr << fileName << line << hipGetErrorString(err) << std::endl;
     __FILE__;
     std::exit(1);
   }
 }
 
 void kernel_lab::performance(hipEvent_t start, hipEvent_t stop) {
-    kernel_lab::checkHipError(hipEventCreate(&start));
-    kernel_lab::checkHipError(hipEventRecord(stop));
-    std::cout << stop - start << std::endl;
-    kernel_lab::checkHipError(hipEventDestroy(start));
-    kernel_lab::checkHipError(hipEventDestroy(stop));
+    kernel_lab::checkHipError(hipEventCreate(&start), __FILE__, __LINE__);
+    kernel_lab::checkHipError(hipEventRecord(stop), __FILE__, __LINE__);
+    float duration;
+    kernel_lab::checkHipError(hipEventElapsedTime(&duration, start, stop), __FILE__, __LINE__);
+    std::cout << "performance duration time:" << duration << "ms" << std::endl;
+    kernel_lab::checkHipError(hipEventDestroy(start), __FILE__, __LINE__);
+    kernel_lab::checkHipError(hipEventDestroy(stop), __FILE__, __LINE__);
 }
 
 void kernel_lab::launch_add(float *a, float *b, float *c, int n, int block_size) {
   int grid_size = (n + block_size - 1) / block_size;
   add_kernel<<<grid_size, block_size>>>(a, b, c, n);
-  checkHipError(hipDeviceSynchronize());
+  kernel_lab::checkHipError(hipDeviceSynchronize(), __FILE__, __LINE__);
 }
