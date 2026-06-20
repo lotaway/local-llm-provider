@@ -1,6 +1,9 @@
 services:
   cuda:
-    image: nvidia/cuda:13.3.0-devel-ubuntu24.04
+    build:
+      context: .
+      dockerfile: Dockerfile_DevEnv
+    image: llp-cuda:custom
     container_name: llp-cuda
     volumes:
       - ./:/workspace
