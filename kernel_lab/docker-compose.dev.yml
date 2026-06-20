@@ -1,0 +1,10 @@
+services:
+  cuda:
+    image: nvidia/cuda:13.3.0-devel-ubuntu24.04
+    container_name: llp-cuda
+    volumes:
+      - ./:/workspace
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
