@@ -18,6 +18,7 @@ from globals import (
 )
 from model_providers import LocalLLModel
 from schemas import ChatRequest
+from services.agent_protocol_service import OpenAIStreamEventConverter
 from agents.context_storage import create_context_storage, MemoryContextStorage
 from agents.agent_runtime import AgentRuntime
 from agents.runtime_factory import RuntimeFactory
@@ -112,15 +113,20 @@ def _load_initial_context(files: list[str]) -> dict:
 
 async def _stream_agent_execution(runtime, query, context, request):
     queue = asyncio.Queue()
+    converter = OpenAIStreamEventConverter()
 
     async def callback(chunk):
-        await queue.put(chunk)
+        agent_name = runtime.state.current_agent or "unknown"
+        event = converter.convert_chunk(chunk, agent_name)
+        await queue.put(event)
 
     async def run():
         try:
             await runtime.execute(
                 query, stream_callback=callback, initial_context=context
             )
+            status_event = converter.convert_status(runtime.state.status.value)
+            await queue.put(status_event)
         finally:
             await queue.put(None)
 
@@ -135,10 +141,10 @@ async def _event_generator(queue, request):
         if await request.is_disconnected():
             break
         try:
-            chunk = await asyncio.wait_for(queue.get(), timeout=0.1)
-            if chunk is None:
+            event = await asyncio.wait_for(queue.get(), timeout=0.1)
+            if event is None:
                 break
-            yield f"data: {chunk}\n\n"
+            yield event.to_sse_format()
         except asyncio.TimeoutError:
             continue
 
@@ -281,4 +287,26 @@ async def agent_status():
         "max_iterations": state.max_iterations,
         "history_length": len(state.history),
         "context_keys": list(state.context.keys()),
+    }
+
+
+from schemas.agent_protocol import AgentErrorCode, AgentProtocolException
+from services.agent_protocol_service import AgentMetadataService
+
+
+@router.get("/metadata")
+async def agent_metadata():
+    if agent_runtime is None:
+        raise AgentProtocolException(
+            AgentErrorCode.AGENT_NOT_INITIALIZED,
+            "Agent runtime not initialized"
+        )
+    
+    metadata_service = AgentMetadataService(agent_runtime)
+    
+    return {
+        "agents": [a.to_dict() for a in metadata_service.get_available_agents()],
+        "tools": [t.to_openai_format() for t in metadata_service.get_available_tools()],
+        "capabilities": metadata_service.get_capabilities(),
+        "version": "1.0.0",
     }

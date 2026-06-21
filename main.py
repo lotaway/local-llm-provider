@@ -72,6 +72,13 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
 
 
+from schemas.agent_protocol import AgentProtocolException
+
+
+def agent_protocol_exception_handler(request: Request, exc: AgentProtocolException):
+    return exc.to_http_response()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.limiter = limiter
@@ -141,6 +148,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+app.add_exception_handler(AgentProtocolException, agent_protocol_exception_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
