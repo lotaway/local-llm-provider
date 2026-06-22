@@ -1,6 +1,6 @@
 #include <cuda_runtime.h>
 #include <iostream>
-#include <kernel_lab.cup>
+#include <kernel_lab.cuh>
 
 __global__ void add_kernel(float *a, float *b, float *c, int n) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
