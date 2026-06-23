@@ -3,7 +3,7 @@ import sys
 import tempfile
 import yaml
 
-from agents.task_agents.mcp_agent import MCPTaskAgent
+from clients.agents.task_agents.mcp_agent import MCPTaskAgent
 from utils.mcp_loader import load_from_env, ConnectionStatus
 
 

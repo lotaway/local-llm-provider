@@ -1,261 +1,251 @@
-# Agent Client Protocol 整合计划 (方案D)
+# Agent Client Protocol 整合计划 (已实施)
 
-## 1. 目标概述
-
-本计划旨在将官方 `agent-client-protocol` SDK 与现有项目整合，实现以下目标：
-
-| 目标 | 描述 |
-|------|------|
-| **双协议支持** | 同时支持 HTTP REST API 和 stdio 命令行两种访问方式 |
-| **执行层解耦** | AgentRuntime 核心逻辑独立于传输层，不依赖任何协议 |
-| **协议解耦** | HTTP 和 stdio 通过适配器模式实现完全解耦 |
-| **ACP兼容** | 使用官方 SDK 的 `acp.schema` 确保协议规范性 |
-| **特色保留** | 完整保留三层记忆系统、反馈机制、Claude Skill 兼容等特色功能 |
-
----
-
-## 2. 架构设计
-
-### 2.1 整体架构图
+## 1. 最终架构
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         客户端层 (Client Layer)                          │
-│  ┌─────────────────────┐         ┌─────────────────────────────┐         │
-│  │  stdio客户端        │         │  HTTP客户端                 │         │
-│  │  (CLI/Zed集成)       │         │  (REST API/外部服务)         │         │
-│  └──────────┬──────────┘         └──────────────┬──────────────┘         │
-└─────────────│────────────────────────────────────│────────────────────────┘
-              │                                    │
-              ▼                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         网关层 (Gateway Layer)                           │
-│  ┌───────────────────────────────────────────────────────────────────┐   │
-│  │  ACP协议适配器 (ACP Protocol Adaptor)                              │   │
-│  │  ┌─────────────────────┐    ┌─────────────────────────────┐      │   │
-│  │  │  StdioAdapter       │    │  HttpAdapter                │      │   │
-│  │  │  - stdio → 内部消息  │    │  - HTTP → 内部消息          │      │   │
-│  │  │  - 内部消息 → stdio  │    │  - 内部消息 → HTTP          │      │   │
-│  │  └─────────────────────┘    └─────────────────────────────┘      │   │
-│  └───────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       Agent执行核心 (Agent Execution Core)               │
-│  ┌───────────────────────────────────────────────────────────────────┐   │
-│  │  AgentRuntime + 三层记忆 + 反馈机制 + Claude Skill兼容             │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐     │   │
-│  │  │  QA      │ │Planning  │ │ Router   │ │  Verification   │     │   │
-│  │  │  Agent   │ │ Agent    │ │ Agent    │ │  Agent          │     │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘     │   │
-│  │  ┌──────────────────────────────────────────────────────────┐     │   │
-│  │  │  Memory Layer (M1:感觉缓存 / M2:工作记忆 / M3:稳定记忆)     │     │   │
-│  │  └──────────────────────────────────────────────────────────┘     │   │
-│  │  ┌──────────────────────────────────────────────────────────┐     │   │
-│  │  │  Feedback Judge + Evolution Dispatcher                   │     │   │
-│  │  └──────────────────────────────────────────────────────────┘     │   │
-│  └───────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│          后端 HTTP 服务 (local-llm-provider)       │
+│                                                   │
+│  原始能力层:                                       │
+│  ┌──────────┐ ┌──────┐ ┌────────┐ ┌──────────┐   │
+│  │ LLM 推理  │ │ RAG  │ │ 记忆系统 │ │ Skills   │   │
+│  └──────────┘ └──────┘ └────────┘ └──────────┘   │
+│                                                   │
+│  ACP 适配器 (供外部 ACP 客户端, 如 Zed):             │
+│  ┌──────────────────────────────────────────────┐  │
+│  │  ProtocolBridge (ACP Agent)                  │  │
+│  │  ↓ 直接调用 LocalLLModel.chat()               │  │
+│  │  ↓ 不涉及 AgentRuntime / 个体 Agent            │  │
+│  └──────────────────────────────────────────────┘  │
+│                                                   │
+│  向后兼容:                                         │
+│  ┌──────────────────────────────────────────────┐  │
+│  │  controllers/agent_controller.py             │  │
+│  │  (DEPRECATED, 保留但标记废弃)                  │  │
+│  └──────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────┘
+          │                           ▲
+          │ HTTP API                  │ ACP stdio
+          ▼                           │
+┌──────────────────────┐    ┌─────────┴──────────────┐
+│ 外部 HTTP 调用方      │    │ CLI 客户端 (llp-cli)    │
+│                      │    │                        │
+│ 自行实现：            │    │ AgentRuntime 执行循环    │
+│ - AgentRuntime 循环  │    │ QA / Planning / Router  │
+│ - 用户交互            │    │ Verification / Risk     │
+│ - 文件操作            │    │ Error Handler 等 Agent  │
+│                      │    │ RemoteLLM (HTTP→后端)   │
+│                      │    │                        │
+│ 调用后端：            │    │ /add <path>            │
+│ - LLM 推理 API       │    │ /add-dir <path>        │
+│ - RAG API            │    │ /context / /clear      │
+│ - 记忆 API           │    │ 文本输入 → 执行 Agent   │
+└──────────────────────┘    └────────────────────────┘
 ```
 
-### 2.2 核心设计原则
+## 2. 核心设计原则
 
 | 原则 | 实现方式 |
 |------|---------|
-| **执行层解耦** | AgentRuntime 作为独立核心，不依赖任何传输层 |
-| **协议解耦** | 通过适配器模式统一消息格式 |
-| **可扩展性** | 新增协议只需添加新适配器 |
-| **ACP兼容** | 使用官方 `acp.schema` 定义消息格式 |
-| **向后兼容** | 保留现有 HTTP API 接口不变 |
+| **执行层客户端化** | AgentRuntime + 所有个体 Agent 移入 `clients/agents/` |
+| **后端纯服务化** | 后端只暴露原始能力（LLM / RAG / 记忆 / Skills），不包含执行循环 |
+| **CLI 类 opencode** | CLI 客户端管理用户交互、文件上下文、AgentRuntime 执行循环 |
+| **ACP 兼容** | 后端 `ProtocolBridge` 实现 ACP Agent 接口，供外部工具（Zed）集成 |
+| **HTTP 向后兼容** | 保留 `/agents/*` 端点但标记 deprecated |
 
-### 2.3 组件职责
+## 3. 组件职责
 
-#### 2.3.1 Agent执行核心
+### 3.1 后端服务（server side）
 
-| 组件 | 职责 | 状态 |
+| 组件 | 位置 | 职责 |
 |------|------|------|
-| **AgentRuntime** | 多Agent调度、状态管理、会话控制 | 现有 |
-| **MemoryLayer** | 三层记忆系统（M1/M2/M3） | 现有 |
-| **FeedbackSystem** | 反馈判断 + 演化调度 | 现有 |
-| **SkillManager** | Claude Skill 兼容、MCP工具加载 | 现有/待完善 |
+| **ModelProvider** | `model_providers/` | LLM 推理引擎（本地/远程） |
+| **RAG** | `rag.py` | 文档检索增强生成 |
+| **Memory System** | `services/` | 三层记忆（M1感觉/M2工作/M3稳定） |
+| **Skills** | `skills/` | Claude Skill 兼容、MCP 工具加载 |
+| **ACP ProtocolBridge** | `adapters/protocol_bridge.py` | ACP Agent 接口实现，直接调用 LLM |
+| **HTTP Controllers** | `controllers/` | REST API 端点（LLM / RAG / 记忆） |
 
-#### 2.3.2 协议适配器层
+### 3.2 CLI 客户端（client side）
 
-| 组件 | 职责 | 状态 |
+| 组件 | 位置 | 职责 |
 |------|------|------|
-| **StdioAdapter** | stdio ↔ 内部消息转换，基于ACP SDK | 待实现 |
-| **HttpAdapter** | HTTP ↔ 内部消息转换 | 待重构 |
-| **ProtocolBridge** | 统一消息格式转换 | 待实现 |
+| **AgentRuntime** | `clients/agents/agent_runtime.py` | 多 Agent 调度、状态管理、执行循环 |
+| **BaseAgent** | `clients/agents/agent_base.py` | Agent 基类 + AgentResult/AgentStatus |
+| **QA Agent** | `clients/agents/qa_agent.py` | 问题解析与意图识别 |
+| **Planning Agent** | `clients/agents/planning_agent.py` | 任务规划与分解 |
+| **Router Agent** | `clients/agents/router_agent.py` | Agent 路由分发 |
+| **Verification Agent** | `clients/agents/verification_agent.py` | 结果验证与质量控制 |
+| **Risk Agent** | `clients/agents/risk_agent.py` | 风险评估与安全检查 |
+| **Error Handler** | `clients/agents/error_handler_agent.py` | 异常处理与自动恢复 |
+| **Task Agents** | `clients/agents/task_agents/` | LLM / RAG / MCP 任务执行 |
+| **RuntimeFactory** | `clients/agents/runtime_factory.py` | AgentRuntime 工厂方法 |
+| **RuntimeState** | `clients/agents/runtime_state.py` | 运行时状态管理 |
+| **ContextStorage** | `clients/agents/context_storage.py` | 会话上下文持久化 |
+| **RemoteLLM** | `clients/remote_llm.py` | LLM HTTP 代理（用 httpx 调用后端） |
+| **CLI Entry** | `clients/cli.py` | 交互式命令行入口 |
 
-#### 2.3.3 客户端层
+### 3.3 向后兼容层
 
-| 组件 | 职责 | 状态 |
+| 组件 | 位置 | 说明 |
 |------|------|------|
-| **StdioClient** | CLI工具，本地运行 | 待实现 |
-| **HttpGateway** | FastAPI服务，对外提供REST API | 现有/待重构 |
+| **agents/ stub** | `agents/__init__.py` | 从 `clients.agents` 再导出，保持旧导入兼容 |
+| **agent_controller.py** | `controllers/agent_controller.py` | 端点保留但启动时 log DEPRECATED 警告 |
 
----
+## 4. 通信流程
 
-## 3. 实现步骤
-
-### 阶段一：准备工作（1-2天）
-
-| 序号 | 任务 | 描述 | 依赖 |
-|------|------|------|------|
-| 1.1 | 安装官方ACP SDK | `pip install agent-client-protocol` | 无 |
-| 1.2 | 分析现有代码依赖 | 梳理 AgentRuntime 与传输层的耦合点 | 无 |
-| 1.3 | 编写设计文档 | 详细设计适配器接口和消息格式 | 1.2 |
-
-### 阶段二：核心重构（3-4天）
-
-| 序号 | 任务 | 描述 | 依赖 |
-|------|------|------|------|
-| 2.1 | 定义统一消息格式 | 基于 `acp.schema` 创建内部协议模型 | 1.1 |
-| 2.2 | 重构 AgentRuntime | 移除 HTTP/stdio 依赖，只处理业务逻辑 | 2.1 |
-| 2.3 | 创建 ProtocolBridge | 统一消息格式转换核心 | 2.1 |
-
-### 阶段三：协议适配器实现（3-4天）
-
-| 序号 | 任务 | 描述 | 依赖 |
-|------|------|------|------|
-| 3.1 | 实现 StdioAdapter | stdio 协议适配，支持 ACP 规范 | 2.3 |
-| 3.2 | 重构 HttpAdapter | 基于新的消息格式重构现有 HTTP 接口 | 2.3 |
-| 3.3 | 集成测试 | 验证适配器正确性 | 3.1, 3.2 |
-
-### 阶段四：客户端实现（2-3天）
-
-| 序号 | 任务 | 描述 | 依赖 |
-|------|------|------|------|
-| 4.1 | 创建 CLI 客户端 | stdio 方式启动的命令行工具 | 3.1 |
-| 4.2 | 更新 HTTP 网关 | 使用新的 HttpAdapter | 3.2 |
-| 4.3 | 文档更新 | 更新 README 和使用说明 | 4.1, 4.2 |
-
-### 阶段五：测试与验证（2-3天）
-
-| 序号 | 任务 | 描述 | 依赖 |
-|------|------|------|------|
-| 5.1 | 单元测试 | 测试各组件独立功能 | 全部 |
-| 5.2 | 集成测试 | 测试双协议访问流程 | 全部 |
-| 5.3 | 兼容性测试 | 验证与 ACP 客户端（如Zed）的兼容性 | 3.1 |
-
----
-
-## 4. 关键设计决策
-
-### 4.1 消息格式设计
-
-采用官方 `acp.schema` 定义的消息结构：
-
-```python
-# 输入消息
-from acp.schema import SessionUpdate, UserMessage
-
-# 输出消息
-from acp.schema import AgentMessage, ToolCall, ErrorResponse
-
-# 内部执行请求
-class ExecutionRequest:
-    session_id: str          # 会话ID
-    user_message: str        # 用户消息
-    context: dict            # 上下文数据
-    stream: bool = False     # 是否流式输出
-
-# 内部执行响应
-class ExecutionResponse:
-    status: str              # 执行状态
-    content: str             # 响应内容
-    tool_calls: list = []    # 工具调用列表
-    context: dict = {}       # 更新后的上下文
+### CLI 客户端 → 后端通信
+```
+User Input → clients/cli.py
+  → AgentRuntime.execute()
+    → QAAgent.execute() → RemoteLLM.chat(messages)
+      → HTTP POST /v1/chat/completions → LocalLLModel.chat()
+      ← SSE stream ← response chunks
+    → PlanningAgent.execute() → RemoteLLM.chat(...) ...
+  → 最终结果输出到终端
 ```
 
-### 4.2 数据流设计
-
-**HTTP 访问流程**：
+### 外部 ACP 客户端通信
 ```
-HTTP请求 → HttpAdapter → ProtocolBridge → ExecutionRequest 
-    → AgentRuntime → ExecutionResponse 
-    → ProtocolBridge → HttpAdapter → HTTP响应
-```
-
-**stdio 访问流程**：
-```
-stdio输入 → StdioAdapter → ProtocolBridge → ExecutionRequest 
-    → AgentRuntime → ExecutionResponse 
-    → ProtocolBridge → StdioAdapter → stdio输出
+Zed (ACP Client) → ACP stdio
+  → ProtocolBridge (ACP Agent)
+    → LocalLLModel.chat()  ← 直接调用，无 AgentRuntime
+  ← PromptResponse ←
 ```
 
-### 4.3 目录结构规划
+### 外部 HTTP 调用方通信
+```
+外部应用 → HTTP POST /v1/chat/completions
+  → LocalLLModel.chat()
+← SSE stream / JSON response ←
+
+外部应用需要自行实现 AgentRuntime 执行循环和 Agent 逻辑。
+```
+
+## 5. 目录结构
 
 ```
 project/
-├── agents/                    # Agent执行核心
-│   ├── agent_runtime.py       # 执行引擎（已存在）
-│   ├── agent_base.py          # Agent基类（已存在）
-│   ├── memory/                # 记忆系统（已存在）
-│   └── feedback/              # 反馈机制（已存在）
-├── adapters/                  # 协议适配器（新增）
-│   ├── __init__.py
-│   ├── base_adapter.py        # 适配器基类
-│   ├── stdio_adapter.py       # stdio适配器
-│   ├── http_adapter.py        # HTTP适配器
-│   └── protocol_bridge.py     # 协议桥接器
-├── clients/                   # 客户端（新增）
-│   ├── __init__.py
-│   └── cli_client.py          # CLI客户端
-├── controllers/               # HTTP控制器（已存在/待重构）
-│   └── agent_controller.py
-├── schemas/                   # 数据模型
-│   └── execution_protocol.py  # 内部协议定义（新增）
-└── main.py                    # 入口文件（已存在/待更新）
+├── adapters/                    # ACP 适配器（后端）
+│   ├── base_adapter.py          # TransportAdapter 抽象接口
+│   ├── protocol_bridge.py       # ACP Agent 实现 → 直接调用 LLM
+│   ├── stdio_adapter.py         # stdio 入口（acp-agent 命令）
+│   └── http_adapter.py          # HTTP 适配器（存根）
+├── agents/                      # 向后兼容层（stub）
+│   └── __init__.py              # 从 clients.agents 再导出
+├── clients/                     # 客户端（执行层）
+│   ├── agents/                  # AgentRuntime + 所有 Agent
+│   │   ├── agent_runtime.py
+│   │   ├── agent_base.py
+│   │   ├── qa_agent.py
+│   │   ├── planning_agent.py
+│   │   ├── router_agent.py
+│   │   ├── verification_agent.py
+│   │   ├── risk_agent.py
+│   │   ├── error_handler_agent.py
+│   │   ├── runtime_factory.py
+│   │   ├── runtime_state.py
+│   │   ├── context_storage.py
+│   │   ├── error_utils.py
+│   │   └── task_agents/
+│   │       ├── llm_agent.py
+│   │       ├── rag_agent.py
+│   │       └── mcp_agent.py
+│   ├── remote_llm.py            # LLM HTTP 代理
+│   └── cli.py                   # 交互式 CLI 入口
+├── controllers/                 # HTTP 控制器
+│   └── agent_controller.py      # (DEPRECATED)
+├── schemas/
+│   └── execution_protocol.py    # 内部协议定义
+├── model_providers/             # LLM 推理引擎
+├── services/                    # 记忆/反馈/演化
+├── skills/                      # Claude Skill 管理
+├── main.py                      # HTTP 服务入口
+└── pyproject.toml               # 入口点配置
 ```
 
----
+## 6. 入口点
 
-## 5. 技术风险与应对
-
-| 风险 | 描述 | 应对策略 |
+| 命令 | 作用 | 启动方式 |
 |------|------|---------|
-| **协议兼容性** | ACP SDK 版本更新可能导致不兼容 | 使用固定版本号，定期更新 |
-| **性能影响** | 适配器层可能引入额外开销 | 优化消息转换逻辑，使用缓存 |
-| **状态管理** | stdio 是有状态的，HTTP 是无状态的 | 在适配器层处理状态转换 |
-| **测试复杂度** | 双协议需要双倍测试覆盖 | 编写共享测试套件 |
+| `local-llm-provider` | 后端 HTTP 服务（独立运行） | `python main.py` |
+| `llp-cli` | CLI 交互式客户端 | `python -m clients.cli` |
+| `acp-agent` | ACP stdio 模式 | `python -m adapters.stdio_adapter` |
 
----
+CLI 通过 `LLP_BACKEND_URL` 环境变量或默认 `http://localhost:8434` 连接后端。
 
-## 6. 成功标准
+## 7. 已实施变更
 
-| 指标 | 说明 |
+### 文件迁移
+- `agents/*.py` → `clients/agents/`（保留 `agents/__init__.py` 作为向后兼容 stub）
+
+### 新增文件
+| 文件 | 行数 | 说明 |
+|------|------|------|
+| `schemas/execution_protocol.py` | 32 | ExecutionRequest/Response/Status 定义 |
+| `adapters/base_adapter.py` | 24 | TransportAdapter 抽象接口 |
+| `adapters/protocol_bridge.py` | 140 | ACP Agent，直接调用 LocalLLModel（无 AgentRuntime） |
+| `adapters/stdio_adapter.py` | 16 | ACP stdio 启动入口 |
+| `adapters/http_adapter.py` | 18 | HTTP 适配器存根（NotImplementedError） |
+| `clients/remote_llm.py` | 60 | 通过 HTTP 调用后端 LLM 的代理 |
+| `clients/cli.py` | 138 | 交互式 CLI，支持 `/add` `/add-dir` `/context` `/clear` |
+
+### 修改文件
+| 文件 | 变更 |
 |------|------|
-| **双协议支持** | HTTP 和 stdio 两种方式均可正常访问 Agent |
-| **协议解耦** | 修改一种协议实现不影响另一种 |
-| **ACP兼容** | 与官方 ACP 客户端（如Zed）可正常通信 |
-| **特色保留** | 三层记忆、反馈机制、Claude Skill 均正常工作 |
-| **测试覆盖率** | 单元测试覆盖率 ≥ 80% |
+| `controllers/agent_controller.py` | 导入路径改为 `clients.agents.*`，添加 DEPRECATED 日志 |
+| `services/task_scheduler.py` | 导入路径改为 `clients.agents.*` |
+| `services/skill_researcher.py` | 导入路径改为 `clients.agents.*` |
+| `tests/*.py` | 导入路径改为 `clients.agents.*` |
+| `main.py` | 保留 `--stdio` 标志 |
+| `pyproject.toml` | 添加 `clients` 包和 `llp-cli` 入口点 |
 
----
+## 8. 关键设计决策
 
-## 7. 预期交付物
+### 为什么 AgentRuntime 移到客户端？
 
-| 交付物 | 描述 |
-|--------|------|
-| `adapters/` | 协议适配器模块 |
-| `clients/cli_client.py` | CLI 客户端工具 |
-| `schemas/execution_protocol.py` | 内部协议定义 |
-| 更新 `controllers/agent_controller.py` | HTTP 控制器重构 |
-| 更新 `main.py` | 入口文件更新 |
-| 测试用例 | 单元测试和集成测试 |
-| 更新文档 | README 和使用说明 |
+AgentRuntime 是执行循环，涉及：
+- 用户交互（输入、确认）
+- 文件系统操作（读/写文件）
+- 多 Agent 编排决策
 
----
+这些天然适合在客户端执行。后端保持为无状态服务层，只提供原始能力。
 
-## 8. 时间预估
+### RemoteLLM 的设计
 
-| 阶段 | 时间 |
+`RemoteLLM` 实现了与 `LocalLLModel` 相同的接口（`chat()`、`chat_at_once()`、`format_messages()`、`extract_thought()`等），使 `clients/agents/` 中的 Agent 代码无需修改即可透明地通过 HTTP 调用后端 LLM。
+
+### ProtocolBridge 简化
+
+后端的 `ProtocolBridge` 不再包装 AgentRuntime，而是直接调用 `LocalLLModel.chat()`。其目的是让外部 ACP 客户端（如 Zed）可以直接与后端交互，但不提供多 Agent 编排能力。
+
+## 9. 向后兼容策略
+
+| 场景 | 策略 |
 |------|------|
-| 阶段一：准备工作 | 1-2 天 |
-| 阶段二：核心重构 | 3-4 天 |
-| 阶段三：协议适配器 | 3-4 天 |
-| 阶段四：客户端实现 | 2-3 天 |
-| 阶段五：测试验证 | 2-3 天 |
-| **总计** | **11-16 天** |
+| `from agents import AgentRuntime` | 通过 `agents/__init__.py` 从 `clients.agents` 再导出 |
+| `from agents.qa_agent import QAAgent` | 同样通过再导出（已改为 `from clients.agents.qa_agent`） |
+| `GET /v1/agents/metadata` | 端点保留 |
+| `POST /v1/agents/run` | 端点保留，启动时打印 DEPRECATED 警告 |
+| 现有测试 | 导入路径更新为 `clients.agents.*` |
+
+## 10. 测试状态
+
+| 测试模块 | 状态 | 说明 |
+|---------|------|------|
+| `tests/test_execution_protocol.py` | 5 passed | 内部协议模型 |
+| `tests/test_agent_protocol.py` | 14 passed | 原协议类型 |
+| `tests/test_protocol_bridge.py` | 11 passed | 新 ACP Agent 桥接 |
+| `tests/test_http_adapter.py` | 3 passed | HTTP 适配器存根 |
+| `tests/test_agent_system.py` | 1 skipped | 需模型环境 |
+| `tests/test_private_context.py` | 1 skipped | 需 pytest-asyncio |
+| **总计** | **33 passed** | |
+
+## 11. 入口点配置
+
+```toml
+[project.scripts]
+local-llm-provider = "main:main"
+llp-cli = "clients.cli:main"
+acp-agent = "adapters.stdio_adapter:main"
+```

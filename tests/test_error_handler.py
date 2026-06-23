@@ -1,4 +1,3 @@
-
 import asyncio
 import sys
 import os
@@ -6,9 +5,10 @@ import os
 # Add parent directory to path to import agents
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agents.error_handler_agent import ErrorHandlerAgent
-from agents.agent_runtime import AgentRuntime
-from agents.agent_base import AgentStatus
+from clients.agents.error_handler_agent import ErrorHandlerAgent
+from clients.agents.agent_runtime import AgentRuntime
+from clients.agents.agent_base import AgentStatus
+
 
 class MockLLM:
     async def chat_at_once(self, messages, **kwargs):
@@ -38,25 +38,28 @@ class MockLLM:
 }
 ```
 """
+
     def extract_after_think(self, text):
         return text
+
 
 async def test_error_flow():
     mock_llm = MockLLM()
     handler = ErrorHandlerAgent(mock_llm)
-    
+
     # Simulate an exception packet
     try:
         raise ValueError("LLM connection timed out")
     except Exception as e:
         input_data = {"exception": e, "agent_name": "test_agent"}
-    
+
     context = {"iteration_count": 1}
     result = await handler.execute(input_data, context, {})
-    
+
     print(f"Status: {result.status}")
     print(f"Message: {result.message}")
     print(f"Data: {result.data}")
+
 
 if __name__ == "__main__":
     asyncio.run(test_error_flow())

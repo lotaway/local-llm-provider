@@ -16,8 +16,8 @@ class MockLLM:
 # Add parent dir to path
 sys.path.append(os.path.dirname(os.getcwd()))
 
-from agents.agent_base import BaseAgent, AgentResult, AgentStatus
-from agents.agent_runtime import AgentRuntime
+from clients.agents.agent_base import BaseAgent, AgentResult, AgentStatus
+from clients.agents.agent_runtime import AgentRuntime
 
 
 class PrivateContextAgent(BaseAgent):

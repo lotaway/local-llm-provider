@@ -19,14 +19,17 @@ from globals import (
 from model_providers import LocalLLModel
 from schemas import ChatRequest
 from services.agent_protocol_service import OpenAIStreamEventConverter
-from agents.context_storage import create_context_storage, MemoryContextStorage
-from agents.agent_runtime import AgentRuntime
-from agents.runtime_factory import RuntimeFactory
+from clients.agents.context_storage import create_context_storage, MemoryContextStorage
+from clients.agents.agent_runtime import AgentRuntime
+from clients.agents.runtime_factory import RuntimeFactory
 from utils import ContentType
 from rag import LocalRAG
 
 router = APIRouter(prefix="/agents", tags=["agent"])
 logger = logging.getLogger(__name__)
+logger.warning(
+    "DEPRECATED: /agents/* endpoints are deprecated. Agent execution layer has moved to clients/cli.py"
+)
 
 
 class AgentRequest(BaseModel):
@@ -298,12 +301,11 @@ from services.agent_protocol_service import AgentMetadataService
 async def agent_metadata():
     if agent_runtime is None:
         raise AgentProtocolException(
-            AgentErrorCode.AGENT_NOT_INITIALIZED,
-            "Agent runtime not initialized"
+            AgentErrorCode.AGENT_NOT_INITIALIZED, "Agent runtime not initialized"
         )
-    
+
     metadata_service = AgentMetadataService(agent_runtime)
-    
+
     return {
         "agents": [a.to_dict() for a in metadata_service.get_available_agents()],
         "tools": [t.to_openai_format() for t in metadata_service.get_available_tools()],

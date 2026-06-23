@@ -7,15 +7,15 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from model_providers import LocalLLModel
-from agents import AgentRuntime
-from agents.qa_agent import QAAgent
-from agents.planning_agent import PlanningAgent
-from agents.router_agent import RouterAgent
-from agents.verification_agent import VerificationAgent
-from agents.risk_agent import RiskAgent, RiskLevel
-from agents.task_agents.llm_agent import LLMTaskAgent
-from agents.task_agents.rag_agent import RAGTaskAgent
-from agents.task_agents.mcp_agent import MCPTaskAgent
+from clients.agents import AgentRuntime
+from clients.agents.qa_agent import QAAgent
+from clients.agents.planning_agent import PlanningAgent
+from clients.agents.router_agent import RouterAgent
+from clients.agents.verification_agent import VerificationAgent
+from clients.agents.risk_agent import RiskAgent, RiskLevel
+from clients.agents.task_agents.llm_agent import LLMTaskAgent
+from clients.agents.task_agents.rag_agent import RAGTaskAgent
+from clients.agents.task_agents.mcp_agent import MCPTaskAgent
 from rag import LocalRAG
 
 
@@ -51,9 +51,9 @@ def test_agent_system():
 
     # Test query
     test_query = "What is 2 + 2?"
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Test Query: {test_query}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     try:
         state = runtime.execute(test_query, start_agent="qa")
@@ -67,9 +67,9 @@ def test_agent_system():
         if state.error_message:
             print(f"\nError: {state.error_message}")
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("Execution History:")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         for i, entry in enumerate(state.history, 1):
             print(f"{i}. [{entry['iteration']}] {entry['agent']}: {entry['status']}")
             print(f"   Message: {entry['message']}")

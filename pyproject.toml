@@ -62,7 +62,11 @@ packages = [
   "file_loaders",
   "model_providers",
   "utils",
+  "adapters",
+  "clients",
 ]
 
 [project.scripts]
 local-llm-provider = "main:main"
+llp-cli = "clients.cli:main"
+acp-agent = "adapters.stdio_adapter:main"

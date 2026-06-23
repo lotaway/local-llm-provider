@@ -2,19 +2,22 @@
 
 import sys
 import os
+
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from agents.agent_base import BaseAgent, AgentResult, AgentStatus
+from clients.agents.agent_base import BaseAgent, AgentResult, AgentStatus
 
 
 class MockLLM:
     """Mock LLM for testing"""
+
     def __init__(self):
         pass
 
 
 class TestAgent(BaseAgent):
     """Test agent to access _parse_json_response"""
+
     def execute(self, input_data, context, stream_callback=None):
         return AgentResult(status=AgentStatus.SUCCESS, data=None)
 
@@ -24,10 +27,10 @@ def test_json_with_control_characters():
     print("=" * 60)
     print("Test: JSON Parsing with Control Characters")
     print("=" * 60)
-    
+
     llm = MockLLM()
     agent = TestAgent(llm)
-    
+
     # Test case 1: JSON with newlines in string value (the actual error case)
     json_with_newlines = """{
     "completed": true,
@@ -37,7 +40,7 @@ def test_json_with_control_characters():
 2. **已观看的视频**：您已经看过哪些视频？（如果有的话）
 3. **想观看的视频列表**：您有哪些具体的视频想看？（可以是电影、电视剧、教程、讲座等）"
 }"""
-    
+
     print("\nTest 1: JSON with newlines in string value")
     try:
         result = agent._parse_json_response(json_with_newlines)
@@ -49,7 +52,7 @@ def test_json_with_control_characters():
     except Exception as e:
         print(f"✗ Failed to parse: {e}")
         return False
-    
+
     # Test case 2: JSON with tabs
     json_with_tabs = """{
     "plan": [
@@ -59,7 +62,7 @@ def test_json_with_control_characters():
         }
     ]
 }"""
-    
+
     print("\nTest 2: JSON with tabs in string value")
     try:
         result = agent._parse_json_response(json_with_tabs)
@@ -68,7 +71,7 @@ def test_json_with_control_characters():
     except Exception as e:
         print(f"✗ Failed to parse: {e}")
         return False
-    
+
     # Test case 3: JSON in markdown code block
     json_in_markdown = """Here is the result:
 ```json
@@ -84,7 +87,7 @@ multiple lines"
 }
 ```
 Some other text"""
-    
+
     print("\nTest 3: JSON in markdown code block with newlines")
     try:
         result = agent._parse_json_response(json_in_markdown)
@@ -94,13 +97,13 @@ Some other text"""
     except Exception as e:
         print(f"✗ Failed to parse: {e}")
         return False
-    
+
     # Test case 4: Normal JSON (should still work)
     normal_json = """{
     "completed": true,
     "final_answer": "This is a normal answer without control characters"
 }"""
-    
+
     print("\nTest 4: Normal JSON without control characters")
     try:
         result = agent._parse_json_response(normal_json)
@@ -109,7 +112,7 @@ Some other text"""
     except Exception as e:
         print(f"✗ Failed to parse: {e}")
         return False
-    
+
     print("\n" + "=" * 60)
     print("ALL TESTS PASSED ✓")
     print("=" * 60)
@@ -123,5 +126,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n✗ UNEXPECTED ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

@@ -266,40 +266,33 @@ async def query_rag(request: Request):
 
 def test_kernel_lab_hip():
     import sys
+
     sys.path.append("./kernel_lab")
     from kernel_lab import add
     import torch
-    
-    a = torch.tensor(
-        [1, 2, 3, 4],
-        dtype=torch.float32,
-        device="cuda"
-    )
-    b = torch.tensor(
-        [5, 6, 7, 8],
-        dtype=torch.float32,
-        device="cuda"
-    )
-    result: torch.Tensor = add(a,b)
-    expected = torch.tensor(
-        [6, 8, 10, 12],
-        dtype=torch.float32,
-        device="cuda"
-    )
+
+    a = torch.tensor([1, 2, 3, 4], dtype=torch.float32, device="cuda")
+    b = torch.tensor([5, 6, 7, 8], dtype=torch.float32, device="cuda")
+    result: torch.Tensor = add(a, b)
+    expected = torch.tensor([6, 8, 10, 12], dtype=torch.float32, device="cuda")
     logger.error(f"test kernel lab result:{result} and expected:{expected}")
-    assert torch.allclose(
-        result,
-        expected
-    )
+    assert torch.allclose(result, expected)
 
 
 if __name__ == "__main__":
     # test_kernel_lab_hip()
-    default_port = 8434
-    host = os.getenv("HOST", "0.0.0.0")
-    port = os.getenv("PORT", default_port)
-    try:
-        port = int(port)
-    except ValueError:
-        port = default_port
-    uvicorn.run(app, host=host, port=port)
+    import sys
+
+    if "--stdio" in sys.argv:
+        from adapters.stdio_adapter import run_stdio_server
+
+        asyncio.run(run_stdio_server())
+    else:
+        default_port = 8434
+        host = os.getenv("HOST", "0.0.0.0")
+        port = os.getenv("PORT", default_port)
+        try:
+            port = int(port)
+        except ValueError:
+            port = default_port
+        uvicorn.run(app, host=host, port=port)

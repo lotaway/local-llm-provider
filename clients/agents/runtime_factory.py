@@ -1,8 +1,9 @@
 import os
 from typing import List, Dict, Any, Optional
-from agents.agent_runtime import AgentRuntime
+from .agent_runtime import AgentRuntime
 from constants import DATA_PATH
 from schemas.capability import Capability, CapabilityKind
+
 
 class RuntimeFactory:
     @staticmethod
@@ -13,15 +14,15 @@ class RuntimeFactory:
         max_iterations: int = 100,
         context_storage: Any = None,
         session_id: Optional[str] = None,
-        trace_collector: Any = None
+        trace_collector: Any = None,
     ) -> AgentRuntime:
         rag = RuntimeFactory._ensure_rag(llm_model, rag_instance)
         perm = RuntimeFactory._ensure_permission_manager(permission_manager)
-        
+
         runtime = RuntimeFactory._build_runtime_instance(
             llm_model, max_iterations, context_storage, session_id, rag
         )
-        
+
         if trace_collector:
             runtime.set_trace_collector(trace_collector)
 
@@ -31,16 +32,18 @@ class RuntimeFactory:
         return runtime
 
     @staticmethod
-    def _build_runtime_instance(llm, max_iters, storage, session_id, rag) -> AgentRuntime:
+    def _build_runtime_instance(
+        llm, max_iters, storage, session_id, rag
+    ) -> AgentRuntime:
         from services.feedback_judge import FeedbackJudge
         from services.evolution_dispatcher import EvolutionDispatcher
         from services.skill_researcher import SkillResearcher, SkillCreatorBridge
         from skills import registry
-        
+
         memory_repo = getattr(rag, "mongo_repo", None)
         researcher = SkillResearcher(llm)
         creator = SkillCreatorBridge(registry)
-        
+
         return AgentRuntime(
             llm,
             max_iterations=max_iters,
@@ -50,8 +53,8 @@ class RuntimeFactory:
             evolution_dispatcher=EvolutionDispatcher(
                 memory_repo=memory_repo,
                 skill_researcher=researcher,
-                skill_creator=creator
-            )
+                skill_creator=creator,
+            ),
         )
 
     @staticmethod
@@ -59,6 +62,7 @@ class RuntimeFactory:
         if instance is not None:
             return instance
         from rag import LocalRAG
+
         return LocalRAG(llm, data_path=DATA_PATH)
 
     @staticmethod
@@ -67,6 +71,7 @@ class RuntimeFactory:
             return pm
         from permission_manager import PermissionManager
         from schemas.permission import SafetyLevel
+
         return PermissionManager(human_approval_threshold=SafetyLevel.HIGH)
 
     @staticmethod
@@ -98,17 +103,18 @@ class RuntimeFactory:
 
         runtime.register_agent("task_llm", LLMTaskAgent(llm))
         runtime.register_agent("task_rag", RAGTaskAgent(llm, rag_instance=rag))
-        
+
         mcp = MCPTaskAgent(llm)
         mcp.permission_manager = perm
         runtime.register_agent("task_mcp", mcp)
-        
+
         RuntimeFactory._load_mcp(mcp, runtime)
 
     @staticmethod
     def _load_mcp(mcp, runtime):
         try:
             from utils.mcp_loader import load_from_env
+
             load_from_env(mcp)
         except Exception:
             pass
@@ -117,12 +123,15 @@ class RuntimeFactory:
     @staticmethod
     def _setup_context(runtime, perm):
         from skills import init_skills, registry
+
         init_skills()
-        
+
         skills = registry.list_skills()
         runtime.state.context["available_skills"] = [s.to_dict() for s in skills]
-        
-        caps = RuntimeFactory._build_capabilities(skills, runtime.agents.get("task_mcp"), perm)
+
+        caps = RuntimeFactory._build_capabilities(
+            skills, runtime.agents.get("task_mcp"), perm
+        )
         runtime.state.context["capabilities"] = caps
         runtime.state.context["planning_hints"] = {"capabilities": caps}
 
@@ -131,7 +140,7 @@ class RuntimeFactory:
         caps = []
         for s in skills:
             caps.append(RuntimeFactory._skill_to_cap(s))
-        
+
         if mcp_agent:
             for t_name, t in mcp_agent.tools.items():
                 caps.append(RuntimeFactory._mcp_to_cap(t_name, t, perm))
@@ -144,7 +153,7 @@ class RuntimeFactory:
             kind=CapabilityKind.SKILL,
             name=s.name,
             description=s.description,
-            safety_level="SAFE"
+            safety_level="SAFE",
         ).to_dict()
 
     @staticmethod
@@ -156,7 +165,7 @@ class RuntimeFactory:
             r = perm.check_permission(p_name)
             safety = r.get("safety_level", "UNKNOWN")
             needs_human = bool(r.get("needs_human", False))
-            
+
         return Capability(
             id=f"mcp.{name}",
             kind=CapabilityKind.MCP,
@@ -164,5 +173,5 @@ class RuntimeFactory:
             description=name,
             safety_level=safety,
             permission=p_name,
-            requires_approval=needs_human
+            requires_approval=needs_human,
         ).to_dict()
