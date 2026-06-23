@@ -13,15 +13,15 @@ int main() {
   float *devC;
   dim3 grid_size(5, 3, 1);
 
-  kernel_lab::checkHipError(hipMalloc(&devA, sizeof(hostA)), __FILE__, __LINE__);
+  CHECK_HIP_ERROR(hipMalloc(&devA, sizeof(hostA)));
 
-  kernel_lab::checkHipError(hipMalloc(&devB, sizeof(hostB)), __FILE__, __LINE__);
+  CHECK_HIP_ERROR(hipMalloc(&devB, sizeof(hostB)));
 
-  kernel_lab::checkHipError(hipMalloc(&devC, sizeof(hostC)), __FILE__, __LINE__);
+  CHECK_HIP_ERROR(hipMalloc(&devC, sizeof(hostC)));
   kernel_lab::launch_add(devA, devB, devC, N, 256);
 
-  kernel_lab::checkHipError(
-      hipMemcpy(hostC, devC, sizeof(hostC), hipMemcpyDeviceToHost), __FILE__, __LINE__);
+  CHECK_HIP_ERROR(
+      hipMemcpy(hostC, devC, sizeof(hostC), hipMemcpyDeviceToHost));
 
   std::cout << hostC[0] << std::endl;
 }

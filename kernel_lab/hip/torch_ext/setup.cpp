@@ -8,9 +8,9 @@ torch::Tensor add(torch::Tensor a, torch::Tensor b) {
   int n = a.numel();
 
   kernel_lab::launch_add(a.data_ptr<float>(), b.data_ptr<float>(),
-                         c.data_ptr<float>(), n);
+                         c.data_ptr<float>(), n, 256);
 
-  hipDeviceSynchronize();
+  CHECK_HIP_ERROR(hipDeviceSynchronize());
 
   return c;
 }

@@ -18,17 +18,17 @@ void kernel_lab::checkHipError(hipError_t err, const char fileName[], int line) 
 }
 
 void kernel_lab::performance(hipEvent_t start, hipEvent_t stop) {
-    kernel_lab::checkHipError(hipEventCreate(&start), __FILE__, __LINE__);
-    kernel_lab::checkHipError(hipEventRecord(stop), __FILE__, __LINE__);
+    CHECK_HIP_ERROR(hipEventCreate(&start));
+    CHECK_HIP_ERROR(hipEventRecord(stop));
     float duration;
-    kernel_lab::checkHipError(hipEventElapsedTime(&duration, start, stop), __FILE__, __LINE__);
+    CHECK_HIP_ERROR(hipEventElapsedTime(&duration, start, stop));
     std::cout << "performance duration time:" << duration << "ms" << std::endl;
-    kernel_lab::checkHipError(hipEventDestroy(start), __FILE__, __LINE__);
-    kernel_lab::checkHipError(hipEventDestroy(stop), __FILE__, __LINE__);
+    CHECK_HIP_ERROR(hipEventDestroy(start));
+    CHECK_HIP_ERROR(hipEventDestroy(stop));
 }
 
 void kernel_lab::launch_add(float *a, float *b, float *c, int n, int block_size) {
   int grid_size = (n + block_size - 1) / block_size;
   add_kernel<<<grid_size, block_size>>>(a, b, c, n);
-  kernel_lab::checkHipError(hipDeviceSynchronize(), __FILE__, __LINE__);
+  CHECK_HIP_ERROR(hipDeviceSynchronize());
 }
