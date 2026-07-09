@@ -221,9 +221,11 @@ If skipped: HSA runtime can't find the DXG device → `torch.cuda.is_available()
 
 **4. Update PyTorch ROCm**
 
+Use below command or follow the [guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/reference/system-requirements.html):
+
 ```bash
 pip uninstall -y torch torchvision torchaudio
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm{version}
+pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm7.2
 ```
 
 If skipped: PyTorch is linked against old HIP libraries; loading GPU kernels causes segfaults or `undefined symbol` errors.
@@ -242,7 +244,7 @@ AMD ROCm requires building bitsandbytes from source to match the exact ROCm vers
 
 ```bash
 mamba activate ai
-cd /home/wayluk/bitsandbytes
+cd /home/{user}/bitsandbytes
 
 # Set ROCm environment
 export ROCM_HOME=/opt/rocm
