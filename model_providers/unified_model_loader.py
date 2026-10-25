@@ -14,80 +14,48 @@ from utils import DeviceUtils
 logger = logging.getLogger(__name__)
 
 
-# vLLM 支持的架构列表
-# 来源: vllm/model_executor/models/__init__.py 的 _MODEL_ARCHS
-# 需随 vLLM 版本更新维护
+# vLLM supported architectures
+# Source: vllm/model_executor/models/__init__.py _MODEL_ARCHS
+# Update with vLLM version
 VLLM_SUPPORTED_ARCHS = {
-    # 文本生成模型
-    "LlamaForCausalLM",
-    "MistralForCausalLM",
-    "MixtralForCausalLM",
-    "Qwen2ForCausalLM",
-    "Qwen3ForCausalLM",
-    "Qwen2MoeForCausalLM",
-    "GemmaForCausalLM",
-    "Gemma2ForCausalLM",
-    "Gemma3ForCausalLM",
-    "Phi3ForCausalLM",
-    "PhiForCausalLM",
-    "DeepseekV2ForCausalLM",
-    "DeepseekV3ForCausalLM",
-    "YiForCausalLM",
-    "InternLM2ForCausalLM",
-    "InternLM3ForCausalLM",
-    "BaichuanForCausalLM",
-    "ChatGLMForCausalLM",
-    "GLMForCausalLM",
-    "MptForCausalLM",
-    "FalconForCausalLM",
-    "BloomForCausalLM",
-    "GPTBigCodeForCausalLM",
-    "Starcoder2ForCausalLM",
-    "CohereForCausalLM",
-    "DbrxForCausalLM",
-    "JambaForCausalLM",
-    "MambaForCausalLM",
-    "Nemotron3ForCausalLM",
-    "Qwen2MoeForCausalLM",
-    "OlmoForCausalLM",
-    "Olmo2ForCausalLM",
-    "MinicpmForCausalLM",
-    "Minicpm3ForCausalLM",
-    # 视觉语言模型
-    "LlavaForConditionalGeneration",
-    "Qwen2VLForConditionalGeneration",
-    "Phi3VForCausalLM",
-    "InternVLForConditionalGeneration",
-    "LlavaNextForConditionalGeneration",
-    "LlavaNextVideoForConditionalGeneration",
-    "LlavaOnevisionForConditionalGeneration",
-    "MllamaForConditionalGeneration",
+    "LlamaForCausalLM", "MistralForCausalLM", "MixtralForCausalLM",
+    "Qwen2ForCausalLM", "Qwen3ForCausalLM", "Qwen2MoeForCausalLM",
+    "GemmaForCausalLM", "Gemma2ForCausalLM", "Gemma3ForCausalLM",
+    "Phi3ForCausalLM", "PhiForCausalLM",
+    "DeepseekV2ForCausalLM", "DeepseekV3ForCausalLM",
+    "YiForCausalLM", "InternLM2ForCausalLM", "InternLM3ForCausalLM",
+    "BaichuanForCausalLM", "ChatGLMForCausalLM", "GLMForCausalLM",
+    "MptForCausalLM", "FalconForCausalLM", "BloomForCausalLM",
+    "GPTBigCodeForCausalLM", "Starcoder2ForCausalLM",
+    "CohereForCausalLM", "DbrxForCausalLM", "JambaForCausalLM",
+    "MambaForCausalLM", "Nemotron3ForCausalLM",
+    "LlavaForConditionalGeneration", "Qwen2VLForConditionalGeneration",
+    "Phi3VForCausalLM", "InternVLForConditionalGeneration",
+    "LlavaNextForConditionalGeneration", "LlavaNextVideoForConditionalGeneration",
+    "LlavaOnevisionForConditionalGeneration", "MllamaForConditionalGeneration",
     "PixtralForConditionalGeneration",
-    # 音频模型
-    "UltravoxForConditionalGeneration",
-    "Qwen2AudioForConditionalGeneration",
+    "UltravoxForConditionalGeneration", "Qwen2AudioForConditionalGeneration",
+    "OlmoForCausalLM", "Olmo2ForCausalLM",
+    "MinicpmForCausalLM", "Minicpm3ForCausalLM",
 }
 
 
 class UnifiedModelLoader:
     def __init__(self, model_path: str, options: dict = None):
         """
-        Unified Model Loader
-        :param model_path: Path to the model file or directory
+        Unified Model Loader.
+        :param model_path: Path to model file or directory
         :param options: Unified configuration dictionary.
             - engine: "auto" | "vllm" | "transformers" | "llama_cpp"
-            - vllm_options: vLLM 特定配置字典
-            - transformers_kwargs: Transformers 额外参数
+            - vllm_options: vLLM specific config dict
+            - transformers_kwargs: Transformers extra parameters
         """
         self.options = options or {}
         self.model_path = model_path
         self.project_root = PROJECT_ROOT
 
-        # Unified parameters
         self.use_gpu = self.options.get("use_gpu", True)
         self.context_length = self.options.get("context_length", 4096)
-
-        # Engine selection preference
         self.engine_preference = self.options.get("engine", "auto")
 
         self.engine = None
@@ -96,7 +64,6 @@ class UnifiedModelLoader:
         elif model_path.endswith(".onnx"):
             self._load_onnx()
         else:
-            # HF 格式目录：智能选择引擎
             self._load_hf_model_smart()
 
     def _get_torch_dtype(self, dtype_str: str) -> torch.dtype:
@@ -123,28 +90,24 @@ class UnifiedModelLoader:
         )
 
     def _load_hf_model_smart(self):
-        """智能选择 HF 模型的推理引擎"""
+        """Smart engine selection for HF models."""
         preference = self.engine_preference
 
-        # 1. 显式指定 vLLM
         if preference == "vllm":
             logger.info("Engine preference: vLLM (explicit)")
             self._load_vllm()
             return
 
-        # 2. 显式指定 Transformers
         if preference == "transformers":
             logger.info("Engine preference: Transformers (explicit)")
             self._load_transformers()
             return
 
-        # 3. 显式指定 llama.cpp (仅适用于 GGUF，HF 目录忽略)
         if preference == "llama_cpp":
             logger.warning("llama_cpp engine only supports .gguf files, falling back to Transformers")
             self._load_transformers()
             return
 
-        # 4. Auto 模式：尝试 vLLM，失败回退 Transformers
         if preference == "auto":
             logger.info("Engine preference: auto (try vLLM -> fallback Transformers)")
             if self._try_load_vllm():
@@ -153,19 +116,16 @@ class UnifiedModelLoader:
             self._load_transformers()
             return
 
-        # 默认回退
         logger.info(f"Unknown engine preference '{preference}', defaulting to Transformers")
         self._load_transformers()
 
     def _try_load_vllm(self) -> bool:
-        """尝试加载 vLLM，返回是否成功"""
+        """Try loading vLLM, return success."""
         try:
-            # 预检查：架构是否受支持
             if not self._is_vllm_compatible():
                 logger.debug("Model architecture not natively supported by vLLM")
                 return False
 
-            # 检查 vLLM 是否安装
             try:
                 import vllm
                 logger.debug(f"vLLM version: {vllm.__version__}")
@@ -173,13 +133,11 @@ class UnifiedModelLoader:
                 logger.debug("vLLM not installed")
                 return False
 
-            # 检查 GPU 可用性 (vLLM 强依赖 CUDA)
             import torch
             if not torch.cuda.is_available():
                 logger.debug("CUDA not available, vLLM requires GPU")
                 return False
 
-            # 实际加载
             self._load_vllm()
             return True
 
@@ -188,7 +146,7 @@ class UnifiedModelLoader:
             return False
 
     def _is_vllm_compatible(self) -> bool:
-        """检查模型架构是否在 vLLM 支持列表中"""
+        """Check if model architecture is in vLLM supported list."""
         try:
             config_path = os.path.join(self.model_path, "config.json")
             if not os.path.exists(config_path):
@@ -203,7 +161,6 @@ class UnifiedModelLoader:
                 logger.debug("No architectures field in config.json")
                 return False
 
-            # 检查是否有任一架构受支持
             for arch in architectures:
                 if arch in VLLM_SUPPORTED_ARCHS:
                     logger.debug(f"Architecture '{arch}' is supported by vLLM")
@@ -217,13 +174,10 @@ class UnifiedModelLoader:
             return False
 
     def _load_vllm(self):
-        """加载 vLLM 引擎"""
+        """Load vLLM engine."""
         from .vllm_engine import VllmEngine
 
-        # 从 options 读取 vLLM 特定参数
         vllm_options = self.options.get("vllm_options", {})
-
-        # 合并环境变量配置（环境变量优先级低于显式传参）
         vllm_options = self._merge_env_config(vllm_options)
 
         self.engine = VllmEngine(
@@ -244,7 +198,7 @@ class UnifiedModelLoader:
         logger.info(f"Loaded model with vLLM engine: {self.model_path}")
 
     def _merge_env_config(self, vllm_options: dict) -> dict:
-        """合并环境变量配置"""
+        """Merge environment variable config."""
         env_mapping = {
             "tensor_parallel_size": ("VLLM_TENSOR_PARALLEL", int),
             "gpu_memory_utilization": ("VLLM_GPU_MEMORY_UTIL", float),

@@ -1,6 +1,6 @@
 """
-vLLM 推理引擎实现
-高性能推理引擎，支持 PagedAttention、连续批处理、Tensor Parallel
+vLLM inference engine implementation.
+High-performance engine with PagedAttention, continuous batching, Tensor Parallel.
 """
 import asyncio
 import logging
@@ -13,21 +13,20 @@ logger = logging.getLogger(__name__)
 
 
 class VllmEngine(InferenceEngine):
-    """
-    vLLM 推理引擎封装
-    
-    优势：
-    - PagedAttention 内存管理，显存利用率高
-    - 连续批处理，吞吐率远超 Transformers
-    - 原生 Tensor Parallel 多卡并行
-    - 支持 AWQ/GPTQ/FP8 量化加速
-    - Automatic Prefix Caching 复用系统提示词
-    
-    约束：
-    - 仅支持 vLLM 注册的架构（config.json architectures 字段需匹配）
-    - GGUF 支持实验性，不推荐生产使用
-    - 强依赖 CUDA，Mac/CPU 支持有限
-    - 自定义架构需编写 vLLM 侧实现并注册
+    """vLLM inference engine wrapper.
+
+    Advantages:
+    - PagedAttention memory management, high GPU utilization
+    - Continuous batching, throughput far exceeds Transformers
+    - Native Tensor Parallel multi-GPU parallelism
+    - AWQ/GPTQ/FP8 quantization acceleration
+    - Automatic Prefix Caching reuses system prompts
+
+    Constraints:
+    - Only supports vLLM-registered architectures (config.json architectures must match)
+    - GGUF support experimental, not recommended for production
+    - Strong CUDA dependency, limited Mac/CPU support
+    - Custom architectures require vLLM-side implementation and registration
     """
 
     def __init__(
@@ -36,11 +35,11 @@ class VllmEngine(InferenceEngine):
         tensor_parallel_size: int = 1,
         gpu_memory_utilization: float = 0.9,
         max_model_len: int = 8192,
-        quantization: Optional[str] = None,  # "awq", "gptq", "fp8", "marlin" 等
+        quantization: Optional[str] = None,
         trust_remote_code: bool = True,
         enforce_eager: bool = False,
         disable_custom_all_reduce: bool = False,
-        dtype: str = "auto",  # "auto", "float16", "bfloat16", "float32"
+        dtype: str = "auto",
         kv_cache_dtype: str = "auto",
         max_num_batched_tokens: Optional[int] = None,
         max_num_seqs: int = 256,
@@ -65,12 +64,9 @@ class VllmEngine(InferenceEngine):
         self._engine = None
         self._tokenizer = None
         self._initialized = False
-        
-        # 延迟初始化，首次调用 generate_stream 时初始化
-        # 这样可以在 UnifiedModelLoader 中先做兼容性检查
 
     def _init_engine(self):
-        """延迟初始化 vLLM 引擎"""
+        """Lazy initialize vLLM engine."""
         if self._initialized:
             return
 
@@ -84,7 +80,6 @@ class VllmEngine(InferenceEngine):
                 f"Original error: {e}"
             )
 
-        # 检查 CUDA 可用性
         try:
             import torch
             if not torch.cuda.is_available():
@@ -125,13 +120,12 @@ class VllmEngine(InferenceEngine):
         )
 
         self._engine = AsyncLLMEngine.from_engine_args(engine_args)
-        
-        # 加载 tokenizer 用于格式化 prompt
+
         self._tokenizer = AutoTokenizer.from_pretrained(
-            self.model_path, 
+            self.model_path,
             trust_remote_code=self.trust_remote_code
         )
-        
+
         self._initialized = True
         logger.info(f"vLLM engine loaded successfully: {self.model_path}")
 
@@ -141,32 +135,31 @@ class VllmEngine(InferenceEngine):
 
     @property
     def tokenizer(self):
-        """获取 tokenizer，用于 chat template 格式化"""
+        """Get tokenizer for chat template formatting."""
         if not self._initialized:
             self._init_engine()
         return self._tokenizer
 
     async def generate_stream(
-        self, 
-        prompt: str, 
+        self,
+        prompt: str,
         **kwargs
     ) -> AsyncGenerator[str, None]:
-        """
-        流式生成
-        
+        """Stream generation.
+
         Args:
-            prompt: 输入提示词（已格式化的字符串）
-            **kwargs: 生成参数
-                - max_new_tokens: 最大生成 token 数
-                - temperature: 采样温度
-                - top_p: nucleus sampling 参数
-                - top_k: top-k sampling 参数
-                - stop: 停止词列表
-                - repetition_penalty: 重复惩罚
-                - presence_penalty: 存在惩罚
-                - frequency_penalty: 频率惩罚
+            prompt: Formatted input prompt string
+            **kwargs: Generation parameters
+                - max_new_tokens: max generated tokens
+                - temperature: sampling temperature
+                - top_p: nucleus sampling parameter
+                - top_k: top-k sampling parameter
+                - stop: stop sequences
+                - repetition_penalty: repetition penalty
+                - presence_penalty: presence penalty
+                - frequency_penalty: frequency penalty
                 - min_p: min-p sampling
-                - seed: 随机种子
+                - seed: random seed
         """
         if not self._initialized:
             self._init_engine()
@@ -174,7 +167,6 @@ class VllmEngine(InferenceEngine):
         from vllm import SamplingParams
         from vllm.utils import random_uuid
 
-        # 构建采样参数
         sampling_params = SamplingParams(
             max_tokens=kwargs.get("max_new_tokens", 4096),
             temperature=kwargs.get("temperature", 0.7),
@@ -195,12 +187,12 @@ class VllmEngine(InferenceEngine):
 
         prev_text = ""
         finish_reason = None
-        
+
         try:
             async for request_output in results_generator:
                 if not request_output.outputs:
                     continue
-                    
+
                 text = request_output.outputs[0].text
                 delta = text[len(prev_text):]
                 prev_text = text
@@ -208,42 +200,38 @@ class VllmEngine(InferenceEngine):
                 if delta:
                     yield delta
 
-                # 检查是否结束
                 if request_output.finished:
                     finish_reason = request_output.outputs[0].finish_reason
                     yield {"content": "", "finish_reason": finish_reason}
                     break
 
-                await asyncio.sleep(0)  # 让出控制权
+                await asyncio.sleep(0)
 
         except Exception as e:
             logger.error(f"vLLM generation error: {e}")
             raise
 
     def unload(self):
-        """卸载模型，释放资源"""
+        """Unload model, release resources."""
         if self._engine is not None:
-            # vLLM AsyncLLMEngine 没有显式 shutdown 方法
-            # 依赖 Python GC 和进程退出清理 GPU 内存
             self._engine = None
-            
+
         if self._tokenizer is not None:
             self._tokenizer = None
-            
+
         self._initialized = False
-        
-        # 强制清理
+
         import gc
         import torch
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
-            
+
         logger.info(f"vLLM engine unloaded: {self.model_path}")
 
     def get_model_info(self) -> Dict[str, Any]:
-        """获取模型信息，用于调试和监控"""
+        """Get model info for debugging and monitoring."""
         return {
             "model_type": self.model_type,
             "model_path": self.model_path,
