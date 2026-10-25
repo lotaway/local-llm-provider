@@ -1,10 +1,10 @@
 """
-接口层：聊天路由
+Interface: Chat routes.
 """
 import logging
 import time
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["chat"])
 
-# 依赖注入：实际运行时通过容器注入
 _chat_use_case: Optional[ChatUseCase] = None
 _completion_use_case: Optional[CompletionUseCase] = None
 _token_count_use_case: Optional[TokenCountUseCase] = None
@@ -40,7 +39,7 @@ def set_dependencies(
     unload_model_use_case: UnloadModelUseCase,
     list_models_use_case: ListModelsUseCase,
 ):
-    """设置依赖（由容器调用）"""
+    """Set dependencies (called by container)."""
     global _chat_use_case, _completion_use_case, _token_count_use_case
     global _load_model_use_case, _unload_model_use_case, _list_models_use_case
     _chat_use_case = chat_use_case
@@ -52,7 +51,7 @@ def set_dependencies(
 
 
 def _to_domain_config(dto) -> GenerationConfig:
-    """DTO 转领域配置"""
+    """Convert DTO to domain config."""
     if dto is None:
         return GenerationConfig()
     return GenerationConfig(
@@ -70,13 +69,13 @@ def _to_domain_config(dto) -> GenerationConfig:
 
 
 def _format_chunk(chunk: InferenceChunk, model: str, chunk_id: str) -> ChatStreamChunkDTO:
-    """格式化流式响应片段"""
+    """Format stream chunk."""
     delta = {}
     if chunk.content:
         delta["content"] = chunk.content
     if chunk.reasoning_content:
         delta["reasoning_content"] = chunk.reasoning_content
-    
+
     return ChatStreamChunkDTO(
         id=chunk_id,
         created=int(time.time()),
@@ -91,13 +90,13 @@ def _format_chunk(chunk: InferenceChunk, model: str, chunk_id: str) -> ChatStrea
 
 @router.post("/chat/completions")
 async def chat_completions(request: ChatRequestDTO, http_request: Request):
-    """聊天完成接口（OpenAI 兼容）"""
+    """Chat completions (OpenAI compatible)."""
     if _chat_use_case is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
-    
+
     config = _to_domain_config(request.config)
     session_id = request.session_id or str(uuid.uuid4())
-    
+
     if request.stream:
         return StreamingResponse(
             _stream_chat(request.model, request.messages, config, session_id, http_request),
@@ -124,14 +123,14 @@ async def chat_completions(request: ChatRequestDTO, http_request: Request):
 
 
 async def _stream_chat(
-    model: str, 
-    messages: list, 
-    config: GenerationConfig, 
+    model: str,
+    messages: list,
+    config: GenerationConfig,
     session_id: str,
     http_request: Request
 ) -> AsyncGenerator[str, None]:
     chunk_id = f"chatcmpl-{uuid.uuid4().hex}"
-    
+
     try:
         async for chunk in _chat_use_case.execute(ChatCommand(
             messages=messages,
@@ -141,10 +140,10 @@ async def _stream_chat(
         )):
             if await http_request.is_disconnected():
                 break
-            
+
             dto = _format_chunk(chunk, model, chunk_id)
             yield f"data: {dto.model_dump_json()}\n\n"
-            
+
             if chunk.is_final:
                 break
     except Exception as e:
@@ -156,24 +155,23 @@ async def _stream_chat(
             choices=[{"index": 0, "delta": {}, "finish_reason": "error"}],
         )
         yield f"data: {error_chunk.model_dump_json()}\n\n"
-    
+
     yield "data: [DONE]\n\n"
 
 
 @router.post("/completions")
 async def completions(request: ChatRequestDTO, http_request: Request):
-    """文本补全接口（OpenAI 兼容）"""
+    """Text completions (OpenAI compatible)."""
     if _completion_use_case is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
-    
-    # 兼容 completions 格式：prompt 字符串
+
     prompt = request.messages[-1].content if request.messages else ""
     if isinstance(prompt, list):
         prompt = " ".join(p.get("text", "") for p in prompt if isinstance(p, dict))
-    
+
     config = _to_domain_config(request.config)
     session_id = request.session_id or str(uuid.uuid4())
-    
+
     if request.stream:
         return StreamingResponse(
             _stream_completion(prompt, config, session_id, http_request),
@@ -196,13 +194,13 @@ async def completions(request: ChatRequestDTO, http_request: Request):
 
 
 async def _stream_completion(
-    prompt: str, 
-    config: GenerationConfig, 
+    prompt: str,
+    config: GenerationConfig,
     session_id: str,
     http_request: Request
 ) -> AsyncGenerator[str, None]:
     chunk_id = f"cmpl-{uuid.uuid4().hex}"
-    
+
     try:
         async for chunk in _completion_use_case.execute(CompletionCommand(
             prompt=prompt,
@@ -212,7 +210,7 @@ async def _stream_completion(
         )):
             if await http_request.is_disconnected():
                 break
-            
+
             dto = ChatStreamChunkDTO(
                 id=chunk_id,
                 created=int(time.time()),
@@ -224,26 +222,26 @@ async def _stream_completion(
                 }],
             )
             yield f"data: {dto.model_dump_json()}\n\n"
-            
+
             if chunk.is_final:
                 break
     except Exception as e:
         logger.error(f"Stream completion error: {e}")
-    
+
     yield "data: [DONE]\n\n"
 
 
 @router.post("/models/load", response_model=LoadModelResponseDTO)
 async def load_model(request: LoadModelRequestDTO):
-    """加载模型"""
+    """Load model."""
     if _load_model_use_case is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
-    
+
     try:
         engine_type = EngineType(request.engine)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid engine: {request.engine}")
-    
+
     event = _load_model_use_case.execute(LoadModelCommand(
         model_id=request.model_id,
         engine_preference=engine_type,
@@ -251,7 +249,7 @@ async def load_model(request: LoadModelRequestDTO):
         quantization=request.quantization,
         vllm_options=request.vllm_options,
     ))
-    
+
     return LoadModelResponseDTO(
         model_id=event.model_id,
         engine_type=event.engine_type,
@@ -261,20 +259,20 @@ async def load_model(request: LoadModelRequestDTO):
 
 @router.post("/models/unload")
 async def unload_model():
-    """卸载当前模型"""
+    """Unload current model."""
     if _unload_model_use_case is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
-    
+
     success = _unload_model_use_case.execute(UnloadModelCommand())
     return {"success": success}
 
 
 @router.get("/models", response_model=List[ModelInfoDTO])
 async def list_models():
-    """列出可用模型"""
+    """List available models."""
     if _list_models_use_case is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
-    
+
     models = _list_models_use_case.execute(ListModelsQuery())
     return [ModelInfoDTO(
         id=m.id.value,
@@ -291,8 +289,7 @@ async def list_models():
 
 @router.get("/health", response_model=HealthResponseDTO)
 async def health_check():
-    """健康检查"""
-    # TODO: 从推理服务获取状态
+    """Health check."""
     return HealthResponseDTO(
         status="healthy",
         model_loaded=False,

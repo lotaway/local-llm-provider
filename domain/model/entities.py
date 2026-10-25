@@ -1,5 +1,5 @@
 """
-领域层：模型实体与值对象
+Domain: Model entities and value objects.
 """
 from dataclasses import dataclass, field
 from enum import Enum
@@ -9,18 +9,18 @@ import uuid
 
 
 class ModelType(Enum):
-    """模型类型枚举"""
-    HF = "hf"           # Hugging Face 格式目录
-    GGUF = "gguf"       # GGUF 单文件
-    ONNX = "onnx"       # ONNX 格式
-    AWQ = "awq"         # AWQ 量化
-    GPTQ = "gptq"       # GPTQ 量化
-    FP8 = "fp8"         # FP8 量化
-    REMOTE = "remote"   # 远程 API
+    """Model type enumeration."""
+    HF = "hf"
+    GGUF = "gguf"
+    ONNX = "onnx"
+    AWQ = "awq"
+    GPTQ = "gptq"
+    FP8 = "fp8"
+    REMOTE = "remote"
 
 
 class EngineType(Enum):
-    """推理引擎类型"""
+    """Inference engine type."""
     TRANSFORMERS = "transformers"
     LLAMA_CPP = "llama_cpp"
     VLLM = "vllm"
@@ -30,37 +30,37 @@ class EngineType(Enum):
 
 @dataclass(frozen=True)
 class ModelId:
-    """模型标识值对象"""
+    """Model identifier value object."""
     value: str
-    
+
     def __post_init__(self):
         if not self.value or not self.value.strip():
             raise ValueError("ModelId cannot be empty")
-    
+
     def __str__(self) -> str:
         return self.value
 
 
 @dataclass(frozen=True)
 class ModelPath:
-    """模型路径值对象"""
+    """Model path value object."""
     value: Path
-    
+
     def __post_init__(self):
         if not self.value:
             raise ValueError("ModelPath cannot be empty")
-    
+
     def __str__(self) -> str:
         return str(self.value)
-    
+
     @property
     def is_file(self) -> bool:
         return self.value.is_file()
-    
+
     @property
     def is_dir(self) -> bool:
         return self.value.is_dir()
-    
+
     @property
     def suffix(self) -> str:
         return self.value.suffix.lower()
@@ -68,26 +68,26 @@ class ModelPath:
 
 @dataclass(frozen=True)
 class TokenCount:
-    """Token 计数值对象"""
+    """Token count value object."""
     value: int
-    
+
     def __post_init__(self):
         if self.value < 0:
             raise ValueError("TokenCount cannot be negative")
-    
+
     def __add__(self, other: "TokenCount") -> "TokenCount":
         return TokenCount(self.value + other.value)
-    
+
     def __sub__(self, other: "TokenCount") -> "TokenCount":
         return TokenCount(max(0, self.value - other.value))
-    
+
     def __int__(self) -> int:
         return self.value
 
 
 @dataclass(frozen=True)
 class GenerationConfig:
-    """生成配置值对象"""
+    """Generation configuration value object."""
     max_new_tokens: int = 4096
     temperature: float = 0.7
     top_p: float = 0.9
@@ -98,7 +98,7 @@ class GenerationConfig:
     min_p: float = 0.0
     stop_sequences: tuple = ()
     seed: Optional[int] = None
-    
+
     def __post_init__(self):
         if self.max_new_tokens <= 0:
             raise ValueError("max_new_tokens must be positive")
@@ -110,40 +110,38 @@ class GenerationConfig:
 
 @dataclass
 class Model:
-    """模型聚合根"""
+    """Model aggregate root."""
     id: ModelId
     name: str
     path: ModelPath
     model_type: ModelType
     engine_type: EngineType = EngineType.AUTO
     context_length: int = 8192
-    config: Dict[str, Any] = field(default_factory=dict)  # config.json 内容
+    config: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     _loaded: bool = field(default=False, init=False)
     _engine_info: Dict[str, Any] = field(default_factory=dict, init=False)
-    
+
     def mark_loaded(self, engine_info: Dict[str, Any]) -> None:
-        """标记为已加载（领域事件触发点）"""
+        """Mark as loaded (domain event trigger point)."""
         self._loaded = True
         self._engine_info = engine_info
-        # TODO: 发布 ModelLoaded 领域事件
-    
+
     def mark_unloaded(self) -> None:
-        """标记为已卸载"""
+        """Mark as unloaded."""
         self._loaded = False
         self._engine_info = {}
-        # TODO: 发布 ModelUnloaded 领域事件
-    
+
     @property
     def is_loaded(self) -> bool:
         return self._loaded
-    
+
     @property
     def engine_info(self) -> Dict[str, Any]:
         return self._engine_info.copy()
-    
+
     def supports_engine(self, engine: EngineType) -> bool:
-        """检查模型是否支持指定引擎"""
+        """Check if model supports specified engine."""
         if engine == EngineType.AUTO:
             return True
         if self.model_type == ModelType.GGUF:
@@ -151,20 +149,19 @@ class Model:
         if self.model_type in (ModelType.HF, ModelType.AWQ, ModelType.GPTQ, ModelType.FP8):
             return engine in (EngineType.TRANSFORMERS, EngineType.VLLM)
         return False
-    
+
     def preferred_engine(self) -> EngineType:
-        """获取推荐引擎"""
+        """Get preferred engine."""
         if self.model_type == ModelType.GGUF:
             return EngineType.LLAMA_CPP
         return EngineType.VLLM if self._is_vllm_compatible() else EngineType.TRANSFORMERS
-    
+
     def _is_vllm_compatible(self) -> bool:
-        """检查是否兼容 vLLM（基于架构）"""
+        """Check vLLM compatibility (based on architecture)."""
         architectures = self.config.get("architectures", [])
         if not architectures:
             return False
-        
-        # vLLM 支持的架构列表
+
         VLLM_SUPPORTED = {
             "LlamaForCausalLM", "MistralForCausalLM", "MixtralForCausalLM",
             "Qwen2ForCausalLM", "Qwen3ForCausalLM", "Qwen2MoeForCausalLM",
@@ -180,12 +177,12 @@ class Model:
             "LlavaForConditionalGeneration", "Qwen2VLForConditionalGeneration",
             "Phi3VForCausalLM", "InternVLForConditionalGeneration",
         }
-        
+
         return any(arch in VLLM_SUPPORTED for arch in architectures)
-    
+
     @classmethod
     def create(cls, model_id: str, path: Path, model_type: ModelType, **kwargs) -> "Model":
-        """工厂方法创建模型"""
+        """Factory method to create model."""
         return cls(
             id=ModelId(model_id),
             name=kwargs.get("name", model_id),
@@ -200,7 +197,7 @@ class Model:
 
 @dataclass
 class InferenceSession:
-    """推理会话聚合根"""
+    """Inference session aggregate root."""
     id: str
     model_id: ModelId
     config: GenerationConfig
@@ -208,7 +205,7 @@ class InferenceSession:
     message_count: int = 0
     total_tokens: int = 0
     _active: bool = field(default=True, init=False)
-    
+
     @classmethod
     def create(cls, model_id: ModelId, config: GenerationConfig) -> "InferenceSession":
         import time
@@ -218,14 +215,14 @@ class InferenceSession:
             config=config,
             created_at=time.time(),
         )
-    
+
     def record_generation(self, token_count: int) -> None:
         self.message_count += 1
         self.total_tokens += token_count
-    
+
     def close(self) -> None:
         self._active = False
-    
+
     @property
     def is_active(self) -> bool:
         return self._active

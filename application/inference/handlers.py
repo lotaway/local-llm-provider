@@ -1,6 +1,6 @@
 """
-应用层：推理用例
-编排聊天、补全、流式生成
+Application: Inference use cases.
+Orchestrates chat, completion, streaming generation.
 """
 from dataclasses import dataclass
 from typing import AsyncGenerator, Optional, List, Dict, Any
@@ -12,7 +12,7 @@ from domain.inference.ports import InferenceChunk
 
 @dataclass(frozen=True)
 class ChatCommand:
-    """聊天命令"""
+    """Chat command."""
     messages: List[Dict[str, Any]]
     config: GenerationConfig
     stream: bool = False
@@ -21,7 +21,7 @@ class ChatCommand:
 
 @dataclass(frozen=True)
 class CompletionCommand:
-    """补全命令"""
+    """Completion command."""
     prompt: str
     config: GenerationConfig
     stream: bool = False
@@ -29,30 +29,29 @@ class CompletionCommand:
 
 
 class ChatUseCase:
-    """聊天用例"""
-    
+    """Chat use case."""
+
     def __init__(self, inference_service: InferenceDomainService):
         self._inference = inference_service
-    
+
     async def execute(self, command: ChatCommand) -> AsyncGenerator[InferenceChunk, None]:
         if not self._inference.is_ready:
             raise InferenceNotReadyError("No model loaded")
-        
-        # 应用聊天模板
+
         prompt = self._inference.apply_chat_template(
-            command.messages, 
+            command.messages,
             add_generation_prompt=True
         )
-        
+
         async for chunk in self._inference.generate_stream(
             prompt=prompt,
             config=command.config,
             session_id=command.session_id,
         ):
             yield chunk
-    
+
     async def execute_once(self, command: ChatCommand) -> str:
-        """非流式聊天，返回完整回答"""
+        """Non-stream chat, return complete response."""
         chunks = []
         async for chunk in self.execute(command):
             if chunk.content:
@@ -63,22 +62,22 @@ class ChatUseCase:
 
 
 class CompletionUseCase:
-    """补全用例"""
-    
+    """Completion use case."""
+
     def __init__(self, inference_service: InferenceDomainService):
         self._inference = inference_service
-    
+
     async def execute(self, command: CompletionCommand) -> AsyncGenerator[InferenceChunk, None]:
         if not self._inference.is_ready:
             raise InferenceNotReadyError("No model loaded")
-        
+
         async for chunk in self._inference.generate_stream(
             prompt=command.prompt,
             config=command.config,
             session_id=command.session_id,
         ):
             yield chunk
-    
+
     async def execute_once(self, command: CompletionCommand) -> str:
         chunks = []
         async for chunk in self.execute(command):
@@ -90,11 +89,11 @@ class CompletionUseCase:
 
 
 class TokenCountUseCase:
-    """Token 计数用例"""
-    
+    """Token count use case."""
+
     def __init__(self, inference_service: InferenceDomainService):
         self._inference = inference_service
-    
+
     def execute(self, text: str) -> int:
         if not self._inference.is_ready:
             raise InferenceNotReadyError("No model loaded")
@@ -102,21 +101,20 @@ class TokenCountUseCase:
 
 
 class TruncateMessagesUseCase:
-    """消息截断用例"""
-    
+    """Truncate messages use case."""
+
     def __init__(self, inference_service: InferenceDomainService):
         self._inference = inference_service
-    
+
     def execute(
-        self, 
-        messages: List[Dict[str, Any]], 
+        self,
+        messages: List[Dict[str, Any]],
         max_tokens: int,
         reserve_tokens: int = 1024
     ) -> List[Dict[str, Any]]:
         if not self._inference.is_ready:
             raise InferenceNotReadyError("No model loaded")
-        
-        # 计算每条消息的 token
+
         def count_msg(msg):
             content = msg.get("content", "")
             if isinstance(content, list):
@@ -125,13 +123,12 @@ class TruncateMessagesUseCase:
                     for part in content
                 )
             return self._inference.count_tokens(f"{msg.get('role', '')}: {content}")
-        
-        # 使用领域服务截断
+
         from domain.model.services import TokenBudgetService
         budget_service = TokenBudgetService(
             default_context_length=self._inference.current_model.context_length if self._inference.current_model else 8192,
             reserve_tokens=reserve_tokens,
         )
-        
+
         budget = max_tokens - reserve_tokens
         return budget_service.truncate_messages(messages, count_msg, budget)

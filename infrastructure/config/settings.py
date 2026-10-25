@@ -1,6 +1,6 @@
 """
-统一配置管理
-替代 constants.py + 分散的 os.getenv() 调用
+Unified configuration management.
+Replaces constants.py + scattered os.getenv() calls.
 """
 from dataclasses import dataclass, field
 from typing import Optional
@@ -9,7 +9,7 @@ import os
 
 @dataclass(frozen=True)
 class ModelLoaderConfig:
-    """模型加载器配置"""
+    """Model loader configuration."""
     engine_preference: str = "auto"  # auto | vllm | transformers | llama_cpp
     use_gpu: bool = True
     context_length: int = 8192
@@ -21,7 +21,7 @@ class ModelLoaderConfig:
 
 @dataclass(frozen=True)
 class VllmConfig:
-    """vLLM 引擎配置"""
+    """vLLM engine configuration."""
     tensor_parallel_size: int = 1
     gpu_memory_utilization: float = 0.9
     max_model_len: int = 8192
@@ -38,7 +38,7 @@ class VllmConfig:
 
 @dataclass(frozen=True)
 class LlamaCppConfig:
-    """llama.cpp 引擎配置"""
+    """llama.cpp engine configuration."""
     n_ctx: int = 4096
     batch_size: int = 2048
     n_gpu_layers: int = -1
@@ -49,7 +49,7 @@ class LlamaCppConfig:
 
 @dataclass(frozen=True)
 class EmbeddingConfig:
-    """嵌入模型配置"""
+    """Embedding model configuration."""
     model_name: str = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
     device: str = "cpu"
     cache_path: str = "./cache"
@@ -57,7 +57,7 @@ class EmbeddingConfig:
 
 @dataclass(frozen=True)
 class RagConfig:
-    """RAG 配置"""
+    """RAG configuration."""
     db_host: str = "localhost"
     db_port: int = 19530
     db_collection: str = "rag_docs"
@@ -73,7 +73,7 @@ class RagConfig:
 
 @dataclass(frozen=True)
 class ServerConfig:
-    """服务器配置"""
+    """Server configuration."""
     host: str = "0.0.0.0"
     port: int = 8434
     workers: int = 1
@@ -82,49 +82,49 @@ class ServerConfig:
 
 @dataclass(frozen=True)
 class Settings:
-    """应用总配置 - 单一配置入口"""
+    """Application settings - single configuration entry point."""
     model_loader: ModelLoaderConfig = field(default_factory=ModelLoaderConfig)
     vllm: VllmConfig = field(default_factory=VllmConfig)
     llama_cpp: LlamaCppConfig = field(default_factory=LlamaCppConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     rag: RagConfig = field(default_factory=RagConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
-    
-    # 项目路径
+
+    # Project paths
     project_root: str = field(default_factory=lambda: os.path.abspath(os.path.dirname(__file__)))
     model_dir: str = "models"
     offload_dir: str = "offload"
     upload_dir: str = "uploads"
-    
-    # 功能开关
+
+    # Feature flags
     learning_enabled: bool = False
     scheduler_enabled: bool = True
     root_task: str = ""
     root_task_interval: int = 3600
-    
-    # 远程模型
+
+    # Remote model
     custom_llm_api_key: str = ""
     custom_llm_base_url: str = ""
     custom_llm_model: str = ""
     custom_llm_protocol: str = "openai"
-    
-    # 多模态
+
+    # Multimodal
     multimodal_provider_url: str = ""
     remote_multimodal_status: bool = False
     default_vlm: str = ""
-    
+
     # TTS
     redis_host: str = "localhost"
     redis_port: int = 6379
     vibevoice_dir: str = ""
     vibevoice_model: str = "microsoft/VibeVoice-ASR"
-    
-    # 扩展
+
+    # Extensions
     chunk_size: int = 16
-    
+
     @classmethod
     def from_env(cls) -> "Settings":
-        """从环境变量构建配置（工厂方法）"""
+        """Build settings from environment variables (factory method)."""
         return cls(
             model_loader=ModelLoaderConfig(
                 engine_preference=os.getenv("ENGINE_PREFERENCE", "auto"),
@@ -194,20 +194,20 @@ class Settings:
             vibevoice_model=os.getenv("VIBEVOICE_MODEL", "microsoft/VibeVoice-ASR"),
             chunk_size=int(os.getenv("CHUNK_SIZE", "16")),
         )
-    
+
     def model_dir_path(self) -> str:
         return os.path.join(self.project_root, self.model_dir)
-    
+
     def offload_dir_path(self) -> str:
         return os.path.join(self.project_root, self.offload_dir)
 
 
-# 全局配置实例（仅用于向后兼容，新代码应使用依赖注入）
+# Global settings instance (backward compatibility only, new code should use DI)
 _settings: Optional[Settings] = None
 
 
 def get_settings() -> Settings:
-    """获取全局配置实例（单例模式，仅用于渐进式迁移）"""
+    """Get global settings instance (singleton, for gradual migration only)."""
     global _settings
     if _settings is None:
         _settings = Settings.from_env()
@@ -215,6 +215,6 @@ def get_settings() -> Settings:
 
 
 def set_settings(settings: Settings) -> None:
-    """设置全局配置（仅用于测试）"""
+    """Set global settings (test only)."""
     global _settings
     _settings = settings
