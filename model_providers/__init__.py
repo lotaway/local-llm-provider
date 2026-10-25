@@ -6,6 +6,7 @@ from .multimodal_provider import JanusModel, LlavaModel, QwenVLModel, Multimodal
 from .inference_engine import InferenceEngine
 from .unified_model_loader import UnifiedModelLoader
 from .remote_model_provider import RemoteModelProvider
+from .vllm_engine import VllmEngine
 
 __all__ = [
     "LocalLLModel",
@@ -18,4 +19,5 @@ __all__ = [
     "InferenceEngine",
     "UnifiedModelLoader",
     "RemoteModelProvider",
+    "VllmEngine",
 ]

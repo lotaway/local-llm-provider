@@ -70,3 +70,10 @@ packages = [
 local-llm-provider = "main:main"
 llp-cli = "clients.cli:main"
 acp-agent = "adapters.stdio_adapter:main"
+
+# Optional dependencies
+[project.optional-dependencies]
+vllm = [
+    "vllm>=0.6.0",
+]
+# 使用方式: pip install -e .[vllm]

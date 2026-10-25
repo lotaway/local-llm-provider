@@ -20,6 +20,7 @@ from constants import (
     TORCH_DTYPE,
     DEFAULT_CONTEXT_LENGTH,
     EMBEDDING_MODEL,
+    ENGINE_PREFERENCE,
 )
 import asyncio
 
@@ -185,10 +186,29 @@ class LocalLLModel:
             "use_gpu": not DeviceUtils.platform_is_mac(),
             "context_length": DEFAULT_CONTEXT_LENGTH,
             "quantization": QUANTIZATION,
+            "engine": ENGINE_PREFERENCE,
         }
 
         if TORCH_DTYPE:
             options["torch_dtype"] = TORCH_DTYPE
+
+        # vLLM specific options
+        vllm_options = {}
+        if VLLM_TENSOR_PARALLEL > 1:
+            vllm_options["tensor_parallel_size"] = VLLM_TENSOR_PARALLEL
+        if VLLM_GPU_MEMORY_UTIL != 0.9:
+            vllm_options["gpu_memory_utilization"] = VLLM_GPU_MEMORY_UTIL
+        if VLLM_MAX_MODEL_LEN != 8192:
+            vllm_options["max_model_len"] = VLLM_MAX_MODEL_LEN
+        if VLLM_QUANTIZATION:
+            vllm_options["quantization"] = VLLM_QUANTIZATION
+        if VLLM_ENFORCE_EAGER:
+            vllm_options["enforce_eager"] = VLLM_ENFORCE_EAGER
+        if VLLM_DTYPE != "auto":
+            vllm_options["dtype"] = VLLM_DTYPE
+
+        if vllm_options:
+            options["vllm_options"] = vllm_options
 
         loader = UnifiedModelLoader(model_path, options)
         self.engine = loader.get_engine()
