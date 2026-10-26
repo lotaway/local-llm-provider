@@ -3,8 +3,8 @@ Dependency injection container (lazy loading + optional dependency graceful degr
 Supports single-file testing: no forced heavy dependency loading.
 """
 import logging
-import asyncio
-from typing import Optional, Callable, Any, Dict, Type
+from collections.abc import Callable
+from typing import Any
 
 from infrastructure.config.settings import Settings, get_settings
 
@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 class Container:
     """Dependency injection container - lazy loading mode."""
 
-    def __init__(self, settings: Optional[Settings] = None):
+    def __init__(self, settings: Settings | None = None):
         self._settings = settings or get_settings()
-        self._overrides: Dict[Type, Any] = {}
-        self._singletons: Dict[Type, Any] = {}
+        self._overrides: dict[type, Any] = {}
+        self._singletons: dict[type, Any] = {}
         self._initialized = False
 
-    def register_override(self, interface: Type, instance: Any) -> None:
+    def register_override(self, interface: type, instance: Any) -> None:
         """Register test double (Mock/Stub)."""
         self._overrides[interface] = instance
         logger.debug(f"Override registered: {interface.__name__} -> {type(instance).__name__}")
@@ -30,7 +30,7 @@ class Container:
         self._overrides.clear()
         self._singletons.clear()
 
-    def _get_or_create(self, key: Type, factory: Callable[["Container"], Any]) -> Any:
+    def _get_or_create(self, key: type, factory: Callable[["Container"], Any]) -> Any:
         """Get singleton, create on first call."""
         if key in self._overrides:
             return self._overrides[key]
@@ -49,7 +49,6 @@ class Container:
         return self._get_or_create(ModelRepository, lambda c: FilesystemModelRepository(c.settings))
 
     def loader_factory(self):
-        from domain.inference.ports import ModelLoader
         from infrastructure.model.loader.factory import ModelLoaderFactory
         return self._get_or_create(ModelLoaderFactory, lambda c: ModelLoaderFactory(c.settings))
 
@@ -69,7 +68,9 @@ class Container:
 
         def factory(c):
             try:
-                from infrastructure.embedding.sentence_transformer_provider import SentenceTransformerEmbeddingProvider
+                from infrastructure.embedding.sentence_transformer_provider import (
+                    SentenceTransformerEmbeddingProvider,
+                )
                 return SentenceTransformerEmbeddingProvider(c.settings)
             except ImportError as e:
                 logger.warning(f"sentence-transformers not available: {e}, using NullEmbeddingProvider")
@@ -182,6 +183,12 @@ class Container:
         """Shutdown all resources."""
         logger.info("Shutting down container...")
 
+        from domain.inference.services import InferenceDomainService
+        from infrastructure.scheduling.async_scheduler import (
+            AsyncBatchScheduler,
+            AsyncTaskScheduler,
+        )
+
         if InferenceDomainService in self._singletons:
             inference = self._singletons[InferenceDomainService]
             if hasattr(inference, 'clear_engine'):
@@ -221,7 +228,7 @@ class Container:
 
 
 # Global container instance (singleton)
-_container: Optional[Container] = None
+_container: Container | None = None
 
 
 def get_container() -> Container:
@@ -238,7 +245,7 @@ def set_container(container: Container) -> None:
     _container = container
 
 
-async def initialize_container(settings: Optional[Settings] = None) -> Container:
+async def initialize_container(settings: Settings | None = None) -> Container:
     """Initialize global container (production entry point)."""
     global _container
     _container = Container(settings)
