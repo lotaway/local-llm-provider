@@ -181,12 +181,12 @@ mamba create -n ai python=3.12.12
 mamba activate ai
 
 # Install PyTorch ROCm version (match your ROCm version)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm10.0
 ```
 
 ### Updating Environment
 
-Updating the Windows AMD driver may change the bundled ROCm version (e.g., 7.2 → 7.4). This breaks the dependency chain:
+Updating the Windows AMD driver may change the bundled ROCm version (e.g., 7.x → 10.1). This breaks the dependency chain:
 
 ```
 Windows Driver → ROCm Userspace Libs (/opt/rocm) → librocdxg → PyTorch ROCm → bitsandbytes
@@ -225,7 +225,7 @@ Use below command or follow the [guide](https://rocm.docs.amd.com/projects/insta
 
 ```bash
 pip uninstall -y torch torchvision torchaudio
-pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm7.2
+pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm10.0
 ```
 
 If skipped: PyTorch is linked against old HIP libraries; loading GPU kernels causes segfaults or `undefined symbol` errors.
@@ -289,7 +289,7 @@ See [ROCm#3606](https://github.com/ROCm/ROCm/issues/3606) for details.
 
 - **ZLuda**: Install CUDA PyTorch (`pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128`). Note: ZLuda does not support bitsandbytes.
 - **DirectML**: `pip install torch-directml`
-- **Native Windows ROCm**: After ROCm 7.0, AMD provides native Windows ROCm. See [ROCm on Windows](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html).
+- **Native Windows ROCm**: After ROCm 7.0/10.0, AMD provides native Windows ROCm. See [ROCm on Windows](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html).
 
 ## For Multiple Mac (Apple silicon) devices
 
