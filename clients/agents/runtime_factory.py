@@ -159,19 +159,27 @@ class RuntimeFactory:
     @staticmethod
     def _mcp_to_cap(name, tool, perm) -> Dict:
         p_name = tool.get("permission")
-        safety = "UNKNOWN"
+        safety = tool.get("safety_level") or "UNKNOWN"
         needs_human = False
         if perm and p_name:
             r = perm.check_permission(p_name)
-            safety = r.get("safety_level", "UNKNOWN")
+            if not tool.get("safety_level"):
+                safety = r.get("safety_level", "UNKNOWN")
             needs_human = bool(r.get("needs_human", False))
+
+        # normalize safety to LOW/MEDIUM/HIGH/CRITICAL where possible
+        s_up = str(safety).upper()
+        if s_up == "SAFE":
+            s_up = "LOW"
+        if s_up not in ("LOW", "MEDIUM", "HIGH", "CRITICAL", "UNKNOWN"):
+            s_up = "UNKNOWN"
 
         return Capability(
             id=f"mcp.{name}",
             kind=CapabilityKind.MCP,
             name=name,
             description=name,
-            safety_level=safety,
+            safety_level=s_up,
             permission=p_name,
             requires_approval=needs_human,
         ).to_dict()

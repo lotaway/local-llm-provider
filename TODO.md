@@ -1,17 +1,12 @@
 # TODO — 未完成需求汇总
 
-> 由 `todo/` 下 6 份规格逐项核对后汇总，仅保留未完成项。
-> 原始设计文档（CLAUDE_SPEC / MOLT_BRAIN_PLAN / MOLT_BRAIN_SPEC / RAG_SPEC / TTS_SPEC / TTS_QUALITY_ESTIMATE）可在 git 历史中查看。
-
----
-
 ## 1. Agent 加载 Skill + MCP（来源：CLAUDE_SPEC.md）
 
-- [ ] 实现 MCP 协议 `initialize` / `tools/list` 动态发现，补齐 `DEGRADED` 退化状态与健康检查（当前仅按配置静态注册 tools，`DEGRADED` 枚举未被使用）
-- [ ] 在 `utils/mcp_loader.py` 读取并应用 `LLP_MCP_DEFAULT_SAFETY`，将安全级别传递给 `register_tool` 与 Capability
-- [ ] 在 `.env.example` 补充 `LLP_MCP_CONNECTIONS_DIR`、`LLP_MCP_CONNECTIONS_FILE`、`LLP_MCP_DEFAULT_SAFETY`
-- [ ] 统一安全级别取值：Capability 默认 `SAFE` 与规格的 `LOW|MEDIUM|HIGH|CRITICAL` 对齐，并核对 PermissionManager 双阶段审批提示
-- [ ] 新增 `tests/test_mcp_env_loading.py`、`tests/test_skills_env_loading.py`（规格测试计划列出但文件不存在）
+- [x] 实现 MCP 协议 `initialize` / `tools/list` 动态发现，补齐 `DEGRADED` 退化状态与健康检查（当前仅按配置静态注册 tools，`DEGRADED` 枚举未被使用）
+- [x] 在 `utils/mcp_loader.py` 读取并应用 `LLP_MCP_DEFAULT_SAFETY`，将安全级别传递给 `register_tool` 与 Capability
+- [x] 在 `.env.example` 补充 `LLP_MCP_CONNECTIONS_DIR`、`LLP_MCP_CONNECTIONS_FILE`、`LLP_MCP_DEFAULT_SAFETY`
+- [x] 统一安全级别取值：Capability 默认 `SAFE` 与规格的 `LOW|MEDIUM|HIGH|CRITICAL` 对齐，并核对 PermissionManager 双阶段审批提示
+- [x] 新增 `tests/test_mcp_env_loading.py`、`tests/test_skills_env_loading.py`（规格测试计划列出但文件不存在）
 
 ## 2. MOLT 类脑记忆系统（来源：MOLT_BRAIN_PLAN.md + MOLT_BRAIN_SPEC.md）
 

@@ -17,10 +17,11 @@ class MCPTaskAgent(BaseAgent):
             "read_file", self._read_file_tool, permission_name=PermissionNames.MCP_FILE_READ
         )
 
-    def register_tool(self, tool_name: str, tool_callable, permission_name: str = None):
+    def register_tool(self, tool_name: str, tool_callable, permission_name: str = None, safety_level: str = None):
         self.tools[tool_name] = {
             "callable": tool_callable,
             "permission": permission_name or PermissionNames.from_tool_name(tool_name),
+            "safety_level": (str(safety_level).upper() if safety_level else None),
         }
 
     def get_available_tools(self) -> list:
