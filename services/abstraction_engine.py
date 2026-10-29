@@ -2,6 +2,7 @@ from typing import List, Dict, Optional
 from constants import LEARNING
 from interfaces.memory_types import IMemoryRepository
 from interfaces.abstraction_types import IAbstractionEngine, ITopicExtractor
+from interfaces.ltm_index_types import ILtmIndexRepository
 from schemas.graph import LTMNode
 from services.topic_extractor import GraphKeywordTopicExtractor
 
@@ -10,12 +11,22 @@ class AbstractionEngine(IAbstractionEngine):
     MIN_EPISODES = 5
     MIN_AVG_IMPORTANCE = 0.6
 
-    def __init__(self, memory_repo: IMemoryRepository = None, mongo_repo=None, neo4j_repo=None, feedback_service=None, llm=None, topic_extractor: ITopicExtractor = None):
+    def __init__(
+        self,
+        memory_repo: IMemoryRepository = None,
+        mongo_repo=None,
+        neo4j_repo=None,
+        feedback_service=None,
+        llm=None,
+        topic_extractor: ITopicExtractor = None,
+        ltm_index: ILtmIndexRepository = None,
+    ):
         self._repo = memory_repo or mongo_repo
         self._neo4j_repo = neo4j_repo
         self._feedback_service = feedback_service
         self._llm = llm
         self._topic_extractor = topic_extractor or GraphKeywordTopicExtractor(neo4j_repo)
+        self._ltm_index = ltm_index
 
     def can_abstraction_trigger(self, topic: str) -> bool:
         episodes, avg_importance = self._find_related(topic)
@@ -81,17 +92,9 @@ class AbstractionEngine(IAbstractionEngine):
             except Exception:
                 pass
 
-        # write to milvus/es if available
-        if self._repo and hasattr(self._repo, "save_ltm_vector"):
-            try:
-                self._repo.save_ltm_vector(ltm_dict)
-            except Exception:
-                pass
-        if self._repo and hasattr(self._repo, "index_ltm_keywords"):
-            try:
-                self._repo.index_ltm_keywords(ltm_dict)
-            except Exception:
-                pass
+        if self._ltm_index is not None:
+            self._ltm_index.save_ltm_vector(ltm_dict)
+            self._ltm_index.index_ltm_keywords(ltm_dict)
 
         return {"topic": topic, "episodes_count": len(episodes), "avg_importance": avg_importance, "ltm": ltm_dict}
 

@@ -46,6 +46,9 @@ LEARNING = os.getenv("LEARNING", "false").lower() == "true"
 MOLT_SENSORY_COLLECTION = os.getenv("LLP_MOLT_SENSORY_COLLECTION", "molt_sensory_cache")
 MOLT_SENSORY_TTL_SECONDS = int(os.getenv("LLP_MOLT_SENSORY_TTL_SECONDS", "300"))
 MOLT_WORKING_MEMORY_CAPACITY = int(os.getenv("LLP_MOLT_WORKING_MEMORY_CAPACITY", "7"))
+MOLT_LTM_COLLECTION = os.getenv("LLP_MOLT_LTM_COLLECTION", "molt_ltm")
+MOLT_LTM_INDEX = os.getenv("LLP_MOLT_LTM_INDEX", "molt_ltm_keywords")
+MOLT_LTM_TTL_DAYS = int(os.getenv("LLP_MOLT_LTM_TTL_DAYS", "365"))
 
 LLP_SKILLS_DIRS = os.getenv("LLP_SKILLS_DIRS", "")
 LLP_ENABLE_CLAUDE_GLOBAL = os.getenv("LLP_ENABLE_CLAUDE_GLOBAL", "0")
