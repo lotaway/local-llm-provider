@@ -12,9 +12,10 @@ Return only a comma-separated list of entity names. If no entities are found, re
 Question: {query}
 """
 
-    def __init__(self, neo4j_repo: Neo4jRepository, llm: LocalLLModel):
+    def __init__(self, neo4j_repo: Neo4jRepository, llm: LocalLLModel, feedback_service=None):
         self.neo4j_repo = neo4j_repo
         self.llm = llm
+        self.feedback_service = feedback_service
 
     async def retrieve_context(self, query: str, hops: int = 2, limit_nodes: int = 15) -> str:
         try:
@@ -27,7 +28,23 @@ Question: {query}
             all_subgraphs = self._expand_subgraphs(start_nodes, hops)
             if not all_subgraphs: return ""
 
-            return self._format_aggregated_subgraphs(all_subgraphs, limit_nodes)
+            result = self._format_aggregated_subgraphs(all_subgraphs, limit_nodes)
+            try:
+                if self.feedback_service and result:
+                    chunk_ids = []
+                    for sg in all_subgraphs:
+                        for n in sg.get("nodes", []):
+                            cid = n.get("chunk_id") or n.get("source_chunk_id")
+                            if cid:
+                                chunk_ids.append(str(cid))
+                    if chunk_ids and hasattr(self.feedback_service, "on_recall_batch"):
+                        self.feedback_service.on_recall_batch(chunk_ids)
+                    elif chunk_ids and hasattr(self.feedback_service, "on_recall"):
+                        for cid in chunk_ids:
+                            self.feedback_service.on_recall(cid)
+            except Exception:
+                pass
+            return result
         except Exception as e:
             logger.error(f"Graph retrieval failed: {e}", exc_info=True)
             return ""

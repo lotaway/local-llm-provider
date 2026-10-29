@@ -16,7 +16,14 @@ class EvolutionConfig:
     history_limit: int = 200
 
 
-    def __init__(self, memory_repo=None, config: EvolutionConfig | None = None, skill_researcher=None, skill_creator=None):
+class EvolutionDispatcher(IEvolutionDispatcher):
+    def __init__(
+        self,
+        memory_repo=None,
+        config: Optional[EvolutionConfig] = None,
+        skill_researcher=None,
+        skill_creator=None,
+    ):
         self._memory_repo = memory_repo
         self._config = config or EvolutionConfig()
         self._skill_researcher = skill_researcher
@@ -222,16 +229,14 @@ class EvolutionConfig:
         if not self._skill_researcher or not self._skill_creator:
             return {"error": "Evolution services not configured"}
 
-        # 1. Research
         research_result = await self._skill_researcher.research_missing_skill(task_description, error_context)
         if "error" in research_result:
             return research_result
 
-        # 2. Create and Deploy
         success = await self._skill_creator.create_and_deploy(research_result)
-        
+
         return {
             "success": success,
             "skill_ir": research_result,
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": datetime.utcnow().isoformat() + "Z",
         }
