@@ -51,7 +51,7 @@
 - [x] 实现 Emotion Parser（连续 VAD：valence/arousal/dominance/speed/pitch/energy）
 - [x] 实现流式输出（首包延迟 <500ms）- [x] 接入用户偏好记忆 `tts_user_profiles`
 - [ ] 将质量网关（WER/DNSMOS/Similarity 自动拦截）接入 TTS 生成链路
-- [ ] 实现后处理呼吸感与随机 jitter
+- [x] 实现后处理呼吸感与随机 jitter
 
 ## 5. TTS 质量评估与线上监控（来源：TTS_QUALITY_ESTIMATE.md）
 
