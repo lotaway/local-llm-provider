@@ -10,16 +10,16 @@
 
 ## 2. MOLT 类脑记忆系统（来源：MOLT_BRAIN_PLAN.md + MOLT_BRAIN_SPEC.md）
 
-- [ ] 修复 `services/evolution_dispatcher.py`：`EvolutionDispatcher` 类缺失，`__init__` 与全部方法被错误嵌套进 `EvolutionConfig`；且 `config: EvolutionConfig | None` 在类体内前向引用会在导入时抛 `NameError`，导致 `clients/agents/runtime_factory.py` 无法导入
-- [ ] 实现 `VersionManager` 真实逻辑：冲突检测（语义相似度）、同源合并、异源保留版本、版本链查询、回滚；接入 `Neo4jRepository.save_ltm / get_ltm_versions_chain / create_ltm_version_relation`
-- [ ] 实现 `AbstractionEngine.abstract_to_ltm`：LLM 抽象总结、生成标准化结论（conclusion/conditions/confidence/sources）、写入 Neo4j LTM、结论向量写入 Milvus、关键词写入 ES
-- [ ] 为 `MoltController` 增加动态策略调整 `evaluate_and_adjust`（recall threshold / decay rate / abstraction 触发阈值），当前仅有 `collect_metrics`
-- [ ] 实现 `IMoltScheduler`（当前仅有接口），将 decay / abstraction / evaluation 周期任务注册到现有调度器
-- [ ] 修复/更新 `tests/test_molt_integration.py`：引用了已不存在的 `FeedbackConfig / DecayConfig / AbstractionConfig / MoltConfig / VersionConfig`，且构造签名不匹配，测试无法收集
-- [ ] 将 `graph_retriever` 接入 `FeedbackService.on_recall` 回调（目前仅 `hybrid_retriever` 有）
-- [ ] 实现 M1 感觉缓存（MongoDB TTL collection）与 M2 工作记忆（进程内 7±2、rehearsal count）
-- [ ] 实现 LTM 结论向量（Milvus）与 ES 关键词 Tag 写入，补全可解释性字段（来源、过期/强化时间）
-- [ ] 核对 `LEARNING` 开关覆盖所有进化入口（调度器、回滚等路径）
+- [x] 修复 `services/evolution_dispatcher.py`：`EvolutionDispatcher` 类缺失，`__init__` 与全部方法被错误嵌套进 `EvolutionConfig`；且 `config: EvolutionConfig | None` 在类体内前向引用会在导入时抛 `NameError`，导致 `clients/agents/runtime_factory.py` 无法导入
+- [x] 实现 `VersionManager` 真实逻辑：冲突检测（语义相似度）、同源合并、异源保留版本、版本链查询、回滚；接入 `Neo4jRepository.save_ltm / get_ltm_versions_chain / create_ltm_version_relation`
+- [x] 实现 `AbstractionEngine.abstract_to_ltm`：LLM 抽象总结、生成标准化结论（conclusion/conditions/confidence/sources）、写入 Neo4j LTM、结论向量写入 Milvus、关键词写入 ES
+- [x] 为 `MoltController` 增加动态策略调整 `evaluate_and_adjust`（recall threshold / decay rate / abstraction 触发阈值），当前仅有 `collect_metrics`
+- [x] 实现 `IMoltScheduler`（当前仅有接口），将 decay / abstraction / evaluation 周期任务注册到现有调度器
+- [x] 修复/更新 `tests/test_molt_integration.py`：引用了已不存在的 `FeedbackConfig / DecayConfig / AbstractionConfig / MoltConfig / VersionConfig`，且构造签名不匹配，测试无法收集
+- [x] 将 `graph_retriever` 接入 `FeedbackService.on_recall` 回调（目前仅 `hybrid_retriever` 有）
+- [x] 实现 M1 感觉缓存（MongoDB TTL collection）与 M2 工作记忆（进程内 7±2、rehearsal count）
+- [x] 实现 LTM 结论向量（Milvus）与 ES 关键词 Tag 写入，补全可解释性字段（来源、过期/强化时间）
+- [x] 核对 `LEARNING` 开关覆盖所有进化入口（调度器、回滚等路径）
 
 ## 3. RAG 架构（来源：RAG_SPEC.md）
 
