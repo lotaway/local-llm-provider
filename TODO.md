@@ -23,7 +23,7 @@
 
 ### 2.1 MOLT 工程化打磨（补充任务）
 
-- [ ] **收敛 MoltController API**：去除为旧测试新增的冗余参数（`memory_repo` 别名）和冗余返回字段（`decay_stats`/`abstraction_results` 等），统一到 `IMoltController` 定义，标记 deprecated 并逐步移除兼容分支
+- [x] **收敛 MoltController API**：去除为旧测试新增的冗余参数（`memory_repo` 别名）和冗余返回字段（`decay_stats`/`abstraction_results` 等），统一到 `IMoltController` 定义
 - [ ] **完善 M1/M2 真正实现**：新增 M1 感觉缓存（MongoDB TTL collection，带过期/命中统计）、M2 工作记忆（进程内环形缓冲，容量 7±2，rehearsal count、最近访问时间），接入 `EvolutionDispatcher` 与 `MoltController` 生命周期
 - [ ] **改进抽象主题提取**：替换 `AbstractionEngine` 中 `text.split()[0]` 的粗暴提取，改用 LLM 实体/关键词抽取或复用 Neo4j Concept/Entity，过滤停用词并去重，减少无效抽象触发
 - [ ] **补全 LTM 向量/关键词真实入库**：在 `repositories/` 或 `infrastructure/rag/` 实现 `save_ltm_vector`（Milvus）与 `index_ltm_keywords`（ES），写入可解释性字段（来源 chunk_ids、首次/最后强化时间、过期时间、版本关系）

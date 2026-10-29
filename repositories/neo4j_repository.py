@@ -180,6 +180,12 @@ class Neo4jRepository:
             updated_at=ltm.updated_at.isoformat(),
         )
 
+    def count_ltm_nodes(self) -> int:
+        with self.driver.session() as session:
+            result = session.run("MATCH (l:LTMNode) RETURN count(l) AS total")
+            record = result.single()
+            return int(record["total"]) if record else 0
+
     def get_ltm_by_topic(self, topic: str) -> List[Dict[str, Any]]:
         """Get all versions of LTM nodes for a topic"""
         with self.driver.session() as session:

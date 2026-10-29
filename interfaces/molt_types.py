@@ -15,6 +15,12 @@ class IMoltController(ABC):
     @abstractmethod
     def collect_metrics(self) -> Dict[str, Any]: ...
 
+    @abstractmethod
+    def evaluate_and_adjust(self) -> Dict[str, Any]: ...
+
+    @abstractmethod
+    def get_strategy(self) -> Dict[str, float]: ...
+
 
 class IMoltScheduler(ABC):
     @abstractmethod
