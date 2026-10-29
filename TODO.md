@@ -49,7 +49,8 @@
 - [x] 实现 `clone_voice` 完整流程：参考音频→Speaker Embedding→Redis 缓存→MongoDB `tts_speakers` 持久化（当前为占位）
 - [x] 新增 HTTP 接口 `POST /tts`、`POST /tts/clone`
 - [x] 实现 Emotion Parser（连续 VAD：valence/arousal/dominance/speed/pitch/energy）
-- [x] 实现流式输出（首包延迟 <500ms）- [x] 接入用户偏好记忆 `tts_user_profiles`
+- [x] 实现流式输出（首包延迟 <500ms）
+- [x] 接入用户偏好记忆 `tts_user_profiles`
 - [x] 将质量网关（WER/DNSMOS/Similarity 自动拦截）接入 TTS 生成链路
 - [x] 实现后处理呼吸感与随机 jitter
 
@@ -61,5 +62,5 @@
 - [x] 生成失败率、音频时长异常、重复片段检测
 - [x] 用户反馈分布（差评 / 投诉 / 重新生成次数）
 - [x] 固定测试句集 + 每日回归测试 + 版本对比曲线
-- [ ] 补齐 `tts_estimate` 的 DNSMOS 真实推理细节（当前 `_run_inference` 为简化实现，需按官方前处理/分帧）
+- [x] 补齐 `tts_estimate` 的 DNSMOS 真实推理细节（当前 `_run_inference` 为简化实现，需按官方前处理/分帧）
 - [x] 为 `tts_estimate` 增加批量评估与 CLI 参数入口（当前 `main.py` 使用 mock 路径）
