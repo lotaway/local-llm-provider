@@ -161,7 +161,7 @@ class LocalRAG:
         # Graph RAG initialization
         self.neo4j_repo = Neo4jRepository()
         self.graph_extractor = GraphExtractionService(llm)
-        self.graph_retriever = GraphRetriever(self.neo4j_repo, llm)
+        self.graph_retriever = GraphRetriever(self.neo4j_repo, llm, feedback_service=self.feedback_service)
 
         # Feedback service for memory lifecycle
         self.feedback_service = FeedbackService(self.mongo_repo)

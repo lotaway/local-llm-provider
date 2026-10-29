@@ -28,7 +28,7 @@
 - [x] **改进抽象主题提取**：替换 `AbstractionEngine` 中 `text.split()[0]` 的粗暴提取，改用 LLM 实体/关键词抽取或复用 Neo4j Concept/Entity，过滤停用词并去重，减少无效抽象触发
 - [x] **补全 LTM 向量/关键词真实入库**：在 `repositories/` 或 `infrastructure/rag/` 实现 `save_ltm_vector`（Milvus）与 `index_ltm_keywords`（ES），写入可解释性字段（来源 chunk_ids、首次/最后强化时间、过期时间、版本关系）
 - [x] **强化 VersionManager 冲突检测与合并**：接入 Milvus 向量相似度参与 `detect_conflict`，实现同源合并（条件/来源去重、置信度加权）、异源保留版本链（`create_ltm_version_relation` 写入 `PREV_VERSION/NEXT_VERSION/SUPERSEDES/DERIVED_FROM`），完善 `rollback_to`（校验版本链、依赖、回滚影响范围并返回详细结果）
-- [ ] **健壮 GraphRetriever 反馈回调**：改进从子图节点提取 `chunk_id` 的逻辑（兼容多种字段名、从关系/证据中回溯），并在找不到 `chunk_id` 时记录可观测日志，避免静默失效
+- [x] **健壮 GraphRetriever 反馈回调**：改进从子图节点提取 `chunk_id` 的逻辑（兼容多种字段名、从关系/证据中回溯），并在找不到 `chunk_id` 时记录可观测日志，避免静默失效
 - [ ] **打通 MoltScheduler 与现有任务调度器**：查找并接入项目实际的统一调度器（若无则新增最小适配），配置 decay/abstraction/evaluation 周期、失败重试、并发控制，并在 `LEARNING` 开关下安全注册
 - [ ] **MCP loader 工程化**：将工具调用桩替换为可扩展的调用通道（预留 JSON-RPC 执行路径、参数校验、超时、重试、错误分类）、增强 stdout 读取健壮性（处理大 JSON/无换行/混合 stderr）、明确配置 tools 与动态发现优先级及冲突处理
 - [ ] **收紧 Molt 集成测试**：恢复对核心行为的有效断言（冲突检测、合并/保留、回滚、策略调整触发条件），减少过度 mock，必要时同步更新测试以匹配收敛后的 API
