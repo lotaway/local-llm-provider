@@ -186,6 +186,17 @@ class Neo4jRepository:
             record = result.single()
             return int(record["total"]) if record else 0
 
+    def list_concepts(self, limit: int = 200) -> List[Dict[str, Any]]:
+        with self.driver.session() as session:
+            query = (
+                "MATCH (e:Entity) "
+                "WHERE toLower(e.type) = 'concept' "
+                "RETURN e.canonical_name AS name, e.stable_id AS stable_id "
+                "LIMIT $limit"
+            )
+            result = session.run(query, limit=limit)
+            return [dict(record) for record in result]
+
     def get_ltm_by_topic(self, topic: str) -> List[Dict[str, Any]]:
         """Get all versions of LTM nodes for a topic"""
         with self.driver.session() as session:

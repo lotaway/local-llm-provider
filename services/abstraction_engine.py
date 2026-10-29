@@ -1,19 +1,21 @@
 from typing import List, Dict, Optional
 from constants import LEARNING
 from interfaces.memory_types import IMemoryRepository
-from interfaces.abstraction_types import IAbstractionEngine
+from interfaces.abstraction_types import IAbstractionEngine, ITopicExtractor
 from schemas.graph import LTMNode
+from services.topic_extractor import GraphKeywordTopicExtractor
 
 
 class AbstractionEngine(IAbstractionEngine):
     MIN_EPISODES = 5
     MIN_AVG_IMPORTANCE = 0.6
 
-    def __init__(self, memory_repo: IMemoryRepository = None, mongo_repo=None, neo4j_repo=None, feedback_service=None, llm=None):
+    def __init__(self, memory_repo: IMemoryRepository = None, mongo_repo=None, neo4j_repo=None, feedback_service=None, llm=None, topic_extractor: ITopicExtractor = None):
         self._repo = memory_repo or mongo_repo
         self._neo4j_repo = neo4j_repo
         self._feedback_service = feedback_service
         self._llm = llm
+        self._topic_extractor = topic_extractor or GraphKeywordTopicExtractor(neo4j_repo)
 
     def can_abstraction_trigger(self, topic: str) -> bool:
         episodes, avg_importance = self._find_related(topic)
@@ -97,26 +99,21 @@ class AbstractionEngine(IAbstractionEngine):
         if not LEARNING:
             return []
 
-        results = []
-        episodes = []
+        topics = self._topic_extractor.extract(self._episodic_memories())
+        return [
+            result
+            for topic in topics
+            if self.can_abstraction_trigger(topic)
+            for result in [self.abstract_to_ltm(topic)]
+            if result
+        ]
+
+    def _episodic_memories(self) -> List[Dict]:
         if self._repo and hasattr(self._repo, "get_by_type"):
-            episodes = self._repo.get_by_type("episodic")
-        elif self._repo and hasattr(self._repo, "get_chunks_by_memory_type"):
-            try:
-                episodes = self._repo.get_chunks_by_memory_type("episodic") or []
-            except Exception:
-                episodes = []
-        topics = set()
-        for e in episodes:
-            text = e.get("text") or e.get("content") or ""
-            if text:
-                topics.add(text.split()[0])
-        for topic in list(topics)[:10]:
-            if self.can_abstraction_trigger(topic):
-                result = self.abstract_to_ltm(topic)
-                if result:
-                    results.append(result)
-        return results
+            return self._repo.get_by_type("episodic")
+        if self._repo and hasattr(self._repo, "get_chunks_by_memory_type"):
+            return self._repo.get_chunks_by_memory_type("episodic") or []
+        return []
 
     def _find_related(self, topic: str) -> tuple:
         episodes = []

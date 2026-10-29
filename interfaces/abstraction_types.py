@@ -2,6 +2,11 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 
 
+class ITopicExtractor(ABC):
+    @abstractmethod
+    def extract(self, episodes: List[Dict[str, Any]]) -> List[str]: ...
+
+
 class IAbstractionEngine(ABC):
     @abstractmethod
     def can_abstraction_trigger(self, topic: str) -> bool: ...
