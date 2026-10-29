@@ -1,6 +1,6 @@
 import pytest
 
-from services.emotion_parser import EmotionParser, EmotionParams
+from services.emotion_parser import EmotionParser
 
 
 def test_emotion_parser_returns_stable_normalized_params():
