@@ -36,11 +36,11 @@
 
 ## 3. RAG 架构（来源：RAG_SPEC.md）
 
-- [ ] 查询协同：Neo4j 命中 Concept 后反查关联 `chunk_id`，并在 Milvus 检索时按 `chunk_id` 过滤（当前仅把图上下文拼入 prompt）
-- [ ] 对齐 ES 索引字段为 `chunk_id/doc_id/text/filename` 并支持高亮（当前仅写入 `content + metadata`）
-- [ ] 补齐 `infrastructure/rag/milvus_store.py` 与 `infrastructure/rag/local_rag_service.py::MilvusVectorStore` 的占位实现（`add_documents` 仅返回 id、`similarity_search` 返回空）
-- [ ] 校验增量/可重跑流程：`documents.status`（chunked/embedded/graphed）断点续跑与幂等
-- [ ] 增加 checksum 变更触发重建与失败状态重试
+- [x] 查询协同：Neo4j 命中 Concept 后反查关联 `chunk_id`，并在 Milvus 检索时按 `chunk_id` 过滤（当前仅把图上下文拼入 prompt）
+- [x] 对齐 ES 索引字段为 `chunk_id/doc_id/text/filename` 并支持高亮（当前仅写入 `content + metadata`）
+- [x] 补齐 `infrastructure/rag/milvus_store.py` 与 `infrastructure/rag/local_rag_service.py::MilvusVectorStore` 的占位实现（`add_documents` 仅返回 id、`similarity_search` 返回空）
+- [x] 校验增量/可重跑流程：`documents.status`（chunked/embedded/graphed）断点续跑与幂等
+- [x] 增加 checksum 变更触发重建与失败状态重试
 
 ## 4. TTS 情感语音系统（来源：TTS_SPEC.md）
 

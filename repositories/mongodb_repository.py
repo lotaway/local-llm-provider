@@ -66,6 +66,9 @@ class MongoDBRepository:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         now = datetime.utcnow().isoformat() + "Z"
+        existing = self.documents.find_one(
+            {"_id": doc_id}, {"status": 1, "created_at": 1, "last_error": 1}
+        )
 
         doc = {
             "_id": doc_id,
@@ -74,15 +77,19 @@ class MongoDBRepository:
             "author": author or "",
             "summary": summary or "",
             "content": content,
-            "created_at": now,
+            "created_at": (existing or {}).get("created_at", now),
             "updated_at": now,
             "path": path or "",
             "filename": filename or "",
             "format": format,
             "checksum": checksum or "",
-            "status": {"chunked": False, "embedded": False, "graphed": False},
+            "status": (existing or {}).get(
+                "status", {"chunked": False, "embedded": False, "graphed": False}
+            ),
             "metadata": metadata or {},
         }
+        if existing and existing.get("last_error"):
+            doc["last_error"] = existing["last_error"]
 
         self.documents.update_one({"_id": doc_id}, {"$set": doc}, upsert=True)
         logger.info(f"Document {doc_id} saved to MongoDB with title: {title}")
@@ -90,6 +97,53 @@ class MongoDBRepository:
 
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
         return self.documents.find_one({"_id": doc_id})
+
+    def get_document_by_path(self, path: str) -> Optional[Dict[str, Any]]:
+        return self.documents.find_one({"path": path})
+
+    def delete_document(self, doc_id: str) -> int:
+        deleted_chunks = self.chunks.delete_many({"doc_id": doc_id}).deleted_count
+        self.documents.delete_one({"_id": doc_id})
+        logger.info(
+            f"Document {doc_id} removed with {deleted_chunks} chunks",
+            extra={"doc_id": doc_id, "chunk_count": deleted_chunks},
+        )
+        return int(deleted_chunks)
+
+    def mark_document_error(self, doc_id: str, step: str, message: str) -> None:
+        self.documents.update_one(
+            {"_id": doc_id},
+            {
+                "$set": {
+                    f"status.{step}": False,
+                    "last_error": {
+                        "step": step,
+                        "message": str(message)[:1000],
+                        "at": datetime.utcnow().isoformat() + "Z",
+                    },
+                    "updated_at": datetime.utcnow().isoformat() + "Z",
+                }
+            },
+        )
+
+    def clear_document_error(self, doc_id: str) -> None:
+        self.documents.update_one(
+            {"_id": doc_id}, {"$unset": {"last_error": ""}}
+        )
+
+    def has_incomplete_documents(self) -> bool:
+        return (
+            self.documents.count_documents(
+                {
+                    "$or": [
+                        {"status.chunked": False},
+                        {"status.embedded": False},
+                        {"status.graphed": False},
+                    ]
+                }
+            )
+            > 0
+        )
 
     def document_exists(self, path: str) -> bool:
         return self.documents.find_one({"path": path}) is not None

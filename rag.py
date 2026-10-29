@@ -3,6 +3,7 @@ import json
 import re
 import logging
 import hashlib
+import inspect
 from pymilvus import connections, utility
 from constants import DATA_PATH, DB_HOST, DB_PORT, DB_COLLECTION, EMBEDDING_MODEL
 
@@ -37,7 +38,16 @@ from repositories.neo4j_repository import Neo4jRepository
 from repositories.mongodb_repository import MongoDBRepository
 from services.graph_extraction_service import GraphExtractionService
 from services.feedback_service import FeedbackService
+from services.ingestion_checkpoint import (
+    checksum_matches,
+    is_complete,
+    needs_rebuild,
+    normalize_status,
+    pending_steps,
+)
 from retrievers.graph_retriever import GraphRetriever
+from retrievers.graph_coordinator import GraphQueryCoordinator
+from retrievers.chunk_filter import GraphFilteredVectorRetriever
 import asyncio
 
 
@@ -161,10 +171,11 @@ class LocalRAG:
         # Graph RAG initialization
         self.neo4j_repo = Neo4jRepository()
         self.graph_extractor = GraphExtractionService(llm)
-        self.graph_retriever = GraphRetriever(self.neo4j_repo, llm, feedback_service=self.feedback_service)
-
-        # Feedback service for memory lifecycle
         self.feedback_service = FeedbackService(self.mongo_repo)
+        self.graph_coordinator = GraphQueryCoordinator(self.neo4j_repo)
+        self.graph_retriever = GraphRetriever(
+            self.neo4j_repo, llm, feedback_service=self.feedback_service
+        )
 
         # Track latest retrievals for feedback/evolution
         self.last_retrieved_docs = []
@@ -173,7 +184,7 @@ class LocalRAG:
     async def init_rag_chain(self):
         vectorstore = await self.get_or_create_vectorstore()
         if vectorstore is None:
-            Exception("No vectorstore available, maybe not docs are loaded?")
+            raise RuntimeError("No vectorstore available, maybe no docs are loaded")
         vectorstore = cast(Milvus, vectorstore)
         # retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
         # retriever = ExpandedRetriever(vectorstore, search_kwargs={"k": 3})
@@ -186,6 +197,13 @@ class LocalRAG:
                 bm25_weight=0.3,
                 k=10 if self.use_reranking else 5,
                 feedback_service=self.feedback_service,
+                chunk_id_provider=self.graph_coordinator.find_chunk_ids,
+            )
+        elif self.graph_coordinator is not None:
+            retriever = GraphFilteredVectorRetriever(
+                vectorstore=vectorstore,
+                k=10 if self.use_reranking else 5,
+                chunk_id_provider=self.graph_coordinator.find_chunk_ids,
             )
         else:
             retriever = vectorstore.as_retriever(
@@ -255,35 +273,82 @@ class LocalRAG:
     async def add_document(
         self, title: str, content: str, source: str, content_type: str = "md", **kwargs
     ):
-        filename = source if source else f"{title}.{content_type}"
-        filename = os.path.basename(filename)  # Basic protection
+        filename = os.path.basename(source) if source else f"{title}.{content_type}"
         file_path = os.path.join(self.data_path, "uploads", filename)
-
-        # Ensure directory exists
         os.makedirs(os.path.join(self.data_path, "uploads"), exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as handle:
+            handle.write(content)
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
-
-        # Calculate checksum
         checksum = hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-        # Generate doc_id
         doc_id = f"doc_{checksum[:16]}"
+        existing = self.mongo_repo.get_document_by_path(file_path)
+        if existing and checksum_matches(existing, checksum) and is_complete(existing.get("status")):
+            return self._skipped_result(existing, filename)
+        if needs_rebuild(existing, checksum):
+            await self._purge_document(existing)
 
+        self._save_document_record(
+            doc_id,
+            title,
+            content,
+            source,
+            filename,
+            file_path,
+            content_type,
+            checksum,
+            kwargs,
+        )
+        status = normalize_status(self.mongo_repo.get_document(doc_id).get("status"))
+        chunks = await self._execute_step(
+            doc_id,
+            "chunked",
+            lambda: self._ensure_chunks(
+                doc_id, content, source, title, content_type, status
+            ),
+        )
+        await self._execute_step(
+            doc_id, "embedded", lambda: self._ensure_embeddings(doc_id, chunks, status)
+        )
+        await self._execute_step(doc_id, "graphed", lambda: self._ensure_graph(doc_id, chunks, status))
+        return {
+            "doc_id": doc_id,
+            "filename": filename,
+            "chunks": len(chunks),
+            "pending_at_start": pending_steps(status),        }
+
+    def _skipped_result(self, document: dict, filename: str) -> dict:
+        doc_id = document["_id"]
+        chunks = self.mongo_repo.get_chunks_by_doc(doc_id)
+        return {"doc_id": doc_id, "filename": filename, "chunks": len(chunks), "skipped": True}
+
+    async def _execute_step(self, doc_id: str, step: str, operation):
+        try:
+            result = operation()
+            if inspect.isawaitable(result):
+                result = await result
+            self.mongo_repo.clear_document_error(doc_id)
+            return result
+        except Exception as error:
+            self.mongo_repo.mark_document_error(doc_id, step, str(error))
+            logger.error(
+                f"Ingestion step failed: {step}",
+                extra={"doc_id": doc_id, "step": step},
+                exc_info=True,
+            )
+            raise
+
+    def _save_document_record(
+        self, doc_id, title, content, source, filename, file_path, content_type, checksum, kwargs
+    ) -> None:
         metadata = kwargs.get("metadata", {})
-        doc_title = title or "Untitled"
-        doc_author = kwargs.get("author", "")
-        doc_summary = kwargs.get("summary", "")
-        metadata.update({k: v for k, v in kwargs.items() if v is not None})
-
+        metadata.update({key: value for key, value in kwargs.items() if value is not None})
         self.mongo_repo.save_document(
             doc_id=doc_id,
             content=content,
-            title=doc_title,
+            title=title or "Untitled",
             source=source,
-            author=doc_author,
-            summary=doc_summary,
+            author=kwargs.get("author", ""),
+            summary=kwargs.get("summary", ""),
             path=file_path,
             filename=filename,
             format=content_type,
@@ -291,67 +356,91 @@ class LocalRAG:
             metadata=metadata,
         )
 
-        logger.info(f"Document {doc_id} saved to MongoDB")
+    async def _purge_document(self, document: dict) -> None:
+        doc_id = document["_id"]
+        chunk_ids = [chunk["chunk_id"] for chunk in self.mongo_repo.get_chunks_by_doc(doc_id)]
+        self._delete_vectors(chunk_ids)
+        if self.es_retriever:
+            self.es_retriever.delete_by_chunk_ids(chunk_ids)
+        self.neo4j_repo.delete_document_graph(doc_id)
+        self.mongo_repo.delete_document(doc_id)
+        logger.info(
+            "Rebuilding document after checksum change",
+            extra={"doc_id": doc_id, "chunk_count": len(chunk_ids)},
+        )
 
-        # Step 2: Generate chunks and save to MongoDB
+    def _delete_vectors(self, chunk_ids: List[str]) -> None:
+        if not chunk_ids or not utility.has_collection(self.collection):
+            return
+        vectorstore = Milvus(
+            embedding_function=self.get_embeddings(),
+            connection_args={"uri": self.connection_uri},
+            collection_name=self.collection,
+        )
+        vectorstore.delete(ids=chunk_ids)
+
+    def _ensure_chunks(self, doc_id, content, source, title, content_type, status) -> List[Document]:
+        if status.get("chunked"):
+            stored = self.mongo_repo.get_chunks_by_doc(doc_id)
+            if stored:
+                return [self._chunk_document(record) for record in stored]
         doc = Document(
             page_content=content,
             metadata={"source": source, "title": title, "doc_id": doc_id},
         )
-        text_splitter = self._select_text_splitter(source, content_type)
-        langchain_chunks = text_splitter.split_documents([doc])
-
-        # Save chunks to MongoDB with stable IDs
-        chunk_records = []
-        for idx, chunk in enumerate(langchain_chunks):
-            chunk_id = f"{doc_id}_chunk_{idx:04d}"
-
-            chunk_record = self.mongo_repo.save_chunk(
+        chunks = self._select_text_splitter(source, content_type).split_documents([doc])
+        for index, chunk in enumerate(chunks):
+            chunk_id = f"{doc_id}_chunk_{index:04d}"
+            chunk.metadata.update({"chunk_id": chunk_id, "doc_id": doc_id})
+            self.mongo_repo.save_chunk(
                 chunk_id=chunk_id,
                 doc_id=doc_id,
-                index=idx,
+                index=index,
                 text=chunk.page_content,
-                offset_start=0,  # Could calculate actual offsets if needed
+                offset_start=0,
                 offset_end=len(chunk.page_content),
                 metadata=chunk.metadata,
             )
-            chunk_records.append(chunk_record)
-
-            # Update langchain chunk metadata with chunk_id
-            chunk.metadata["chunk_id"] = chunk_id
-            chunk.metadata["doc_id"] = doc_id
-
         self.mongo_repo.update_document_status(doc_id, "chunked", True)
-        logger.info(f"Saved {len(chunk_records)} chunks to MongoDB")
+        return chunks
 
-        # Step 3: Vectorize and save to Milvus
-        vectorstore = await self.get_or_create_vectorstore()
-        if vectorstore:
-            # Add documents with chunk_id in metadata
-            vectorstore.add_documents(langchain_chunks)
-            logger.info(f"Added {len(langchain_chunks)} chunks to Milvus")
+    def _chunk_document(self, record: dict) -> Document:
+        metadata = dict(record.get("metadata") or {})
+        metadata.update(
+            {"chunk_id": record["chunk_id"], "doc_id": record["doc_id"]}
+        )
+        return Document(page_content=record.get("text", ""), metadata=metadata)
 
-            # Update embedding status in MongoDB
-            for chunk_record in chunk_records:
-                self.mongo_repo.update_chunk_embedding_status(
-                    chunk_record["chunk_id"], "done"
-                )
-
+    async def _ensure_embeddings(self, doc_id, chunks, status) -> None:
+        if status.get("embedded"):
+            return
+        pending = [chunk for chunk in chunks if self._needs_embedding(chunk)]
+        if pending:
+            vectorstore = await self.get_or_create_vectorstore()
+            if vectorstore is None:
+                raise RuntimeError("no vector store available for embedding step")
+            vectorstore.add_documents(pending)
+            for chunk in pending:
+                self.mongo_repo.update_chunk_embedding_status(chunk.metadata["chunk_id"], "done")
+        if self.use_hybrid_search and self.es_retriever:
+            self.es_retriever.index_documents(chunks)
         self.mongo_repo.update_document_status(doc_id, "embedded", True)
 
-        # Step 4: Index to Elasticsearch
-        if self.use_hybrid_search and self.es_retriever:
-            self.es_retriever.index_documents(langchain_chunks)
-            logger.info(f"Added {len(langchain_chunks)} chunks to Elasticsearch")
+    def _needs_embedding(self, chunk: Document) -> bool:
+        record = self.mongo_repo.get_chunk(chunk.metadata.get("chunk_id"))
+        return bool(record) and record.get("embedding_status") != "done"
 
-        # Step 5: Extract graph and save to Neo4j (with chunk_id references)
-        await self._async_extract_graph(langchain_chunks, doc_id)
-        self.mongo_repo.update_document_status(doc_id, "graphed", True)
-
-        return {"doc_id": doc_id, "filename": filename, "chunks": len(chunk_records)}
+    async def _ensure_graph(self, doc_id, chunks, status) -> None:
+        if status.get("graphed"):
+            return
+        succeeded = await self._async_extract_graph(chunks, doc_id)
+        if succeeded is False:
+            raise RuntimeError("graph extraction incomplete")
 
     async def _async_extract_graph(self, chunks: List[Document], source_doc_id: str):
         logger.info(f"Starting graph extraction for {len(chunks)} chunks...")
+        if not chunks:
+            return True
 
         # Create Document node in Neo4j
         doc_metadata = chunks[0].metadata if chunks else {}
@@ -368,6 +457,7 @@ class LocalRAG:
 
         total_entities = 0
         total_relations = 0
+        failed_chunks = 0
 
         for i, chunk in enumerate(chunks):
             try:
@@ -416,7 +506,7 @@ class LocalRAG:
                     self.neo4j_repo.session.run(
                         """
                         MATCH (c:Chunk {chunk_id: $chunk_id})
-                        MATCH (e:Concept {stable_id: $stable_id})
+                        MATCH (e:Entity {stable_id: $stable_id})
                         MERGE (c)-[:DESCRIBES]->(e)
                         """,
                         chunk_id=chunk_id,
@@ -430,14 +520,19 @@ class LocalRAG:
                     total_relations += 1
 
             except Exception as e:
+                failed_chunks += 1
                 logger.error(f"Error during graph extraction for chunk {i + 1}: {e}")
-                import traceback
-
-                traceback.print_exc()
 
         logger.info(
             f"Graph extraction completed. Total entities: {total_entities}, Total relations: {total_relations}"
         )
+        if failed_chunks:
+            self.mongo_repo.mark_document_error(
+                source_doc_id, "graphed", f"{failed_chunks} chunks failed graph extraction"
+            )
+            return False
+        self.mongo_repo.update_document_status(source_doc_id, "graphed", True)
+        return True
 
     def check_document_exists(self, bvid: str, cid: int) -> bool:
         if not self.es_retriever:
@@ -445,18 +540,15 @@ class LocalRAG:
 
         try:
             query = {
-                "query": {
-                    "bool": {
-                        "must": [
-                            {"match": {"metadata.bvid": bvid}},
-                            {"match": {"metadata.cid": cid}},
-                        ]
-                    }
-                },
-                "size": 1,
+                "bool": {
+                    "must": [
+                        {"match": {"metadata.bvid": bvid}},
+                        {"match": {"metadata.cid": cid}},
+                    ]
+                }
             }
             res = self.es_retriever.es_client.search(
-                index=self.es_retriever.index_name, body=query
+                index=self.es_retriever.index_name, query=query, size=1
             )
             return len(res["hits"]["hits"]) > 0
         except Exception as e:
@@ -736,6 +828,12 @@ class LocalRAG:
 
         logger.info("所有文本块向量化完成")
 
+        for doc in docs:
+            checksum = hashlib.sha256(doc.page_content.encode("utf-8")).hexdigest()
+            self.mongo_repo.update_document_status(
+                f"doc_{checksum[:16]}", "embedded", True
+            )
+
         return vectorstore
 
     def _sync_get_or_create_vectorstore(self, main_loop: asyncio.AbstractEventLoop):
@@ -749,6 +847,8 @@ class LocalRAG:
         has_milvus = utility.has_collection(self.collection)
         has_mongo_docs = self.mongo_repo.documents.count_documents({}) > 0
         has_graph = not self.neo4j_repo.is_empty()
+        has_pending = bool(self.mongo_repo.get_pending_chunks(limit=1))
+        has_incomplete = self.mongo_repo.has_incomplete_documents()
         has_es_docs = False
         if self.es_retriever and self.es_retriever.es_client:
             try:
@@ -759,17 +859,16 @@ class LocalRAG:
                 pass
 
         # Calculate which stores need initialization
-        needs_milvus = has_milvus and has_mongo_docs
         needs_es = (
             self.use_hybrid_search
             and self.es_retriever
             and has_mongo_docs
-            and not has_es_docs
+            and (not has_es_docs or has_incomplete)
         )
-        needs_graph = has_mongo_docs and not has_graph
+        needs_graph = has_mongo_docs and (not has_graph or has_incomplete)
 
-        if has_milvus and has_graph and has_es_docs:
-            logger.info(f"All stores already exist, reusing them.")
+        if has_milvus and has_graph and has_es_docs and not has_pending and not has_incomplete:
+            logger.info("All stores already exist, reusing them.")
             return Milvus(
                 embedding_function=embeddings,
                 connection_args={"uri": self.connection_uri},
@@ -789,7 +888,7 @@ class LocalRAG:
                 )
             else:
                 logger.warning(
-                    f"Warning: No documents found in {self.data_path}, but Milvus collection exists. Returning existing collection."
+                    f"No documents found in {self.data_path}, but Milvus collection exists. Returning existing collection."
                 )
                 return Milvus(
                     embedding_function=embeddings,
@@ -834,78 +933,105 @@ class LocalRAG:
 
         # Step 4: Handle Graph extraction
         if needs_graph:
-            logger.info("Scheduling graph extraction in background...")
-            asyncio.run_coroutine_threadsafe(
-                self._async_extract_graph(chunks, "initial_load"), main_loop
-            )
+            for doc_id, doc_chunks in self._pending_graph_chunks(chunks).items():
+                logger.info("Scheduling graph extraction in background...")
+                asyncio.run_coroutine_threadsafe(
+                    self._async_extract_graph(doc_chunks, doc_id), main_loop
+                )
 
         return vectorstore
 
-    def _sync_ensure_mongodb(self, docs: list[Document]):
-        """Ensure MongoDB has all documents and chunks, skip if already exists"""
-        for doc in docs:
-            content = doc.page_content
-            checksum = hashlib.sha256(content.encode("utf-8")).hexdigest()
-            doc_id = f"doc_{checksum[:16]}"
-
-            # Check if document already exists
-            if self.mongo_repo.get_document(doc_id):
-                logger.debug(f"Document {doc_id} already exists in MongoDB, skipping")
+    def _pending_graph_chunks(self, chunks: list[Document]) -> dict[str, list[Document]]:
+        grouped: dict[str, list[Document]] = {}
+        for chunk in chunks:
+            doc_id = chunk.metadata.get("doc_id")
+            if not doc_id:
                 continue
+            document = self.mongo_repo.get_document(doc_id)
+            status = (document or {}).get("status", {})
+            if not status.get("graphed", False):
+                grouped.setdefault(doc_id, []).append(chunk)
+        return grouped
 
-            # Save new document
+    def _sync_ensure_mongodb(self, docs: list[Document]):
+        """Ensure MongoDB has documents and chunks, resuming incomplete work."""
+        for doc in docs:
+            checksum = hashlib.sha256(doc.page_content.encode("utf-8")).hexdigest()
+            doc_id = f"doc_{checksum[:16]}"
             source = doc.metadata.get("source", "unknown")
-            filename = os.path.basename(source) if source else "unknown"
-            doc_title = doc.metadata.get("title") or filename or "Untitled"
-            doc_author = doc.metadata.get("author", "")
-            doc_summary = doc.metadata.get("summary", "")
-            self.mongo_repo.save_document(
-                doc_id=doc_id,
-                content=content,
-                title=doc_title,
-                source=source,
-                author=doc_author,
-                summary=doc_summary,
-                path=source,
-                filename=filename,
-                format="auto",
-                checksum=f"sha256:{checksum}",
-                metadata=doc.metadata,
-            )
-
-            # Split and save chunks
-            splitter = self._select_text_splitter(
-                doc.metadata.get("source"), doc.metadata.get("content_type")
-            )
-            doc_chunks = splitter.split_documents([doc])
-            for idx, chunk in enumerate(doc_chunks):
-                chunk_id = f"{doc_id}_chunk_{idx:04d}"
-
-                # Check if chunk exists
-                if self.mongo_repo.get_chunk(chunk_id):
-                    continue
-
-                chunk.metadata["chunk_id"] = chunk_id
-                chunk.metadata["doc_id"] = doc_id
-
-                self.mongo_repo.save_chunk(
-                    chunk_id=chunk_id,
-                    doc_id=doc_id,
-                    index=idx,
-                    text=chunk.page_content,
-                    offset_start=0,
-                    offset_end=len(chunk.page_content),
-                    metadata=chunk.metadata,
+            existing = self.mongo_repo.get_document_by_path(source)
+            if existing and checksum_matches(existing, checksum):
+                self._sync_ensure_document_chunks(existing["_id"], doc)
+                continue
+            if needs_rebuild(existing, checksum):
+                logger.info(
+                    "Document checksum changed, rebuilding",
+                    extra={"doc_id": existing["_id"], "path": source},
                 )
+                self._sync_purge_document(existing)
+            self._sync_save_document(doc, doc_id, checksum)
+            self._sync_ensure_document_chunks(doc_id, doc)
 
-            self.mongo_repo.update_document_status(doc_id, "chunked", True)
-            logger.info(f"Added new document {doc_id} to MongoDB")
+    def _sync_save_document(self, doc: Document, doc_id: str, checksum: str) -> None:
+        source = doc.metadata.get("source", "unknown")
+        filename = os.path.basename(source) if source else "unknown"
+        self.mongo_repo.save_document(
+            doc_id=doc_id,
+            content=doc.page_content,
+            title=doc.metadata.get("title") or filename or "Untitled",
+            source=source,
+            author=doc.metadata.get("author", ""),
+            summary=doc.metadata.get("summary", ""),
+            path=source,
+            filename=filename,
+            format="auto",
+            checksum=f"sha256:{checksum}",
+            metadata=doc.metadata,
+        )
+        logger.info(f"Added new document {doc_id} to MongoDB")
+
+    def _sync_ensure_document_chunks(self, doc_id: str, doc: Document) -> None:
+        document = self.mongo_repo.get_document(doc_id) or {}
+        if document.get("status", {}).get("chunked") and self.mongo_repo.get_chunks_by_doc(doc_id):
+            return
+        splitter = self._select_text_splitter(
+            doc.metadata.get("source"), doc.metadata.get("content_type")
+        )
+        for index, chunk in enumerate(splitter.split_documents([doc])):
+            chunk_id = f"{doc_id}_chunk_{index:04d}"
+            if self.mongo_repo.get_chunk(chunk_id):
+                continue
+            chunk.metadata.update({"chunk_id": chunk_id, "doc_id": doc_id})
+            self.mongo_repo.save_chunk(
+                chunk_id=chunk_id,
+                doc_id=doc_id,
+                index=index,
+                text=chunk.page_content,
+                offset_start=0,
+                offset_end=len(chunk.page_content),
+                metadata=chunk.metadata,
+            )
+        self.mongo_repo.update_document_status(doc_id, "chunked", True)
+
+    def _sync_purge_document(self, document: dict) -> None:
+        doc_id = document["_id"]
+        chunk_ids = [chunk["chunk_id"] for chunk in self.mongo_repo.get_chunks_by_doc(doc_id)]
+        self.mongo_repo.delete_document(doc_id)
+        if chunk_ids and utility.has_collection(self.collection):
+            vectorstore = Milvus(
+                embedding_function=self.get_embeddings(),
+                connection_args={"uri": self.connection_uri},
+                collection_name=self.collection,
+            )
+            vectorstore.delete(ids=chunk_ids)
+        if self.es_retriever:
+            self.es_retriever.delete_by_chunk_ids(chunk_ids)
+        self.neo4j_repo.delete_document_graph(doc_id)
 
     def _sync_add_missing_chunks(
         self, vectorstore: Milvus, all_chunks: list[Document]
     ) -> Milvus:
         """Add only chunks that don't exist in Milvus yet"""
-        embeddings = self.get_embeddings()
         missing_chunks = []
 
         for chunk in all_chunks:
@@ -932,7 +1058,17 @@ class LocalRAG:
         else:
             logger.info("No missing chunks to add to Milvus")
 
+        self._mark_embedded_documents(all_chunks)
         return vectorstore
+
+    def _mark_embedded_documents(self, all_chunks: list[Document]) -> None:
+        doc_ids = {chunk.metadata.get("doc_id") for chunk in all_chunks}
+        for doc_id in doc_ids:
+            if not doc_id:
+                continue
+            chunks = self.mongo_repo.get_chunks_by_doc(doc_id)
+            if chunks and all(chunk.get("embedding_status") == "done" for chunk in chunks):
+                self.mongo_repo.update_document_status(doc_id, "embedded", True)
 
     def _select_text_splitter(
         self, source: str | None, content_type: str | None
@@ -1003,10 +1139,16 @@ class LocalRAG:
     def _split_documents(self, docs: list[Document]) -> list[Document]:
         all_chunks = []
         for doc in docs:
+            checksum = hashlib.sha256(doc.page_content.encode("utf-8")).hexdigest()
+            doc_id = f"doc_{checksum[:16]}"
             splitter = self._select_text_splitter(
                 doc.metadata.get("source"), doc.metadata.get("content_type")
             )
-            all_chunks.extend(splitter.split_documents([doc]))
+            for index, chunk in enumerate(splitter.split_documents([doc])):
+                chunk.metadata.update(
+                    {"chunk_id": f"{doc_id}_chunk_{index:04d}", "doc_id": doc_id}
+                )
+                all_chunks.append(chunk)
         return all_chunks
 
     async def get_or_create_vectorstore(self):
