@@ -82,3 +82,26 @@ def test_generate_speech_applies_user_preferences():
 
     assert result["emotion"]["valence"] == 0.9
     assert result["emotion"]["arousal"] == 0.8
+
+
+async def fake_cloner(audio_data, alias):
+    return {"cloned": True, "alias": alias, "bytes": len(audio_data)}
+
+
+def test_clone_voice_uses_injected_cloner_and_persists_preference():
+    adapter = StyleTTS2Adapter(
+        redis_client=FakeRedisClient(),
+        emotion_parser=EmotionParser(),
+        preference_store=FakePreferenceStore({}),
+        vendor_cloner=fake_cloner,
+    )
+
+    import asyncio
+
+    async def run():
+        return await adapter.clone_voice(b"audio", user_id="u2", alias="voice-a")
+
+    result = asyncio.run(run())
+
+    assert result["status"] == "ok"
+    assert result["result"]["cloned"] is True

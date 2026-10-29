@@ -84,6 +84,22 @@ class StyleTTS2Adapter:
             return
         yield ""
 
+    async def clone_voice(
+        self,
+        audio_data: bytes,
+        user_id: str,
+        alias: str,
+        vendor_cloner: Optional[Callable[[bytes, str], Any]] = None,
+    ) -> Dict[str, Any]:
+        cloner = vendor_cloner or self._default_cloner
+        result = await cloner(audio_data, alias)
+        if self.preference_store is not None and user_id:
+            self.preference_store.save(user_id, {"alias": alias})
+        return {"status": "ok", "user_id": user_id, "alias": alias, "result": result}
+
+    async def _default_cloner(self, audio_data: bytes, alias: str) -> Any:
+        return {"cloned": False, "alias": alias, "audio_bytes": len(audio_data)}
+
     def _resolve_emotion(self, text: str, emotion_params: Optional[Dict[str, float]], user_id: str = "") -> Dict[str, float]:
         resolved = dict(self.emotion_parser.parse_params(text))
         resolved.update(emotion_params or {})
