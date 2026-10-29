@@ -60,6 +60,6 @@
 - [x] 报警阈值与通知（WER / DNSMOS / Speaker Similarity / 失败率）
 - [x] 生成失败率、音频时长异常、重复片段检测
 - [x] 用户反馈分布（差评 / 投诉 / 重新生成次数）
-- [ ] 固定测试句集 + 每日回归测试 + 版本对比曲线
+- [x] 固定测试句集 + 每日回归测试 + 版本对比曲线
 - [ ] 补齐 `tts_estimate` 的 DNSMOS 真实推理细节（当前 `_run_inference` 为简化实现，需按官方前处理/分帧）
 - [x] 为 `tts_estimate` 增加批量评估与 CLI 参数入口（当前 `main.py` 使用 mock 路径）
