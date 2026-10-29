@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from interfaces.molt_types import MoltJob, MoltScheduleConfig
+from interfaces.molt_types import MoltJob, MoltScheduleConfig, MoltStrategyConfig
 from schemas.graph import LTMNode
 from services import molt_controller as controller_module
 from services import version_manager as version_module
@@ -11,6 +11,7 @@ from services.decay_scheduler import DecayScheduler
 from services.feedback_service import FeedbackService
 from services.molt_controller import MoltController
 from services.molt_scheduler import MoltScheduler
+from services.strategy_history import InMemoryStrategyHistoryStore
 from services.version_manager import VersionManager
 from services.working_memory import RingWorkingMemory
 
@@ -218,6 +219,49 @@ class TestMoltStrategyAdjustment:
             "decay_rate": 0.01,
             "abstraction_trigger_threshold": 0.6,
         }
+
+    def test_injected_config_controls_trigger_threshold(self, learning_enabled):
+        config = MoltStrategyConfig(recall_hit_rate_threshold=0.95, recall_step=0.1)
+        repo = InMemoryMemoryRepository([episode("chunk-a", importance=0.9)])
+        graph = InMemoryGraphRepository()
+        graph.versions["vector-search"] = [{"version": 1, "topic": "vector-search"}]
+        controller = MoltController(
+            mongo_repo=repo, neo4j_repo=graph, strategy_config=config
+        )
+        controller._recall_hit_rate = 0.9
+
+        result = controller.evaluate_and_adjust()
+
+        assert [item["type"] for item in result["adjustments"]] == ["recall_threshold"]
+        assert result["strategy"]["recall_threshold"] == pytest.approx(0.6)
+
+    def test_adjustment_history_is_recorded_and_exposed(self, learning_enabled):
+        repo = InMemoryMemoryRepository([episode("chunk-a", importance=0.2)])
+        history = InMemoryStrategyHistoryStore(limit=2)
+        controller = MoltController(
+            mongo_repo=repo,
+            neo4j_repo=InMemoryGraphRepository(),
+            history_store=history,
+        )
+        controller._recall_hit_rate = 0.1
+
+        first = controller.evaluate_and_adjust()
+        second = controller.evaluate_and_adjust()
+        metrics = controller.collect_metrics()
+
+        assert first["history"][-1]["adjustments"]
+        assert second["history"][-1]["adjustment_id"] != first["history"][-1]["adjustment_id"]
+        assert metrics["strategy_history"]["total"] == 2
+        assert len(metrics["strategy_history"]["recent"]) == 2
+        assert metrics["strategy_history"]["recent"][-1]["duration_ms"] >= 0
+
+    def test_invalid_strategy_config_is_rejected(self):
+        with pytest.raises(ValueError):
+            MoltStrategyConfig(recall_step=0)
+        with pytest.raises(ValueError):
+            MoltStrategyConfig(decay_ceiling=1.5)
+        with pytest.raises(ValueError):
+            MoltStrategyConfig(history_limit=0)
 
     def test_full_cycle_uses_injected_components_once(self, learning_enabled):
         decay = RecordingDecayScheduler()
