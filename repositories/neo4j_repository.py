@@ -255,17 +255,51 @@ class Neo4jRepository:
             return [dict(record["c"]) for record in result]
 
     def create_ltm_version_relation(
-        self, old_topic_version: str, new_topic_version: str
+        self,
+        old_topic_version: str,
+        new_topic_version: str,
+        relation_types=None,
     ):
-        """Create supersedes relationship between versions"""
+        relation_types = relation_types or ("SUPERSEDED_BY",)
+        self._validate_relation_types(relation_types)
         with self.driver.session() as session:
-            query = (
-                "MATCH (old:LTMNode {topic_version: $old_version}) "
-                "MATCH (new:LTMNode {topic_version: $new_version}) "
-                "MERGE (old)-[:SUPERSEDED_BY]->(new)"
+            session.execute_write(
+                self._create_version_relations_tx,
+                old_topic_version,
+                new_topic_version,
+                tuple(relation_types),
             )
-            session.run(
-                query, old_version=old_topic_version, new_version=new_topic_version
+
+    @staticmethod
+    def _validate_relation_types(relation_types):
+        allowed = {
+            "NEXT_VERSION",
+            "PREV_VERSION",
+            "SUPERSEDES",
+            "DERIVED_FROM",
+            "SUPERSEDED_BY",
+        }
+        invalid = set(relation_types) - allowed
+        if invalid:
+            raise ValueError(f"unsupported LTM relation types: {sorted(invalid)}")
+
+    @staticmethod
+    def _create_version_relations_tx(tx, old_version, new_version, relation_types):
+        directions = {
+            "NEXT_VERSION": (old_version, new_version),
+            "PREV_VERSION": (new_version, old_version),
+            "SUPERSEDES": (new_version, old_version),
+            "DERIVED_FROM": (new_version, old_version),
+            "SUPERSEDED_BY": (old_version, new_version),
+        }
+        for relation_type in relation_types:
+            source, target = directions[relation_type]
+            tx.run(
+                f"MATCH (a:LTMNode {{topic_version: $source}}) "
+                f"MATCH (b:LTMNode {{topic_version: $target}}) "
+                f"MERGE (a)-[:{relation_type}]->(b)",
+                source=source,
+                target=target,
             )
 
     def get_ltm_versions_chain(self, topic: str) -> List[Dict[str, Any]]:

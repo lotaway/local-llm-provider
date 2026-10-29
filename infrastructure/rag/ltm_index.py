@@ -32,7 +32,14 @@ class MilvusEsLtmIndex(ILtmIndexRepository):
         self._ensure_collection()
         self._milvus.upsert(
             collection_name=self._collection_name,
-            data=[{"id": document["id"], "vector": vector, "metadata": json.dumps(document)}],
+            data=[
+                {
+                    "id": document["id"],
+                    "vector": vector,
+                    "topic": document["topic"],
+                    "metadata": json.dumps(document),
+                }
+            ],
         )
         return document["id"]
 
@@ -41,6 +48,20 @@ class MilvusEsLtmIndex(ILtmIndexRepository):
         self._ensure_index()
         self._es.index(index=self._index_name, id=document["id"], document=document)
         return document["id"]
+
+    def nearest_similarity(self, ltm: Dict[str, Any]) -> Optional[float]:
+        if not self._milvus.has_collection(self._collection_name):
+            return None
+        vector = list(self._embedding.embed(self._vector_text(ltm)))
+        results = self._milvus.search(
+            collection_name=self._collection_name,
+            data=[vector],
+            limit=1,
+            filter=f'topic == "{self._escape(ltm.get("topic", ""))}"',
+            output_fields=["topic"],
+        )
+        hits = results[0] if results else []
+        return max(0.0, min(1.0, float(hits[0]["distance"]))) if hits else None
 
     def _document(self, ltm: Dict[str, Any]) -> Dict[str, Any]:
         now = self._now()
@@ -117,3 +138,6 @@ class MilvusEsLtmIndex(ILtmIndexRepository):
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    def _escape(self, value: str) -> str:
+        return value.replace("\\", "\\\\").replace('"', '\\"')

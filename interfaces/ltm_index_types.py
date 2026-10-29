@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class ILtmIndexRepository(ABC):
@@ -8,3 +8,6 @@ class ILtmIndexRepository(ABC):
 
     @abstractmethod
     def index_ltm_keywords(self, ltm: Dict[str, Any]) -> str: ...
+
+    @abstractmethod
+    def nearest_similarity(self, ltm: Dict[str, Any]) -> Optional[float]: ...
