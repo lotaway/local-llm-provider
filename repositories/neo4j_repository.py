@@ -197,6 +197,36 @@ class Neo4jRepository:
             result = session.run(query, limit=limit)
             return [dict(record) for record in result]
 
+    def find_chunk_ids_by_concepts(self, terms: List[str], limit: int = 100) -> List[str]:
+        """Resolve concept terms to the chunk ids that describe them."""
+        if not terms:
+            return []
+        with self.driver.session() as session:
+            query = (
+                "MATCH (c:Chunk)-[:DESCRIBES]->(e) "
+                "WHERE (e:Entity OR e:Concept) "
+                "  AND (toLower(e.type) = 'concept' OR e:Concept) "
+                "  AND size(e.canonical_name) >= 2 "
+                "  AND any(term IN $terms WHERE toLower(term) CONTAINS toLower(e.canonical_name)) "
+                "RETURN DISTINCT c.chunk_id AS chunk_id "
+                "LIMIT $limit"
+            )
+            result = session.run(query, terms=list(terms), limit=int(limit))
+            return [record["chunk_id"] for record in result if record["chunk_id"]]
+
+    def delete_document_graph(self, doc_id: str) -> int:
+        """Remove chunk pointers and their relationships for a document."""
+        with self.driver.session() as session:
+            result = session.run(
+                "MATCH (c:Chunk {doc_id: $doc_id}) "
+                "WITH collect(c) AS chunks, count(c) AS total "
+                "FOREACH (chunk IN chunks | DETACH DELETE chunk) "
+                "RETURN total",
+                doc_id=doc_id,
+            )
+            record = result.single()
+            return int(record["total"]) if record else 0
+
     def get_ltm_by_topic(self, topic: str) -> List[Dict[str, Any]]:
         """Get all versions of LTM nodes for a topic"""
         with self.driver.session() as session:

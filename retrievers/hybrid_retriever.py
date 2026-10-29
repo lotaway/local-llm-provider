@@ -1,11 +1,12 @@
 """Hybrid Retriever - Combines vector and keyword search"""
 
-from typing import List, Dict, Any, Optional
+from typing import List, Any, Optional
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
-import numpy as np
 import logging
+
+from retrievers.chunk_filter import similarity_search_with_chunk_filter
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +18,17 @@ class HybridRetriever(BaseRetriever):
     bm25_weight: float = 0.3
     k: int = 5
     feedback_service: Optional[Any] = None
+    chunk_id_provider: Optional[Any] = None
     model_config = {"arbitrary_types_allowed": True}
 
-    def __init__(self, vectorstore, bm25_retriever, vector_weight: float = 0.7, bm25_weight: float = 0.3, k: int = 5, feedback_service: Optional[Any] = None, **kwargs):
-        super().__init__(vectorstore=vectorstore, bm25_retriever=bm25_retriever, vector_weight=vector_weight, bm25_weight=bm25_weight, k=k, feedback_service=feedback_service, **kwargs)
+    def __init__(self, vectorstore, bm25_retriever, vector_weight: float = 0.7, bm25_weight: float = 0.3, k: int = 5, feedback_service: Optional[Any] = None, chunk_id_provider: Optional[Any] = None, **kwargs):
+        super().__init__(vectorstore=vectorstore, bm25_retriever=bm25_retriever, vector_weight=vector_weight, bm25_weight=bm25_weight, k=k, feedback_service=feedback_service, chunk_id_provider=chunk_id_provider, **kwargs)
         self.feedback_service = feedback_service
+        self.chunk_id_provider = chunk_id_provider
 
     def _get_relevant_documents(self, query: str, *, run_manager: CallbackManagerForRetrieverRun = None) -> List[Document]:
-        try: vector_docs = self.vectorstore.similarity_search_with_score(query, k=self.k * 2)
+        chunk_ids = self._graph_chunk_ids(query)
+        try: vector_docs = similarity_search_with_chunk_filter(self.vectorstore, query, self.k * 2, chunk_ids)
         except Exception as e:
             logger.error(f"Vector search failed: {e}")
             vector_docs = []
@@ -51,6 +55,15 @@ class HybridRetriever(BaseRetriever):
         results = [item["doc"] for item in sorted(doc_scores.values(), key=lambda x: x["score"], reverse=True)[: self.k]]
         if self.feedback_service and results: self._trigger_recall_feedback(results)
         return results
+
+    def _graph_chunk_ids(self, query: str) -> List[str]:
+        if self.chunk_id_provider is None:
+            return []
+        try:
+            return self.chunk_id_provider(query) or []
+        except Exception as e:
+            logger.warning(f"Graph chunk coordination failed: {e}", exc_info=True)
+            return []
 
     def _trigger_recall_feedback(self, docs: List[Document]):
         try:
