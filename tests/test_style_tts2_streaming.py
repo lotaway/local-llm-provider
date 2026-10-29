@@ -55,3 +55,30 @@ def test_generate_speech_joins_streamed_chunks():
 
     assert result["audio_text"] == "Hello"
     assert result["emotion"]["valence"] >= 0.0
+
+
+class FakePreferenceStore:
+    def __init__(self, preferences):
+        self._preferences = preferences
+
+    def get(self, user_id):
+        return {"preferences": self._preferences} if self._preferences else None
+
+
+def test_generate_speech_applies_user_preferences():
+    adapter = StyleTTS2Adapter(
+        redis_client=FakeRedisClient(),
+        vendor_streamer=fake_streamer,
+        emotion_parser=EmotionParser(),
+        preference_store=FakePreferenceStore({"valence": 0.9, "arousal": 0.8}),
+    )
+
+    import asyncio
+
+    async def run():
+        return await adapter.generate_speech("Hello", None, "spk", user_id="u1")
+
+    result = asyncio.run(run())
+
+    assert result["emotion"]["valence"] == 0.9
+    assert result["emotion"]["arousal"] == 0.8

@@ -31,6 +31,7 @@ class StyleTTS2Adapter:
         redis_client: redis.Redis = None,
         emotion_parser: EmotionParser = None,
         vendor_streamer: Callable[[str, Dict[str, float], str], AsyncGenerator[str, None]] = None,
+        preference_store=None,
     ):
         setup_hardware_env()
         self.device = get_optimal_device()
@@ -39,6 +40,7 @@ class StyleTTS2Adapter:
         self.model = None
         self.emotion_parser = emotion_parser or EmotionParser()
         self.vendor_streamer = vendor_streamer
+        self.preference_store = preference_store
         logger.info(f"StyleTTS2 initialized on {self.device} with storage prefix '{self.prefix}'")
 
     def get_speaker_embedding(self, speaker_id: str) -> Optional[np.ndarray]:
@@ -61,11 +63,13 @@ class StyleTTS2Adapter:
         emotion_params: Optional[Dict[str, float]] = None,
         speaker_id: str = "",
         callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        user_id: str = "",
     ) -> AsyncGenerator[str, None]:
         started_at = time.monotonic()
+        resolved_emotion = self._resolve_emotion(text, emotion_params, user_id)
         stream = self.vendor_streamer or self._default_streamer
         first_chunk = True
-        async for chunk in stream(text, emotion_params or {}, speaker_id):
+        async for chunk in stream(text, resolved_emotion, speaker_id):
             if not chunk:
                 continue
             if first_chunk and callback is not None:
@@ -80,10 +84,14 @@ class StyleTTS2Adapter:
             return
         yield ""
 
-    def _resolve_emotion(self, text: str, emotion_params: Optional[Dict[str, float]]) -> Dict[str, float]:
-        if emotion_params:
-            return emotion_params
-        return self.emotion_parser.parse_params(text)
+    def _resolve_emotion(self, text: str, emotion_params: Optional[Dict[str, float]], user_id: str = "") -> Dict[str, float]:
+        resolved = dict(self.emotion_parser.parse_params(text))
+        resolved.update(emotion_params or {})
+        if self.preference_store is not None:
+            stored = self.preference_store.get(user_id)
+            preferences = (stored or {}).get("preferences") or {}
+            resolved.update({key: value for key, value in preferences.items() if key in resolved})
+        return resolved
 
     async def generate_speech(
         self,
@@ -91,9 +99,11 @@ class StyleTTS2Adapter:
         emotion_params: Optional[Dict[str, float]] = None,
         speaker_id: str = "",
         callback: Optional[Callable[[str], Any]] = None,
+        user_id: str = "",
     ) -> Dict[str, Any]:
-        generator = self.generate_speech_stream(text, emotion_params, speaker_id, callback)
+        resolved_emotion = self._resolve_emotion(text, emotion_params, user_id)
+        generator = self.generate_speech_stream(text, resolved_emotion, speaker_id, callback, user_id)
         full_text = ""
         async for chunk in generator:
             full_text += chunk
-        return {"audio_text": full_text, "emotion": self._resolve_emotion(text, emotion_params)}
+        return {"audio_text": full_text, "emotion": resolved_emotion}
