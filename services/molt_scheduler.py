@@ -42,7 +42,8 @@ class MoltScheduler(IMoltScheduler):
         self._controller = controller
         self._task_scheduler = task_scheduler
         self._config = config or default_schedule_config()
-        self._semaphore = asyncio.Semaphore(self._config.max_concurrency)
+        self._semaphore: Optional[asyncio.Semaphore] = None
+        self._semaphore_loop = None
         self._tasks: List[asyncio.Task] = []
         self._running = False
 
@@ -77,8 +78,15 @@ class MoltScheduler(IMoltScheduler):
         }[job]
 
     async def _execute(self, job: MoltJob, handler) -> Dict[str, Any]:
-        async with self._semaphore:
+        async with self._concurrency_guard():
             return await self._retry(job, handler)
+
+    def _concurrency_guard(self) -> asyncio.Semaphore:
+        loop = asyncio.get_running_loop()
+        if self._semaphore is None or self._semaphore_loop is not loop:
+            self._semaphore = asyncio.Semaphore(self._config.max_concurrency)
+            self._semaphore_loop = loop
+        return self._semaphore
 
     async def _retry(self, job: MoltJob, handler) -> Dict[str, Any]:
         for attempt in range(self._config.max_retries + 1):
