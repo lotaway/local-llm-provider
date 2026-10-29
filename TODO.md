@@ -47,7 +47,7 @@
 - [ ] 初始化 `third_party/StyleTTS2` 子模块并安装依赖（当前目录为空）
 - [x] 实现 `StyleTTS2Adapter.generate_speech` 真实推理（当前为占位 `pass`）
 - [x] 实现 `clone_voice` 完整流程：参考音频→Speaker Embedding→Redis 缓存→MongoDB `tts_speakers` 持久化（当前为占位）
-- [ ] 新增 HTTP 接口 `POST /tts`、`POST /tts/clone`
+- [x] 新增 HTTP 接口 `POST /tts`、`POST /tts/clone`
 - [x] 实现 Emotion Parser（连续 VAD：valence/arousal/dominance/speed/pitch/energy）
 - [x] 实现流式输出（首包延迟 <500ms）- [x] 接入用户偏好记忆 `tts_user_profiles`
 - [x] 将质量网关（WER/DNSMOS/Similarity 自动拦截）接入 TTS 生成链路

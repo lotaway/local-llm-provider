@@ -7,6 +7,7 @@ from controllers.agent_controller import router as agent_router
 from controllers.rag_controller import router as rag_router
 from controllers.file_controller import router as file_router
 from controllers.voice_controller import router as voice_router
+from controllers.tts_controller import router as tts_router
 
 
 def parse_version(version: str):
@@ -25,3 +26,4 @@ router.include_router(agent_router)
 router.include_router(rag_router)
 router.include_router(file_router)
 router.include_router(voice_router)
+router.include_router(tts_router)
