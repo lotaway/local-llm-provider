@@ -4,6 +4,12 @@ from typing import Dict, Any, List
 
 class IMoltController(ABC):
     @abstractmethod
+    def start(self) -> None: ...
+
+    @abstractmethod
+    def stop(self) -> None: ...
+
+    @abstractmethod
     def run_decay_cycle(self) -> Dict[str, Any]: ...
 
     @abstractmethod

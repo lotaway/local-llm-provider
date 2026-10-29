@@ -43,6 +43,9 @@ DATA_PATH = os.getenv("DOCS_PATH", "./docs")
 
 # MOLT Learning Configuration
 LEARNING = os.getenv("LEARNING", "false").lower() == "true"
+MOLT_SENSORY_COLLECTION = os.getenv("LLP_MOLT_SENSORY_COLLECTION", "molt_sensory_cache")
+MOLT_SENSORY_TTL_SECONDS = int(os.getenv("LLP_MOLT_SENSORY_TTL_SECONDS", "300"))
+MOLT_WORKING_MEMORY_CAPACITY = int(os.getenv("LLP_MOLT_WORKING_MEMORY_CAPACITY", "7"))
 
 LLP_SKILLS_DIRS = os.getenv("LLP_SKILLS_DIRS", "")
 LLP_ENABLE_CLAUDE_GLOBAL = os.getenv("LLP_ENABLE_CLAUDE_GLOBAL", "0")

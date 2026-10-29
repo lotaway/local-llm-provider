@@ -37,3 +37,41 @@ class IMemoryLifecycle(ABC):
 
 class IMemoryRepository(IMemoryQuery, IMemoryLifecycle, ABC):
     pass
+
+
+class ISensoryCache(ABC):
+    @abstractmethod
+    def start(self) -> None: ...
+
+    @abstractmethod
+    def stop(self) -> None: ...
+
+    @abstractmethod
+    def remember(self, entry_id: str, payload: Dict[str, Any], ttl_seconds: int | None = None) -> None: ...
+
+    @abstractmethod
+    def recall(self, entry_id: str) -> Optional[Dict[str, Any]]: ...
+
+    @abstractmethod
+    def forget(self, entry_id: str) -> None: ...
+
+    @abstractmethod
+    def stats(self) -> Dict[str, Any]: ...
+
+
+class IWorkingMemory(ABC):
+    @abstractmethod
+    def focus(self, entry_id: str, payload: Dict[str, Any] | None = None) -> Dict[str, Any]: ...
+
+    @abstractmethod
+    def recall(self, entry_id: str) -> Optional[Dict[str, Any]]: ...
+
+    @abstractmethod
+    def active(self) -> List[Dict[str, Any]]: ...
+
+    @abstractmethod
+    def clear(self) -> None: ...
+
+    @abstractmethod
+    def stats(self) -> Dict[str, Any]: ...
+

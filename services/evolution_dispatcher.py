@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+from uuid import uuid4
 
 from constants import LEARNING
 from interfaces.evolution_types import IEvolutionDispatcher
+from interfaces.memory_types import ISensoryCache, IWorkingMemory
 
 
 @dataclass
@@ -23,11 +25,15 @@ class EvolutionDispatcher(IEvolutionDispatcher):
         config: Optional[EvolutionConfig] = None,
         skill_researcher=None,
         skill_creator=None,
+        sensory_cache: Optional[ISensoryCache] = None,
+        working_memory: Optional[IWorkingMemory] = None,
     ):
         self._memory_repo = memory_repo
         self._config = config or EvolutionConfig()
         self._skill_researcher = skill_researcher
         self._skill_creator = skill_creator
+        self._sensory_cache = sensory_cache
+        self._working_memory = working_memory
         self._signal_pool: List[Dict[str, Any]] = []
         self._history: List[Dict[str, Any]] = []
 
@@ -38,6 +44,8 @@ class EvolutionDispatcher(IEvolutionDispatcher):
         self._history.append(signal)
         if len(self._history) > self._config.history_limit:
             self._history = self._history[-self._config.history_limit :]
+        self._admit_to_sensory_cache(signal)
+        self._admit_to_working_memory(signal)
 
     def aggregate_and_apply(
         self,
@@ -223,6 +231,21 @@ class EvolutionDispatcher(IEvolutionDispatcher):
 
     def _clamp(self, value: float) -> float:
         return max(0.0, min(1.0, value))
+
+    def _admit_to_sensory_cache(self, signal: Dict[str, Any]) -> None:
+        if self._sensory_cache is None:
+            return
+        self._sensory_cache.remember(f"signal:{uuid4().hex}", signal)
+
+    def _admit_to_working_memory(self, signal: Dict[str, Any]) -> None:
+        if self._working_memory is None:
+            return
+        payload = {
+            "type": signal.get("type", "neutral"),
+            "confidence": signal.get("confidence", 0.0),
+        }
+        for target in signal.get("targets", []):
+            self._working_memory.focus(target, payload)
 
     async def trigger_skill_evolution(self, task_description: str, error_context: str) -> Dict[str, Any]:
         """Manually or automatically trigger the skill evolution loop."""

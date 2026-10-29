@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any
 
 from constants import LEARNING
+from interfaces.memory_types import ISensoryCache, IWorkingMemory
 from interfaces.molt_types import IMoltController
 
 
@@ -24,6 +25,8 @@ class MoltController(IMoltController):
         abstraction_engine=None,
         version_manager=None,
         feedback_service=None,
+        sensory_cache: ISensoryCache | None = None,
+        working_memory: IWorkingMemory | None = None,
     ):
         self._mongo_repo = mongo_repo
         self._neo4j_repo = neo4j_repo
@@ -31,10 +34,22 @@ class MoltController(IMoltController):
         self._abstraction_engine = abstraction_engine
         self._version_manager = version_manager
         self._feedback_service = feedback_service
+        self._sensory_cache = sensory_cache
+        self._working_memory = working_memory
         self._recall_hit_rate = 0.5
         self._recall_threshold = 0.7
         self._decay_rate = 0.01
         self._abstraction_trigger_threshold = 0.6
+
+    def start(self) -> None:
+        if self._sensory_cache is not None:
+            self._sensory_cache.start()
+
+    def stop(self) -> None:
+        if self._sensory_cache is not None:
+            self._sensory_cache.stop()
+        if self._working_memory is not None:
+            self._working_memory.clear()
 
     def run_decay_cycle(self) -> Dict[str, Any]:
         if self._decay_scheduler is None:
@@ -66,6 +81,7 @@ class MoltController(IMoltController):
             "recall_hit_rate": self._recall_hit_rate,
             "abstraction_rate": ltm_nodes / total if total else 0.0,
             "ltm_nodes": ltm_nodes,
+            "memory_tiers": self._memory_tier_stats(),
         }
 
     def evaluate_and_adjust(self) -> Dict[str, Any]:
@@ -124,3 +140,9 @@ class MoltController(IMoltController):
         if self._neo4j_repo is None:
             return 0
         return self._neo4j_repo.count_ltm_nodes()
+
+    def _memory_tier_stats(self) -> Dict[str, Any]:
+        return {
+            "sensory": self._sensory_cache.stats() if self._sensory_cache else {},
+            "working": self._working_memory.stats() if self._working_memory else {},
+        }
