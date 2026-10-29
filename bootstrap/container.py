@@ -86,7 +86,7 @@ class Container:
         def factory(c):
             try:
                 from infrastructure.rag.milvus_store import MilvusVectorStore
-                return MilvusVectorStore(c.settings)
+                return MilvusVectorStore(c.settings, embedding_provider=c.embedding_provider())
             except ImportError as e:
                 logger.warning(f"pymilvus not available: {e}, using NullVectorStore")
                 from infrastructure.rag.null_store import NullVectorStore

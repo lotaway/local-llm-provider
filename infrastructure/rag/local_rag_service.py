@@ -6,64 +6,13 @@ import logging
 from typing import List, Optional, Dict, Any, AsyncGenerator, Union
 
 from domain.rag.ports import RAGService, VectorStore, Document, RetrievalResult, GenerationResult
-from domain.model.entities import Model, GenerationConfig
+from domain.model.entities import Model
 from infrastructure.config.settings import Settings
+from infrastructure.rag.milvus_store import MilvusVectorStore
+
+__all__ = ["LocalRAGService", "MilvusVectorStore"]
 
 logger = logging.getLogger(__name__)
-
-
-class MilvusVectorStore(VectorStore):
-    """Milvus vector store implementation."""
-
-    def __init__(self, settings: Settings):
-        self._settings = settings
-        self._client = None
-        self._collection = None
-        self._init_client()
-
-    def _init_client(self):
-        try:
-            from pymilvus import MilvusClient
-            self._client = MilvusClient(
-                uri=f"http://{self._settings.rag.db_host}:{self._settings.rag.db_port}"
-            )
-            self._collection = self._settings.rag.db_collection
-        except ImportError:
-            logger.warning("pymilvus not installed, MilvusVectorStore unavailable")
-
-    async def add_documents(self, documents: List[Document]) -> List[str]:
-        if not self._client:
-            raise RuntimeError("Milvus client not initialized")
-
-        ids = [doc.id for doc in documents]
-        return ids
-
-    async def delete_documents(self, ids: List[str]) -> int:
-        if not self._client:
-            return 0
-        return len(ids)
-
-    async def similarity_search(
-        self, 
-        query_vector: List[float], 
-        k: int = 10,
-        filter: Optional[Dict] = None
-    ) -> List[Document]:
-        if not self._client:
-            return []
-        return []
-
-    async def hybrid_search(
-        self, 
-        query: str, 
-        query_vector: List[float], 
-        k: int = 10,
-        filter: Optional[Dict] = None
-    ) -> List[Document]:
-        return await self.similarity_search(query_vector, k, filter)
-
-    async def health_check(self) -> bool:
-        return self._client is not None
 
 
 class LocalRAGService(RAGService):
