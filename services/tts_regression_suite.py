@@ -3,7 +3,10 @@ import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
+from constants import TTS_AUDIO_SAMPLE_RATE
+
 logger = logging.getLogger(__name__)
+
 
 DEFAULT_TEST_SENTENCES = [
     "Hello world.",
@@ -12,7 +15,7 @@ DEFAULT_TEST_SENTENCES = [
 ]
 
 
-class TTSSRegressionSuite:
+class TTSRegressionSuite:
     def __init__(self, sentences: Optional[List[str]] = None):
         self.sentences = list(sentences) if sentences is not None else list(DEFAULT_TEST_SENTENCES)
         self._runs: List[Dict[str, Any]] = []
@@ -26,7 +29,7 @@ class TTSSRegressionSuite:
                 {
                     "sentence": sentence,
                     "version": str(uuid.uuid4())[:8],
-                    "duration_seconds": len(audio) / (24000 * 4),
+                    "duration_seconds": len(audio) / (TTS_AUDIO_SAMPLE_RATE * 4),
                     "latency_ms": round((time.monotonic() - started_at) * 1000, 3),
                 }
             )

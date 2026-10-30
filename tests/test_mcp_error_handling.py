@@ -1,9 +1,6 @@
 """Test MCP agent graceful error handling when tools are unavailable"""
 
-import sys
-import os
-
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+import asyncio
 
 from clients.agents.task_agents.mcp_agent import MCPTaskAgent
 from clients.agents.agent_base import AgentStatus
@@ -17,6 +14,10 @@ class MockLLM:
 
     def generate(self, *args, **kwargs):
         return "Mock response"
+
+
+def _run(coro):
+    return asyncio.run(coro)
 
 
 def test_mcp_agent_no_tools():
@@ -38,25 +39,20 @@ def test_mcp_agent_no_tools():
     task = {"tool_name": "file_manager", "description": "List files in directory"}
     context = {"original_query": "Show me the files in the current directory"}
 
-    result = mcp_agent.execute(task, context)
+    result = _run(mcp_agent.execute(task, context, {}))
 
     print(f"\nResult Status: {result.status.value}")
-    print(f"Result Message: {result.message}")
-    print(f"Next Agent: {result.next_agent}")
+    print(f"\nResult Message: {result.message}")
+    print(f"\nResult Next Agent: {result.next_agent}")
 
     # Verify graceful handling
-    assert result.status == AgentStatus.NEEDS_RETRY, (
-        f"Expected NEEDS_RETRY, got {result.status}"
+    assert result.status == AgentStatus.NEEDS_CLIENT_EXECUTION, (
+        f"Expected NEEDS_CLIENT_EXECUTION, got {result.status}"
     )
-    assert result.next_agent == "planning", (
-        f"Expected next_agent='planning', got {result.next_agent}"
+    assert result.data.get("tool_name") == "file_manager"
+    assert result.data.get("backend_available") == [], (
+        "Expected empty tools list in data"
     )
-    assert isinstance(result.data, dict), "Expected data to be a dict"
-    assert result.data.get("error") == "tool_not_found", (
-        "Expected error='tool_not_found'"
-    )
-    assert "available_mcp_tools" in result.data, "Expected available_mcp_tools in data"
-    assert result.data["available_mcp_tools"] == [], "Expected empty tools list"
 
     print(f"\nResult Data:")
     for key, value in result.data.items():
@@ -96,17 +92,16 @@ def test_mcp_agent_with_registered_tool():
     task = {"tool_name": "file_manager", "description": "List files"}
     context = {"original_query": "List files"}
 
-    result = mcp_agent.execute(task, context)
+    result = _run(mcp_agent.execute(task, context, {}))
 
     print(f"\nRequesting unavailable tool 'file_manager':")
-    print(f"Result Status: {result.status.value}")
-    print(f"Available tools in response: {result.data.get('available_mcp_tools')}")
+    print(f"\nAvailable tools in response: {result.data.get('backend_available')}")
 
-    # Should still return NEEDS_RETRY with available tools list
-    assert result.status == AgentStatus.NEEDS_RETRY, (
-        "Expected NEEDS_RETRY for unavailable tool"
+    # Should still return NEEDS_CLIENT_EXECUTION with available tools list
+    assert result.status == AgentStatus.NEEDS_CLIENT_EXECUTION, (
+        "Expected NEEDS_CLIENT_EXECUTION for unavailable tool"
     )
-    assert result.data.get("available_mcp_tools") == ["test_tool"], (
+    assert result.data.get("backend_available") == ["test_tool"], (
         "Expected available tools list"
     )
 
@@ -118,7 +113,7 @@ def test_mcp_agent_with_registered_tool():
 
 def test_planning_agent_retry_detection():
     """Test that planning agent can detect MCP retry scenarios"""
-    print("\n" + "=" * 60)
+    print("=" * 60)
     print("Test 3: Planning Agent MCP Retry Detection")
     print("=" * 60)
 
@@ -136,7 +131,7 @@ def test_planning_agent_retry_detection():
         isinstance(input_data, dict) and input_data.get("error") == "tool_not_found"
     )
     print(f"\nInput data error type: {input_data.get('error')}")
-    print(f"Is MCP retry detected: {is_mcp_retry}")
+    print(f"\nIs MCP retry detected: {is_mcp_retry}")
 
     assert is_mcp_retry, "Expected MCP retry to be detected"
 
@@ -165,15 +160,6 @@ if __name__ == "__main__":
         print("\n" + "=" * 60)
         print("ALL TESTS PASSED ✓")
         print("=" * 60)
-        print("\nSummary:")
-        print("- MCP agent gracefully handles missing tools")
-        print("- Returns NEEDS_RETRY instead of FAILURE")
-        print("- Provides available tools info for replanning")
-        print("- Planning agent can detect and handle MCP retry scenarios")
-        print("\nKey Improvements:")
-        print("1. No hard failures when MCP tools are unavailable")
-        print("2. System can fallback to LLM/RAG capabilities")
-        print("3. Clear communication about available tools")
 
     except AssertionError as e:
         print(f"\n✗ TEST FAILED: {e}")

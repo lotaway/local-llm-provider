@@ -180,12 +180,21 @@ class JsonRpcTransport:
 
     def _read_loop(self) -> None:
         while self._running:
-            chunk = self._process.stdout.read(self.READ_CHUNK_SIZE)
+            chunk = self._read_available()
             if not chunk:
                 break
             with self._buffer_lock:
                 self._buffer += chunk
             self._drain_messages()
+
+    def _read_available(self) -> bytes:
+        # read1() returns as soon as any bytes are available instead of waiting
+        # for READ_CHUNK_SIZE. Servers that emit a large JSON document without a
+        # trailing newline would otherwise block this reader indefinitely.
+        reader = getattr(self._process.stdout, "read1", None)
+        if reader is not None:
+            return reader(self.READ_CHUNK_SIZE)
+        return self._process.stdout.read(self.READ_CHUNK_SIZE)
 
     def _drain_messages(self) -> None:
         while self._running:

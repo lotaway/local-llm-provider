@@ -126,10 +126,69 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to start task scheduler: {e}")
 
+    # Init MOLT evolution scheduler (no-op cycles unless LEARNING is enabled)
+    try:
+        from infrastructure.scheduling.async_scheduler import AsyncTaskScheduler
+        from services.abstraction_engine import AbstractionEngine
+        from services.decay_calculator import ExponentialDecayCalculator
+        from services.decay_scheduler import DecayScheduler
+        from services.feedback_service import FeedbackService
+        from services.molt_controller import MoltController
+        from services.molt_scheduler import MoltScheduler
+        from services.version_manager import VersionManager
+
+        task_scheduler = backend_globals.task_scheduler
+        if task_scheduler is None or not hasattr(task_scheduler, "submit"):
+            task_scheduler = AsyncTaskScheduler()
+        backend_globals.molt_task_scheduler = task_scheduler
+
+        molt_memory_repo = (
+            getattr(backend_globals.local_rag, "mongo_repo", None)
+            if backend_globals.local_rag
+            else None
+        )
+        backend_globals.molt_controller = MoltController(
+            mongo_repo=molt_memory_repo,
+            neo4j_repo=(
+                getattr(backend_globals.local_rag, "neo4j_repo", None)
+                if backend_globals.local_rag
+                else None
+            ),
+            decay_scheduler=DecayScheduler(molt_memory_repo, ExponentialDecayCalculator())
+            if molt_memory_repo
+            else None,
+            abstraction_engine=AbstractionEngine(mongo_repo=molt_memory_repo)
+            if molt_memory_repo
+            else None,
+            version_manager=VersionManager(
+                neo4j_repo=(
+                    getattr(backend_globals.local_rag, "neo4j_repo", None)
+                    if backend_globals.local_rag
+                    else None
+                ),
+                mongo_repo=molt_memory_repo,
+            ),
+            feedback_service=FeedbackService(molt_memory_repo) if molt_memory_repo else None,
+        )
+        backend_globals.molt_scheduler = MoltScheduler(
+            backend_globals.molt_controller,
+            task_scheduler=task_scheduler,
+        )
+        await backend_globals.molt_scheduler.start()
+    except Exception as e:
+        logger.error(f"Failed to start MOLT scheduler: {e}")
+
     yield
     # Shutdown
     if backend_globals.task_scheduler:
         await backend_globals.task_scheduler.stop()
+    if backend_globals.molt_scheduler:
+        await backend_globals.molt_scheduler.stop()
+    if getattr(backend_globals, "molt_task_scheduler", None):
+        try:
+            await backend_globals.molt_task_scheduler.shutdown(graceful=True)
+        except Exception:
+            pass
 
     import model_providers
 

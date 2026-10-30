@@ -114,8 +114,5 @@ class MoltScheduler(IMoltScheduler):
         return result
 
     async def _run_handler(self, handler) -> Dict[str, Any]:
-        try:
-            value = await asyncio.to_thread(handler)
-            return {"success": True, "value": value}
-        except Exception as error:
-            return {"success": False, "error": str(error)}
+        value = await asyncio.to_thread(handler)
+        return {"success": True, "value": value}

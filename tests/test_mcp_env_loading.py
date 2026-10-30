@@ -16,7 +16,7 @@ class DummyAgent:
 
 def test_mcp_env_loading(monkeypatch, tmp_path):
     cfg = tmp_path / "mcp.json"
-    cfg.write_text('{"connections": [{"name": "test_mcp", "command": "python", "args": ["-c", "pass"], "safety": "HIGH", "tools": ["dummy_tool"]}]}', encoding="utf-8")
+    cfg.write_text('{"connections": [{"name": "test_mcp", "command": "python", "args": ["-c", "import time; time.sleep(30)"], "safety": "HIGH", "tools": ["dummy_tool"]}]}', encoding="utf-8")
     monkeypatch.setenv("LLP_MCP_CONNECTIONS_FILE", str(cfg))
     monkeypatch.setenv("LLP_MCP_DEFAULT_SAFETY", "MEDIUM")
 

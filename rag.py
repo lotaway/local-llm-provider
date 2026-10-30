@@ -855,8 +855,11 @@ class LocalRAG:
                 has_es_docs = self.es_retriever.es_client.indices.exists(
                     index=self.es_retriever.index_name
                 )
-            except Exception:
-                pass
+            except Exception as error:
+                logger.warning(
+                    "ES index existence check failed",
+                    extra={"error": str(error)},
+                )
 
         # Calculate which stores need initialization
         needs_es = (
@@ -1272,7 +1275,7 @@ def command_line_rag():
         local_model = LocalLLModel()
         local_rag = LocalRAG(local_model)
 
-        print("RAG 系统已启动，输入 'exit' 或 'quit' 退出")
+        logger.info("RAG system started, input 'exit' or 'quit' to quit")
         while True:
             try:
                 # Use thread for blocking input
@@ -1280,11 +1283,11 @@ def command_line_rag():
                 if query.lower() in ["exit", "quit"]:
                     break
                 res = await local_rag.generate_answer(query)
-                print("答：", res.get("answer"))
+                logger.info("RAG answer: %s", res.get("answer"))
             except KeyboardInterrupt:
                 break
-            except Exception as e:
-                print(f"错误: {e}")
+            except Exception as error:
+                logger.warning("RAG command failed", extra={"error": str(error)})
 
     asyncio.run(run())
 

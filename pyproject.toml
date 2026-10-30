@@ -76,4 +76,26 @@ acp-agent = "adapters.stdio_adapter:main"
 vllm = [
     "vllm>=0.6.0",
 ]
-# 使用方式: pip install -e .[vllm]
+# StyleTTS2 voice engine (see scripts/setup_styletts2.sh).
+# torch/torchaudio are deliberately NOT declared here: they must come from the
+# host-specific ROCm/CUDA/CPU wheel, otherwise pip can replace the accelerator
+# build with the default PyPI package. Install them before this extra.
+tts = [
+    "einops>=0.6",
+    "einops-exts>=0.0.4",
+    "munch>=4.0",
+    "tqdm>=4.60",
+    "typing-extensions>=4.5",
+    "soundfile>=0.12",
+    "librosa>=0.10",
+    "pydub>=0.25.1",
+    "nltk>=3.8",
+    "matplotlib>=3.7",
+    "phonemizer>=3.2",
+    "espeakng-loader>=0.2.4",
+    "audioop-lts>=0.2; python_version >= '3.13'",
+    "vector-quantize-pytorch>=1.14",
+    "monotonic-align @ git+https://github.com/resemble-ai/monotonic_align.git",
+]
+# 使用方式: pip install -e .[vllm] / pip install -e .[tts]
+# 注意: [tts] 不包含 torch/torchaudio，需先按宿主安装对应的 ROCm/CUDA/CPU 构建。

@@ -27,6 +27,10 @@ class MoltStrategyConfig:
     history_limit: int = 50
 
     def __post_init__(self) -> None:
+        self._validate_probabilities()
+        self._validate_steps()
+
+    def _validate_probabilities(self) -> None:
         rates = {
             "recall_hit_rate_threshold": self.recall_hit_rate_threshold,
             "min_abstraction_rate": self.min_abstraction_rate,
@@ -41,6 +45,8 @@ class MoltStrategyConfig:
         for name, value in rates.items():
             if not 0.0 <= value <= 1.0:
                 raise ValueError(f"{name} must be within [0, 1], got {value}")
+
+    def _validate_steps(self) -> None:
         steps = {
             "recall_step": self.recall_step,
             "decay_step": self.decay_step,

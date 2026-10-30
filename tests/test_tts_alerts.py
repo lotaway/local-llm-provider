@@ -1,5 +1,5 @@
-from services.tts_alerts import TTSTAlertService
-from services.tts_quality_gateway import TTSSpeechQualityGateway
+from services.tts_alerts import TTSAlertService
+from services.tts_quality_gateway import TTSQualityGateway
 
 
 class FakeNotifier:
@@ -11,16 +11,16 @@ class FakeNotifier:
 
 
 def test_alert_service_flags_failed_generation():
-    service = TTSTAlertService()
+    service = TTSAlertService()
 
     assert service.should_alert(
         {"status": "reject", "wer": 0.2, "dnsmos": {"overall": 3.5}, "speaker_similarity": 0.8}
     ) is True
-    assert TTSSpeechQualityGateway is not None
+    assert TTSQualityGateway is not None
 
 
 def test_alert_service_flags_quality_regression():
-    service = TTSTAlertService()
+    service = TTSAlertService()
     result = {"status": "reject", "wer": 0.5, "dnsmos": {"overall": 3.0}, "speaker_similarity": 0.5}
 
     assert service.should_alert(result) is True
@@ -28,7 +28,7 @@ def test_alert_service_flags_quality_regression():
 
 
 def test_alert_service_passes_clean_result():
-    service = TTSTAlertService()
+    service = TTSAlertService()
 
     assert service.should_alert({"status": "pass", "wer": 0.01, "dnsmos": {"overall": 4.0}, "speaker_similarity": 0.9}) is False
     assert service.check([]) == []
@@ -36,7 +36,7 @@ def test_alert_service_passes_clean_result():
 
 def test_alert_service_notifies_and_exposes_alerts():
     notifier = FakeNotifier()
-    service = TTSTAlertService(notifier=notifier)
+    service = TTSAlertService(notifier=notifier)
 
     result = {"status": "reject", "wer": 0.5, "dnsmos": {"overall": 3.0}, "speaker_similarity": 0.5}
     alerts = service.check([result])
@@ -47,7 +47,7 @@ def test_alert_service_notifies_and_exposes_alerts():
 
 
 def test_alert_service_reset_clears_alerts():
-    service = TTSTAlertService()
+    service = TTSAlertService()
 
     service.check([{"status": "reject", "wer": 0.5, "dnsmos": {"overall": 3.0}, "speaker_similarity": 0.5}])
     service.reset()

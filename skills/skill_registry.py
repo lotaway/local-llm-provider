@@ -10,6 +10,8 @@ from constants import (
     LLP_SKILLS_DIRS,
     LLP_ENABLE_CLAUDE_GLOBAL,
     LLP_CLAUDE_SKILLS_DIR,
+    LLP_ENABLE_OPENCLAW,
+    LLP_OPENCLAW_ROOT,
 )
 
 logger = logging.getLogger(__name__)
@@ -260,7 +262,9 @@ def get_registry() -> SkillRegistry:
     return registry
 
 
-def init_skills():
+def init_skills(force: bool = False):
+    if force:
+        registry.clear()
     skills_dir = os.path.dirname(__file__)
     all_manifests: List[SkillManifest] = []
     loaded_names: set = set()
@@ -271,7 +275,7 @@ def init_skills():
             continue
         loaded_names.add(m.name)
         all_manifests.append(m)
-    env_dirs = LLP_SKILLS_DIRS
+    env_dirs = os.getenv("LLP_SKILLS_DIRS", LLP_SKILLS_DIRS)
     if env_dirs:
         for d in [p for p in env_dirs.split(":") if p]:
             env_manifests = load_skills_from_directory(d)
@@ -281,8 +285,8 @@ def init_skills():
                     continue
                 loaded_names.add(m.name)
                 all_manifests.append(m)
-    enable_claude = LLP_ENABLE_CLAUDE_GLOBAL
-    claude_root = LLP_CLAUDE_SKILLS_DIR
+    enable_claude = os.getenv("LLP_ENABLE_CLAUDE_GLOBAL", LLP_ENABLE_CLAUDE_GLOBAL)
+    claude_root = os.getenv("LLP_CLAUDE_SKILLS_DIR", LLP_CLAUDE_SKILLS_DIR)
     if enable_claude == "1":
         if claude_root and os.path.exists(claude_root):
             claude_dir = claude_root
@@ -297,8 +301,8 @@ def init_skills():
                 loaded_names.add(m.name)
                 all_manifests.append(m)
 
-    enable_openclaw = os.getenv("LLP_ENABLE_OPENCLAW", "0")
-    openclaw_root = os.getenv("LLP_OPENCLAW_ROOT", "")
+    enable_openclaw = os.getenv("LLP_ENABLE_OPENCLAW", LLP_ENABLE_OPENCLAW)
+    openclaw_root = os.getenv("LLP_OPENCLAW_ROOT", LLP_OPENCLAW_ROOT)
     if enable_openclaw == "1" and openclaw_root:
         # Load both skills and extensions from OpenClaw
         for subdir in ["skills", "extensions"]:

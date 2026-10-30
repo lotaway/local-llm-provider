@@ -86,7 +86,16 @@ def main(argv: List[str] = None) -> None:
     }
     for case in build_cases(args):
         report = run_evaluation(evaluator, case["ref_text"], case["ref_audio"], case["gen_audio"], thresholds)
-        logger.info(f"Evaluation Report:\n{report}")
+        logger.info(
+            "tts_evaluation_completed",
+            extra={
+                "ref_text": case["ref_text"],
+                "ref_audio": case["ref_audio"],
+                "gen_audio": case["gen_audio"],
+                "status": report.get("status"),
+                "wer": report.get("wer"),
+            },
+        )
 
 
 if __name__ == "__main__":

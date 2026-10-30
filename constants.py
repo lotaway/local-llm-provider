@@ -150,3 +150,11 @@ REDIS_TTS_PREFIX = "tts:" # Strict Scheme B prefix
 # MongoDB TTS Collections (Isolated from RAG/Brain)
 TTS_MONGO_COLLECTION_SPEAKERS = "tts_speakers"
 TTS_MONGO_COLLECTION_PROFILES = "tts_user_profiles"
+
+# TTS quality / alert thresholds (overridable via environment)
+TTS_WER_THRESHOLD = float(os.getenv("TTS_WER_THRESHOLD", "0.08"))
+TTS_DNSMOS_THRESHOLD = float(os.getenv("TTS_DNSMOS_THRESHOLD", "3.8"))
+TTS_SIMILARITY_THRESHOLD = float(os.getenv("TTS_SIMILARITY_THRESHOLD", "0.78"))
+TTS_ALERTS_LIMIT = int(os.getenv("TTS_ALERTS_LIMIT", "100"))
+TTS_AUDIO_SAMPLE_RATE = int(os.getenv("TTS_AUDIO_SAMPLE_RATE", "24000"))
+TTS_AUDIO_MAX_DURATION_SECONDS = float(os.getenv("TTS_AUDIO_MAX_DURATION_SECONDS", "30.0"))

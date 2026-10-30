@@ -1,4 +1,4 @@
-from services.tts_quality_gateway import TTSSpeechQualityGateway
+from services.tts_quality_gateway import TTSQualityGateway
 
 
 class FakeEvaluator:
@@ -21,7 +21,7 @@ class FakeEvaluator:
 
 
 def test_quality_gateway_blocks_failed_generation():
-    gateway = TTSSpeechQualityGateway(FakeEvaluator(is_passed=False))
+    gateway = TTSQualityGateway(FakeEvaluator(is_passed=False))
 
     report = gateway.evaluate("Hello world", b"audio", b"audio")
 
@@ -30,7 +30,7 @@ def test_quality_gateway_blocks_failed_generation():
 
 
 def test_quality_gateway_passes_clean_generation():
-    gateway = TTSSpeechQualityGateway(FakeEvaluator(is_passed=True))
+    gateway = TTSQualityGateway(FakeEvaluator(is_passed=True))
 
     report = gateway.evaluate("Hello world", b"audio", b"audio")
 

@@ -6,7 +6,6 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
-
 import yaml
 
 from utils.mcp_protocol import JsonRpcTransport, MCPError
@@ -55,7 +54,35 @@ class MCPConnection:
     tool_specs: Dict[str, MCPToolSpec] = field(default_factory=dict)
 
 
-_connections: Dict[str, MCPConnection] = {}
+class MCPConnectionRegistry:
+    """Process-wide registry of live MCP connections (replaces module global state)."""
+
+    def __init__(self) -> None:
+        self._connections: Dict[str, MCPConnection] = {}
+
+    def __getitem__(self, name: str) -> MCPConnection:
+        return self._connections[name]
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._connections
+
+    def get(self, name: str) -> Optional[MCPConnection]:
+        return self._connections.get(name)
+
+    def set(self, conn: MCPConnection) -> None:
+        self._connections[conn.name] = conn
+
+    def clear(self) -> None:
+        self._connections.clear()
+
+    def list(self) -> Dict[str, MCPConnection]:
+        return dict(self._connections)
+
+    def values(self) -> List[MCPConnection]:
+        return list(self._connections.values())
+
+
+_connections = MCPConnectionRegistry()
 
 
 def _get_default_safety() -> str:
@@ -149,10 +176,10 @@ def _start_connection(cfg: Dict[str, Any]) -> Optional[MCPConnection]:
         process = _spawn_process(cfg)
         connection = _build_connection(cfg, process)
         connection.transport = JsonRpcTransport(process)
-        _connections[connection.name] = connection
+        _connections.set(connection)
         return connection
     except (OSError, MCPError) as error:
-        logger.error("failed to start MCP connection", extra={"name": name, "error": str(error)})
+        logger.error("failed to start MCP connection", extra={"connection": name, "error": str(error)})
         return None
 
 
@@ -185,7 +212,9 @@ def _build_connection(cfg: Dict[str, Any], process: subprocess.Popen) -> MCPConn
     )
 
 
-def _discover_tools_via_mcp(conn: MCPConnection, timeout: float = INITIALIZE_TIMEOUT_SECONDS) -> Dict[str, MCPToolSpec]:
+def _discover_tools_via_mcp(
+    conn: MCPConnection, timeout: float = INITIALIZE_TIMEOUT_SECONDS
+) -> Optional[Dict[str, MCPToolSpec]]:
     if conn.transport is None:
         return {}
     try:
@@ -195,9 +224,9 @@ def _discover_tools_via_mcp(conn: MCPConnection, timeout: float = INITIALIZE_TIM
     except MCPError as error:
         logger.warning(
             "MCP tool discovery degraded",
-            extra={"name": conn.name, "kind": error.kind.value, "error": str(error)},
+            extra={"connection": conn.name, "kind": error.kind.value, "error": str(error)},
         )
-        return {}
+        return None
     tools = result.get("tools", []) if isinstance(result, dict) else []
     return _parse_tool_specs(tools, "discovered")
 
@@ -210,25 +239,29 @@ def _initialize_params() -> Dict[str, Any]:
     }
 
 
-def _select_tool_specs(conn: MCPConnection, discovered: Dict[str, MCPToolSpec]) -> Dict[str, MCPToolSpec]:
+def _select_tool_specs(
+    conn: MCPConnection, discovered: Optional[Dict[str, MCPToolSpec]]
+) -> Dict[str, MCPToolSpec]:
+    discovered = discovered or {}
     if not discovered:
         return dict(conn.tool_specs)
     conflicts = sorted(set(discovered) & set(conn.tool_specs))
     if conflicts:
         logger.warning(
             "MCP tool name conflict resolved in favor of discovery",
-            extra={"name": conn.name, "tools": conflicts},
+            extra={"connection": conn.name, "tools": conflicts},
         )
     merged = dict(conn.tool_specs)
     merged.update(discovered)
     return merged
 
 
-def _heartbeat(conn: MCPConnection) -> None:
+def _heartbeat(conn: MCPConnection) -> bool:
     if conn.process is None or conn.process.poll() is not None:
         conn.status = ConnectionStatus.DEAD
-        return
+        return False
     conn.last_heartbeat = time.time()
+    return True
 
 
 def _register_tool(mcp_agent, conn: MCPConnection, spec: MCPToolSpec) -> None:
@@ -253,7 +286,7 @@ def _build_tool_callable(conn: MCPConnection, spec: MCPToolSpec):
 
 
 def get_connections() -> Dict[str, MCPConnection]:
-    return dict(_connections)
+    return _connections.list()
 
 
 def load_from_env(mcp_agent) -> List[MCPConnection]:
@@ -262,10 +295,18 @@ def load_from_env(mcp_agent) -> List[MCPConnection]:
         conn = _start_connection(cfg)
         if conn is None:
             continue
-        _heartbeat(conn)
+        if not _heartbeat(conn):
+            continue
         if conn.status == ConnectionStatus.DEAD:
             continue
         discovered = _discover_tools_via_mcp(conn)
+        if discovered is None and (
+            conn.process is None or conn.process.poll() is not None
+        ):
+            # Discovery could not run because the process died; never fall back
+            # to the configured tool specs for a connection that is no longer alive.
+            _stop_process(conn.process)
+            continue
         specs = _select_tool_specs(conn, discovered)
         if not specs:
             conn.status = ConnectionStatus.DEAD
@@ -280,7 +321,7 @@ def load_from_env(mcp_agent) -> List[MCPConnection]:
 
 
 def stop_all() -> None:
-    for conn in list(_connections.values()):
+    for conn in _connections.list().values():
         if conn.transport:
             conn.transport.close()
         _stop_process(conn.process)

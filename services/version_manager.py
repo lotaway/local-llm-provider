@@ -37,7 +37,8 @@ class VersionManager(IVersionManager):
     ) -> Dict[str, Any]:
         existing = self._existing_versions(topic)
         best, text_similarity = self._best_match(existing, conclusion)
-        vector_similarity = self._vector_similarity(ltm)
+        payload = ltm if ltm is not None else {"topic": topic, "conclusion": conclusion}
+        vector_similarity = self._vector_similarity(payload)
         similarity = max(text_similarity, vector_similarity or 0.0)
         return {
             "has_conflict": similarity >= self._conflict_threshold,

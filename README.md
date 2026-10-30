@@ -91,6 +91,46 @@ Install Vscode Continue Plugin and connect to the server.
 uv pip install -e .
 ```
 
+### StyleTTS2 Voice Engine
+
+The TTS adapter uses the vendored StyleTTS2 checkout under
+`third_party/StyleTTS2`. The setup script initializes the submodule, installs
+the runtime dependencies and verifies the model imports:
+
+```bash
+mamba activate py313
+bash scripts/setup_styletts2.sh
+```
+
+To re-run only the diagnostics:
+
+```bash
+bash scripts/setup_styletts2.sh --check-only
+```
+
+PyTorch/torchaudio are intentionally **not** part of the `tts` extra. Install
+the ROCm/CUDA/CPU build that matches your host first; the setup script then
+installs only the remaining `[tts]` dependencies from `pyproject.toml` and
+never resolves or upgrades torch. This keeps an existing `torch+rocm`
+installation intact.
+
+If you prefer pip directly, install torch/torchaudio first and then run
+`pip install -e ".[tts]"`. Do not add torch/torchaudio to the extra or to a
+separate requirements file, otherwise pip may replace the accelerator build
+with the default PyPI wheel. `vector-quantize-pytorch` still requires
+`torch>=2.4` transitively; if your ROCm/CUDA build is older, pip may try to
+upgrade it. The setup script avoids this by pinning the installed torch build
+through a pip constraint.
+
+The adapter loads the bundled espeak-ng through `espeakng-loader`, so a
+system-wide `espeak-ng` install is not required. `ffmpeg` is only needed for
+non-WAV reference audio in `POST /tts/clone`.
+
+Finally, download the desired pretrained weights into `models/tts/`
+(LJSpeech for a single speaker or LibriTTS for multi-speaker cloning). The
+setup checker also honours `TTS_MODEL_DIR` and `TTS_MODEL_CHECKPOINT` when the
+weights live elsewhere.
+
 ## Voice ASR (VibeVoice) Integration
 
 This project integrates VibeVoice‑ASR via environment variables. You need a local checkout of the official repository and point the paths accordingly.

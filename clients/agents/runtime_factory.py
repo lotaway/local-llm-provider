@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import List, Dict, Any, Optional
 from .agent_runtime import AgentRuntime
@@ -116,8 +117,11 @@ class RuntimeFactory:
             from utils.mcp_loader import load_from_env
 
             load_from_env(mcp)
-        except Exception:
-            pass
+        except Exception as error:
+            logging.getLogger(__name__).exception(
+                "Failed to load MCP tools into runtime context",
+                extra={"error": str(error)},
+            )
         runtime.state.context["available_mcp_tools"] = mcp.get_available_tools()
 
     @staticmethod

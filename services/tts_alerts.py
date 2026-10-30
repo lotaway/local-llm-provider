@@ -1,16 +1,24 @@
 import logging
 from typing import Any, Dict, List, Optional
 
+from constants import (
+    TTS_ALERTS_LIMIT,
+    TTS_DNSMOS_THRESHOLD,
+    TTS_SIMILARITY_THRESHOLD,
+    TTS_WER_THRESHOLD,
+)
+from interfaces.tts_types import ITTSNotifier
+
 logger = logging.getLogger(__name__)
 
 
-class TTSTAlertService:
+class TTSAlertService:
     def __init__(
         self,
-        notifier: Optional[Any] = None,
-        wer_threshold: float = 0.08,
-        dnsmos_threshold: float = 3.8,
-        similarity_threshold: float = 0.78,
+        notifier: Optional[ITTSNotifier] = None,
+        wer_threshold: float = TTS_WER_THRESHOLD,
+        dnsmos_threshold: float = TTS_DNSMOS_THRESHOLD,
+        similarity_threshold: float = TTS_SIMILARITY_THRESHOLD,
     ):
         self._notifier = notifier
         self._wer_threshold = wer_threshold
@@ -36,7 +44,7 @@ class TTSTAlertService:
                 self._notifier.notify(result)
         return alerts
 
-    def alerts(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def alerts(self, limit: int = TTS_ALERTS_LIMIT) -> List[Dict[str, Any]]:
         return list(self._alerts[:limit])
 
     def reset(self) -> None:

@@ -6,6 +6,8 @@ from interfaces.molt_types import MoltJob, MoltScheduleConfig, MoltStrategyConfi
 from schemas.graph import LTMNode
 from services import molt_controller as controller_module
 from services import version_manager as version_module
+from services import decay_scheduler as decay_module
+from services import abstraction_engine as abstraction_module
 from services.abstraction_engine import AbstractionEngine
 from services.decay_scheduler import DecayScheduler
 from services.feedback_service import FeedbackService
@@ -135,6 +137,8 @@ def episode(chunk_id, importance=0.8):
 def learning_enabled(monkeypatch):
     monkeypatch.setattr(controller_module, "LEARNING", True)
     monkeypatch.setattr(version_module, "LEARNING", True)
+    monkeypatch.setattr(decay_module, "LEARNING", True)
+    monkeypatch.setattr(abstraction_module, "LEARNING", True)
 
 
 class TestFeedbackAndDecay:
@@ -147,7 +151,7 @@ class TestFeedbackAndDecay:
         assert result["importance_score"] == 1.0
         assert result["last_reviewed"] is not None
 
-    def test_decay_scheduler_updates_every_episode(self):
+    def test_decay_scheduler_updates_every_episode(self, learning_enabled):
         repo = InMemoryMemoryRepository([episode("chunk-a"), episode("chunk-b")])
         scheduler = DecayScheduler(repo, FixedCalculator())
 

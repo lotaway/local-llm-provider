@@ -10,12 +10,6 @@ class MCPTaskAgent(BaseAgent):
         super().__init__(llm_model, name)
         self.tools = {}
         self.permission_manager = None
-        self._register_default_tools()
-
-    def _register_default_tools(self):
-        self.register_tool(
-            "read_file", self._read_file_tool, permission_name=PermissionNames.MCP_FILE_READ
-        )
 
     def register_tool(self, tool_name: str, tool_callable, permission_name: str = None, safety_level: str = None):
         self.tools[tool_name] = {
@@ -31,7 +25,7 @@ class MCPTaskAgent(BaseAgent):
         self,
         input_data: Any,
         context: Dict[str, Any],
-        private_context: Dict[str, Any],
+        private_context: Optional[Dict[str, Any]] = None,
         stream_callback=None,
     ) -> AgentResult:
         # Check if resuming from client execution
