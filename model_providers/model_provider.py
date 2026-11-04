@@ -75,7 +75,23 @@ class LocalLLModel:
         self.engine = None
         self.scheduler = Scheduler(handler=self.generate_next_token)
         self._state = {}
-        self.task = asyncio.create_task(self.scheduler.loop())
+        self.task = None
+        self._ensure_scheduler_task()
+
+    def _ensure_scheduler_task(self) -> None:
+        """Start the token scheduler on the current event loop when one is running.
+
+        Sync contexts (tests, CLIs) construct the model without a running loop;
+        the loop task is then started lazily inside ``_generate_stream``.
+        """
+        if self.task is not None and not self.task.done():
+            return
+        try:
+            self.task = asyncio.create_task(self.scheduler.loop())
+        except RuntimeError:
+            logging.getLogger(__name__).warning(
+                "No running event loop; token scheduler starts lazily on first request"
+            )
 
     def get_token_usage(self, messages: list[dict]) -> tuple[int, int]:
         self.load_model()
@@ -325,6 +341,7 @@ class LocalLLModel:
 
     async def _generate_stream(self, prompt: str, **kwargs):
         self.load_model()
+        self._ensure_scheduler_task()
         rid, q = await self.scheduler.register(
             {
                 "prompt": prompt,

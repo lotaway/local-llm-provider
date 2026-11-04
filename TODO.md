@@ -93,7 +93,7 @@
 - [x] `tests/test_molt_scheduler.py` 2 项重试失败：`_run_handler`（`services/molt_scheduler.py:116-121`）把异常转成 `{"success": False}`，`_retry` 永远捕获不到异常，重试机制失效
 - [x] `tests/test_skills_env_loading.py::test_skills_env_loading`：测试调用 `init_skills(force=True)`，但 `skills/skill_registry.py:263` 仅定义 `init_skills()`，需统一接口
 - [x] `tests/test_version_manager.py::TestConflictDetection::test_vector_similarity_participates_in_conflict`：`detect_conflict`（`services/version_manager.py:35`）未构造 ltm 载荷，`_vector_similarity(None)` 返回 `None`
-- [ ] CI 增加定向测试步骤，禁止以“环境问题”跳过上述失败用例
+- [x] CI 增加定向测试步骤（`.github/workflows/ci.yml` 运行 21 个已验证通过的定向测试文件），禁止以“环境问题”跳过上述失败用例
 
 ### 6.3 代码原则整改
 
@@ -107,11 +107,11 @@
 - [x] 将 `services/tts_audio_quality.py`、`services/tts_post_processing.py` 的 `numpy` 依赖下沉到基础设施适配器
 - [x] 将 `services/tts_preference_store.py` 的 `pymongo` 与硬编码库名 `"rag_system"`（`:39`）改为注入仓储/配置
 - [ ] 复核主依赖 `bitsandbytes`（传递依赖 `torch>=2.3`）在全新环境安装时可能拉取默认 PyPI torch 的问题；首次安装前应先安装宿主 ROCm/CUDA 构建，或提供统一 constraints
-- [ ] 为 TTS 服务定义接口，替换 `evaluator: Any`、`notifier: Any`、`collection: Any`
-- [ ] `controllers/tts_controller.py` 改为依赖注入 `StyleTTS2Adapter` 抽象，不在路由内直接实例化
+- [x] 为 TTS 服务定义接口，替换 `evaluator: Any`（`ITTSQualityEvaluator`）、`notifier: Any`（`ITTSNotifier`）、`collection: Any`（`ITTSCollection` 协议）
+- [x] `controllers/tts_controller.py` 改为依赖注入：`main.py` lifespan 组合 `TTSService`/`StyleTTS2Adapter` 并调用 `set_tts_service`；控制器不再直接实例化适配器，未注入时返回 503
 - [ ] 拆分 `services/evolution_dispatcher.py::_apply_adjustments`（37 行）、`_aggregate_signals`（29 行）、`_apply_m3`（26 行）
 - [ ] 拆分 `repositories/mongodb_repository.py::save_document`（43 行）、`save_chunk`（30 行）及 `repositories/neo4j_repository.py` 的 3 个 26–29 行事务函数
-- [ ] 拆分 `interfaces/molt_types.py::__post_init__`（25 行）为范围校验与步长校验两个函数
+- [x] 拆分 `interfaces/molt_types.py::__post_init__`（25 行）为 `_validate_probabilities` / `_validate_steps` 两个函数
 - [x] 统一 TTS 命名：`TTSTAlertService`、`TTSSpeechQualityGateway`、`TTSSRegressionSuite`、`TTSTrendStatistics` 改为一致的 `TTS...` 前缀
 - [x] 消除 `utils/mcp_loader.py:58` 的模块级全局 `_connections` Dict，改为 `MCPConnectionRegistry` 实例封装（set/get/list/values/clear）
 - [ ] 复核 `bootstrap/container.py:230` 全局单例是否持有业务状态，必要时拆分生命周期对象
@@ -121,8 +121,8 @@
 
 ### 6.4 质量门禁（防止回归）
 
-- [ ] CI 增加单文件 ≤500 行、单函数 ≤20 行检查
-- [ ] CI 增加禁止 `print(`、`except ...: pass`、业务层直接导入 `pymongo` / `numpy` / `redis` 的检查
+- [x] CI 增加单文件 ≤500 行、单函数 ≤20 行检查（`scripts/quality_gate.py`，基线容错：新违规即失败、已记录项不允许增长）
+- [x] CI 增加禁止 `print(`、`except ...: pass`、业务层直接导入 `pymongo` / `numpy` / `redis` 的检查（同上 quality gate；`services`/`controllers`/`agents`/`application`/`domain`）
 - [ ] CI 增加禁止新增解释性注释的检查（契约/类型文档除外）
 - [ ] CI 增加 TODO 勾选与测试结果一致性检查：勾选任务对应测试必须为绿
 - [ ] 复核后同步更新第 1–5 节勾选状态，并在本节记录整改结果
@@ -137,4 +137,8 @@
 - §6.3 TTS 命名与配置：重命名 `TTSTAlertService`→`TTSAlertService`、`TTSSpeechQualityGateway`→`TTSQualityGateway`、`TTSSRegressionSuite`→`TTSRegressionSuite`；WER/DNSMOS/similarity/告警数/采样率/最大时长阈值迁移到 `constants`（`TTS_*`）；`tts_estimate/main.py` 循环内 f-string 日志改为结构化字段。
 - §6.3 TTS 服务接口：`interfaces/tts_types.py` 新增 `ITTSQualityEvaluator` / `ITTSNotifier` 端口，质量网关与告警服务改用端口类型（替代 `Any`）。
 - §6.3 `rag.py`：`command_line_rag` 的 print 改为 logger；ES 存在性检查的裸 `except Exception: pass` 改为分类日志。
+- §6.3 依赖注入收尾：`interfaces/tts_types.py` 新增 `ITTSCollection` 协议替换 `collection: Any`；`main.py` lifespan 作为 TTS 组合根注入 `TTSService`（adapter/speaker repo/preference store），控制器未注入时返回 503 而非兜底实例化。
+- §6.4 质量门禁：新增 `scripts/quality_gate.py` + `scripts/quality_baseline.json`（基线容错，只拦新增违规与已记录项增长）与 `.github/workflows/ci.yml`（quality-gate + targeted-tests 两个 job）；定向测试 job 固定运行验证通过的 21 个测试文件；CI 安装顺序为先 CPU torch 再 `pip install -e .`，避免拉取默认 PyPI torch 覆盖 ROCm/CUDA 构建。
+- §6.2 后续跟进，2026-11-04：全量失败从 19 降至 16——`pyproject.toml` 增加 `[tool.pytest.ini_options] asyncio_mode=auto` 修复 `tests/test_error_handler.py` / `tests/test_private_context.py`；`model_providers/model_provider.py` 构造期 `asyncio.create_task` 无运行事件循环时崩溃改为惰性启动（`_ensure_scheduler_task`），修复 `tests/test_agent_system.py`。剩余 16 个失败均为 Neo4j 未运行 / API 服务器未启动的连接类错误。
+- §6.3 后续跟进，2026-11-04：`main.py` lifespan 拆分为 `init_molt_scheduler` / `init_tts_service` < 20 行；MOLT 依赖装配下沉到 `bootstrap/molt_factory.py`（`build_molt_controller` + `_optional_repo`）。质量门禁（`scripts/quality_gate.py` + 基线）与全量测试维持通过（143 passed / 16 failed，失败均为 Neo4j 或 API 服务未启动）。
 - §6.3 `clients/agents/runtime_factory.py`：`load_from_env` 失败改为 `logger.exception` 分类处理。

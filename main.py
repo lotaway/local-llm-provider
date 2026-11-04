@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 import globals as backend_globals
 from model_providers import LocalLLModel
 from model_providers.multimodal_provider import MultimodalFactory
+from bootstrap.molt_factory import build_molt_controller
+from services.molt_scheduler import MoltScheduler
 from routers import version_router
 from controllers.base_controller import router as base_router
 import auth
@@ -77,6 +79,45 @@ from schemas.agent_protocol import AgentProtocolException
 
 def agent_protocol_exception_handler(request: Request, exc: AgentProtocolException):
     return exc.to_http_response()
+
+
+async def init_molt_scheduler() -> None:
+    """Init MOLT evolution scheduler (no-op cycles unless LEARNING is enabled)."""
+    try:
+        task_scheduler = backend_globals.task_scheduler
+        if task_scheduler is None or not hasattr(task_scheduler, "submit"):
+            from infrastructure.scheduling.async_scheduler import AsyncTaskScheduler
+
+            task_scheduler = AsyncTaskScheduler()
+        backend_globals.molt_task_scheduler = task_scheduler
+        controller = build_molt_controller(current_memory_repo())
+        backend_globals.molt_controller = controller
+        backend_globals.molt_scheduler = MoltScheduler(controller, task_scheduler=task_scheduler)
+        await backend_globals.molt_scheduler.start()
+    except Exception as e:
+        logger.error(f"Failed to start MOLT scheduler: {e}")
+
+
+def init_tts_service() -> None:
+    """Composition for /tts routes; adapter/service are injected, never built in the router."""
+    try:
+        from controllers.tts_controller import set_tts_service
+        from infrastructure.tts.speaker_repository import MongoSpeakerRepository
+        from model_providers.tts.style_tts2_adapter import StyleTTS2Adapter
+        from services.tts_preference_store import TTSPreferenceStore
+        from services.tts_service import TTSService
+
+        tts_preference_store = TTSPreferenceStore()
+        backend_globals.tts_service = TTSService(
+            adapter=StyleTTS2Adapter(
+                preference_store=tts_preference_store,
+                speaker_repository=MongoSpeakerRepository(),
+            ),
+            preference_store=tts_preference_store,
+        )
+        set_tts_service(backend_globals.tts_service)
+    except Exception as e:
+        logger.error(f"Failed to init TTS service: {e}")
 
 
 @asynccontextmanager
@@ -126,57 +167,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to start task scheduler: {e}")
 
-    # Init MOLT evolution scheduler (no-op cycles unless LEARNING is enabled)
-    try:
-        from infrastructure.scheduling.async_scheduler import AsyncTaskScheduler
-        from services.abstraction_engine import AbstractionEngine
-        from services.decay_calculator import ExponentialDecayCalculator
-        from services.decay_scheduler import DecayScheduler
-        from services.feedback_service import FeedbackService
-        from services.molt_controller import MoltController
-        from services.molt_scheduler import MoltScheduler
-        from services.version_manager import VersionManager
-
-        task_scheduler = backend_globals.task_scheduler
-        if task_scheduler is None or not hasattr(task_scheduler, "submit"):
-            task_scheduler = AsyncTaskScheduler()
-        backend_globals.molt_task_scheduler = task_scheduler
-
-        molt_memory_repo = (
-            getattr(backend_globals.local_rag, "mongo_repo", None)
-            if backend_globals.local_rag
-            else None
-        )
-        backend_globals.molt_controller = MoltController(
-            mongo_repo=molt_memory_repo,
-            neo4j_repo=(
-                getattr(backend_globals.local_rag, "neo4j_repo", None)
-                if backend_globals.local_rag
-                else None
-            ),
-            decay_scheduler=DecayScheduler(molt_memory_repo, ExponentialDecayCalculator())
-            if molt_memory_repo
-            else None,
-            abstraction_engine=AbstractionEngine(mongo_repo=molt_memory_repo)
-            if molt_memory_repo
-            else None,
-            version_manager=VersionManager(
-                neo4j_repo=(
-                    getattr(backend_globals.local_rag, "neo4j_repo", None)
-                    if backend_globals.local_rag
-                    else None
-                ),
-                mongo_repo=molt_memory_repo,
-            ),
-            feedback_service=FeedbackService(molt_memory_repo) if molt_memory_repo else None,
-        )
-        backend_globals.molt_scheduler = MoltScheduler(
-            backend_globals.molt_controller,
-            task_scheduler=task_scheduler,
-        )
-        await backend_globals.molt_scheduler.start()
-    except Exception as e:
-        logger.error(f"Failed to start MOLT scheduler: {e}")
+    await init_molt_scheduler()
+    init_tts_service()
 
     yield
     # Shutdown

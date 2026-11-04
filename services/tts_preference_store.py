@@ -3,12 +3,13 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from constants import MONGO_DB_NAME, MONGO_URI, TTS_MONGO_COLLECTION_PROFILES
+from interfaces.tts_types import ITTSCollection
 
 logger = logging.getLogger(__name__)
 
 
 class TTSPreferenceStore:
-    def __init__(self, collection: Any = None, database: str = MONGO_DB_NAME):
+    def __init__(self, collection: Optional[ITTSCollection] = None, database: str = MONGO_DB_NAME):
         self._collection = collection
         self._database = database
 

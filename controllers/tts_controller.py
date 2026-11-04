@@ -10,8 +10,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from globals import limiter
 from interfaces.tts_types import ITTSAdapter
-from model_providers.tts.style_tts2_adapter import StyleTTS2Adapter
-from services.tts_preference_store import TTSPreferenceStore
 from services.tts_service import TTSQualityRejected, TTSService
 
 logger = logging.getLogger(__name__)
@@ -75,12 +73,8 @@ def set_tts_service(service: Optional[TTSService]) -> None:
 
 
 def get_tts_service() -> TTSService:
-    global _service
     if _service is None:
-        _service = TTSService(
-            adapter=StyleTTS2Adapter(preference_store=TTSPreferenceStore()),
-            preference_store=TTSPreferenceStore(),
-        )
+        raise HTTPException(status_code=503, detail="TTS service is not initialized")
     return _service
 
 

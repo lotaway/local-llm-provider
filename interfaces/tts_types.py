@@ -1,5 +1,17 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Protocol
+
+
+class ITTSCollection(Protocol):
+    """Minimal persistent-store port backed by a Mongo-style collection."""
+
+    def update_one(self, filter: Dict[str, Any], update: Dict[str, Any], upsert: bool = False) -> Any: ...
+
+    def find_one(self, filter: Dict[str, Any], projection: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]: ...
+
+    def find(self, filter: Dict[str, Any], projection: Optional[Dict[str, Any]] = None) -> Any: ...
+
+    def delete_one(self, filter: Dict[str, Any]) -> Any: ...
 
 
 class ITTSQualityEvaluator(ABC):

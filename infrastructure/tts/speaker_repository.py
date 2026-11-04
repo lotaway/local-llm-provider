@@ -3,13 +3,13 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from constants import MONGO_DB_NAME, MONGO_URI, TTS_MONGO_COLLECTION_SPEAKERS
-from interfaces.tts_types import ISpeakerRepository
+from interfaces.tts_types import ISpeakerRepository, ITTSCollection
 
 logger = logging.getLogger(__name__)
 
 
 class MongoSpeakerRepository(ISpeakerRepository):
-    def __init__(self, collection: Any = None):
+    def __init__(self, collection: Optional[ITTSCollection] = None):
         self._collection = collection
 
     def _get_collection(self):
