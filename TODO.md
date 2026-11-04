@@ -103,18 +103,18 @@
 - [x] 拆分原 `rag.py` 超长函数：`build_vectorstore`→`_persist_document_chunks`/`_embed_chunks_in_batches`/`_embed_batch`；`_sync_get_or_create_vectorstore`→`_store_state`/`_initialize_stores`/`_handle_missing_documents`；`_async_extract_graph`→`_extract_chunk_graphs`/`_extract_chunk_graph`；`_select_text_splitter` → `splitting.select_text_splitter`
 - [x] 拆分 `services/abstraction_engine.py::abstract_to_ltm`（56 行）为 `abstract_to_ltm`(37)/`_summarize_with_llm`(15)/`_persist_ltm`(24)，Neo4j/Milvus/ES 写入收敛到 `_persist_ltm`
 - [x] 删除 `services/abstraction_engine.py:40`、`:74`、`:92` 与 `clients/agents/runtime_factory.py:119` 的 `except Exception: pass`，改为分类异常 + 日志 + 可追踪错误
-- [ ] 清理 `constants.py` 14 处注释及 `services/neo4j_repository.py:45-79` 等实现说明性注释，用类型、命名、拆函数替代
+- [x] 清理 `constants.py` 14 处实现说明性注释（配置命名已自解释）；TODO 所引 `services/neo4j_repository.py` 为笔误，实际 `repositories/neo4j_repository.py` 的 `_merge_entity_tx` 说明注释已删除
 - [x] 将 `services/tts_audio_quality.py`、`services/tts_post_processing.py` 的 `numpy` 依赖下沉到基础设施适配器
 - [x] 将 `services/tts_preference_store.py` 的 `pymongo` 与硬编码库名 `"rag_system"`（`:39`）改为注入仓储/配置
 - [ ] 复核主依赖 `bitsandbytes`（传递依赖 `torch>=2.3`）在全新环境安装时可能拉取默认 PyPI torch 的问题；首次安装前应先安装宿主 ROCm/CUDA 构建，或提供统一 constraints
 - [x] 为 TTS 服务定义接口，替换 `evaluator: Any`（`ITTSQualityEvaluator`）、`notifier: Any`（`ITTSNotifier`）、`collection: Any`（`ITTSCollection` 协议）
 - [x] `controllers/tts_controller.py` 改为依赖注入：`main.py` lifespan 组合 `TTSService`/`StyleTTS2Adapter` 并调用 `set_tts_service`；控制器不再直接实例化适配器，未注入时返回 503
-- [ ] 拆分 `services/evolution_dispatcher.py::_apply_adjustments`（37 行）、`_aggregate_signals`（29 行）、`_apply_m3`（26 行）
-- [ ] 拆分 `repositories/mongodb_repository.py::save_document`（43 行）、`save_chunk`（30 行）及 `repositories/neo4j_repository.py` 的 3 个 26–29 行事务函数
+- [x] 拆分 `services/evolution_dispatcher.py`：`_apply_adjustments`(37→`_dispatch_dominant_adjustments`/`_record_adjustment_history`)、`_aggregate_signals`(29→`_count_target_totals`)、`_apply_m3`(26→`_increment_chunk_importance`)、`_adjust_agent_preferences`(24→`_adjust_agent_type_preference`/`_adjust_skill_preferences`)，全部 ≤20 行
+- [x] 拆分 `repositories/mongodb_repository.py`：`save_document` 改 `(doc_id, content, title, source, **fields)` + `_build_document_record`；`save_chunk` + `_build_chunk_record(spec, now)`；`__init__` + `_qualified_uri`/`_authenticated_uri`；`repositories/neo4j_repository.py` 3 个事务函数提取 `_RELATION_NODES_QUERY`/`_RELATION_MERGE_QUERY`/`_SUBGRAPH_QUERY`/`_LTM_MERGE_QUERY` 常量与 `_ensure_relation_nodes`/`_ltm_params`/`_subgraph_nodes`/`_subgraph_edges`，全部 ≤20 行
 - [x] 拆分 `interfaces/molt_types.py::__post_init__`（25 行）为 `_validate_probabilities` / `_validate_steps` 两个函数
 - [x] 统一 TTS 命名：`TTSTAlertService`、`TTSSpeechQualityGateway`、`TTSSRegressionSuite`、`TTSTrendStatistics` 改为一致的 `TTS...` 前缀
 - [x] 消除 `utils/mcp_loader.py:58` 的模块级全局 `_connections` Dict，改为 `MCPConnectionRegistry` 实例封装（set/get/list/values/clear）
-- [ ] 复核 `bootstrap/container.py:230` 全局单例是否持有业务状态，必要时拆分生命周期对象
+- [x] 复核 `bootstrap/container.py:230` 全局单例：DI container 生命周期对象（含 override/单例注册表与 shutdown）可接受；真正的泄漏点是 `wire_routes` 直取 `inference_svc._engine`/`_current_model` 私有属性，改为 `domain/inference/services.py` 新增公开 `current_engine` 属性后经公开接口获取
 - [x] 将 `services/tts_alerts.py:11-13`、`services/tts_audio_quality.py:12`、`services/tts_regression_suite.py:29`、`services/tts_post_processing.py` 的魔法数字改为配置项
 - [x] 为 `/tts`、`/tts/clone` 增加输入校验（空文本、空 alias、base64 格式与大小）
 - [x] 修正 `tts_estimate/main.py:74` 循环内 f-string 日志，改为结构化字段并在循环外汇总
@@ -142,4 +142,5 @@
 - §6.2 后续跟进，2026-11-04：全量失败从 19 降至 16——`pyproject.toml` 增加 `[tool.pytest.ini_options] asyncio_mode=auto` 修复 `tests/test_error_handler.py` / `tests/test_private_context.py`；`model_providers/model_provider.py` 构造期 `asyncio.create_task` 无运行事件循环时崩溃改为惰性启动（`_ensure_scheduler_task`），修复 `tests/test_agent_system.py`。剩余 16 个失败均为 Neo4j 未运行 / API 服务器未启动的连接类错误。
 - §6.3 后续跟进，2026-11-04：`main.py` lifespan 拆分为 `init_molt_scheduler` / `init_tts_service` < 20 行；MOLT 依赖装配下沉到 `bootstrap/molt_factory.py`（`build_molt_controller` + `_optional_repo`）。质量门禁（`scripts/quality_gate.py` + 基线）与全量测试维持通过（143 passed / 16 failed，失败均为 Neo4j 或 API 服务未启动）。
 - §6.3 后续跟进（第 2 批）：`rag.py`→`rag/` 包拆分完成（`splitting`/`document_loader`/`document_ingestion`/`vectorstore_support`/`local_rag`，经 `git mv` 保留历史）；`load_documents` 改为扩展名分发表；超长函数全部拆至 ≤20 行；质量门禁零基线迁移通过；全量测试与拆分前完全一致（143 passed / 16 failed）。
+- §6.3 后续跟进（第 3 批）：`evolution_dispatcher`/`mongodb`/`neo4j` 超长函数拆分完成（全部 ≤20 行，质量门禁零基线迁移）；`save_document` 改 kwargs 形态；`wire_routes` 私有属性泄漏经 `InferenceDomainService.current_engine` 公开属性消除；`quality_gate.py` 语法解析失败不再静默跳过（计入 parse_errors 违规）；全量测试维持 143 passed / 16 failed（环境类）。
 - §6.3 `clients/agents/runtime_factory.py`：`load_from_env` 失败改为 `logger.exception` 分类处理。

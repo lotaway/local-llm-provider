@@ -6,6 +6,62 @@ from neo4j import GraphDatabase
 
 logger = logging.getLogger(__name__)
 
+_RELATION_NODES_QUERY = (
+    "MERGE (a:Entity {stable_id: $from_id}) "
+    "MERGE (b:Entity {stable_id: $to_id})"
+)
+_RELATION_MERGE_QUERY = (
+    "MATCH (a:Entity {stable_id: $from_id}), (b:Entity {stable_id: $to_id}) "
+    "CALL apoc.merge.relationship(a, $relation_type, {}, {confidence: $confidence, source_doc_id: $source_doc_id, created_at: $created_at}, b) "
+    "YIELD rel "
+    "CALL apoc.create.setRelProperties(rel, keys($properties), [k in keys($properties) | $properties[k]]) YIELD rel as r "
+    "RETURN r"
+)
+_SUBGRAPH_QUERY = (
+    "MATCH (start:Entity {stable_id: $entity_id}) "
+    "CALL apoc.path.subgraphAll(start, {maxLevel: $hops}) "
+    "YIELD nodes, relationships "
+    "RETURN nodes, relationships"
+)
+_LTM_MERGE_QUERY = (
+    "MERGE (l:LTMNode {topic_version: $topic_version}) "
+    "SET l.topic = $topic, "
+    "    l.version = $version, "
+    "    l.conclusion = $conclusion, "
+    "    l.conditions = $conditions, "
+    "    l.confidence = $confidence, "
+    "    l.sources = $sources, "
+    "    l.source_chunk_ids = $source_chunk_ids, "
+    "    l.properties = $properties, "
+    "    l.created_at = $created_at, "
+    "    l.updated_at = $updated_at "
+    "RETURN l.topic_version"
+)
+
+
+def _ensure_relation_nodes(tx, relation: Relation) -> None:
+    tx.run(
+        _RELATION_NODES_QUERY,
+        from_id=relation.from_entity_id,
+        to_id=relation.to_entity_id,
+    )
+
+
+def _ltm_params(ltm: LTMNode, topic_version: str) -> Dict[str, Any]:
+    return {
+        "topic_version": topic_version,
+        "topic": ltm.topic,
+        "version": ltm.version,
+        "conclusion": ltm.conclusion,
+        "conditions": ltm.conditions,
+        "confidence": ltm.confidence,
+        "sources": ltm.sources,
+        "source_chunk_ids": ltm.source_chunk_ids,
+        "properties": ltm.properties,
+        "created_at": ltm.created_at.isoformat(),
+        "updated_at": ltm.updated_at.isoformat(),
+    }
+
 
 class Neo4jRepository:
     def __init__(self):
@@ -42,8 +98,6 @@ class Neo4jRepository:
 
     @staticmethod
     def _merge_entity_tx(tx, entity: Entity):
-        # We use apoc.util.merge if available, but here we use standard MERGE for core fields
-        # and APOC for dynamic properties to adhere to the spec's flexibility.
         query = (
             "MERGE (e:Entity {stable_id: $stable_id}) "
             "SET e.type = $type, "
@@ -69,23 +123,9 @@ class Neo4jRepository:
 
     @staticmethod
     def _merge_relation_tx(tx, relation: Relation):
-        # Ensure nodes exist first (though they should have been merged already)
+        _ensure_relation_nodes(tx, relation)
         tx.run(
-            "MERGE (a:Entity {stable_id: $from_id})", from_id=relation.from_entity_id
-        )
-        tx.run("MERGE (b:Entity {stable_id: $to_id})", to_id=relation.to_entity_id)
-
-        # Merge relationship with specific type
-        # Note: Cypher doesn't support dynamic relationship types in MERGE easily without APOC
-        query = (
-            "MATCH (a:Entity {stable_id: $from_id}), (b:Entity {stable_id: $to_id}) "
-            "CALL apoc.merge.relationship(a, $relation_type, {}, {confidence: $confidence, source_doc_id: $source_doc_id, created_at: $created_at}, b) "
-            "YIELD rel "
-            "CALL apoc.create.setRelProperties(rel, keys($properties), [k in keys($properties) | $properties[k]]) YIELD rel as r "
-            "RETURN r"
-        )
-        tx.run(
-            query,
+            _RELATION_MERGE_QUERY,
             from_id=relation.from_entity_id,
             to_id=relation.to_entity_id,
             relation_type=relation.relation_type,
@@ -101,25 +141,25 @@ class Neo4jRepository:
             return session.execute_read(self._query_subgraph_tx, entity_id, hops)
 
     @staticmethod
+    @staticmethod
     def _query_subgraph_tx(tx, entity_id: str, hops: int) -> Dict[str, Any]:
-        query = (
-            "MATCH (start:Entity {stable_id: $entity_id}) "
-            "CALL apoc.path.subgraphAll(start, {maxLevel: $hops}) "
-            "YIELD nodes, relationships "
-            "RETURN nodes, relationships"
-        )
-        result = tx.run(query, entity_id=entity_id, hops=hops)
+        result = tx.run(_SUBGRAPH_QUERY, entity_id=entity_id, hops=hops)
         record = result.single()
         if not record:
             return {"nodes": [], "edges": []}
+        return {
+            "nodes": Neo4jRepository._subgraph_nodes(record),
+            "edges": Neo4jRepository._subgraph_edges(record),
+        }
 
-        nodes = []
-        for node in record["nodes"]:
-            nodes.append(dict(node))
+    @staticmethod
+    def _subgraph_nodes(record) -> List[Dict[str, Any]]:
+        return [dict(node) for node in record["nodes"]]
 
+    @staticmethod
+    def _subgraph_edges(record) -> List[Dict[str, Any]]:
         edges = []
         for rel in record["relationships"]:
-            # rel.start_node and rel.end_node are accessible in the driver
             edges.append(
                 {
                     "from": rel.start_node["stable_id"],
@@ -128,8 +168,7 @@ class Neo4jRepository:
                     "properties": dict(rel),
                 }
             )
-
-        return {"nodes": nodes, "edges": edges}
+        return edges
 
     def find_entities_by_name(self, name: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search entities by canonical name (fuzzy match)"""
@@ -151,34 +190,7 @@ class Neo4jRepository:
 
     @staticmethod
     def _save_ltm_tx(tx, ltm: LTMNode, topic_version: str):
-        query = (
-            "MERGE (l:LTMNode {topic_version: $topic_version}) "
-            "SET l.topic = $topic, "
-            "    l.version = $version, "
-            "    l.conclusion = $conclusion, "
-            "    l.conditions = $conditions, "
-            "    l.confidence = $confidence, "
-            "    l.sources = $sources, "
-            "    l.source_chunk_ids = $source_chunk_ids, "
-            "    l.properties = $properties, "
-            "    l.created_at = $created_at, "
-            "    l.updated_at = $updated_at "
-            "RETURN l.topic_version"
-        )
-        tx.run(
-            query,
-            topic_version=topic_version,
-            topic=ltm.topic,
-            version=ltm.version,
-            conclusion=ltm.conclusion,
-            conditions=ltm.conditions,
-            confidence=ltm.confidence,
-            sources=ltm.sources,
-            source_chunk_ids=ltm.source_chunk_ids,
-            properties=ltm.properties,
-            created_at=ltm.created_at.isoformat(),
-            updated_at=ltm.updated_at.isoformat(),
-        )
+        tx.run(_LTM_MERGE_QUERY, **_ltm_params(ltm, topic_version))
 
     def count_ltm_nodes(self) -> int:
         with self.driver.session() as session:

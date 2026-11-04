@@ -219,10 +219,8 @@ class Container:
 
         unload_uc = self.unload_model_use_case()
         inference_svc = self.inference_service()
-        unload_uc.set_current(
-            inference_svc._engine if inference_svc else None,
-            inference_svc._current_model if inference_svc else None,
-        )
+        if inference_svc is not None:
+            unload_uc.set_current(inference_svc.current_engine, inference_svc.current_model)
 
         logger.info("Routes wired successfully")
 

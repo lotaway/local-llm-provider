@@ -1,7 +1,6 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file first
 load_dotenv()
 
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -12,21 +11,17 @@ DEFAULT_CONTEXT_LENGTH = int(os.getenv("CONTEXT_LENGTH", 8192))
 QUANTIZATION = os.getenv("QUANTIZATION", "4bit")
 TORCH_DTYPE = os.getenv("TORCH_DTYPE")
 
-# RAG Database Configuration
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "19530")
 DB_COLLECTION = os.getenv("DB_COLLECTION", "rag_docs")
 
-# Elasticsearch Configuration
 ES_HOST = os.getenv("ES_HOST", "localhost")
 ES_PORT1 = int(os.getenv("ES_PORT1", 9200))
 ES_INDEX_NAME = os.getenv("ES_INDEX_NAME", "rag_docs")
 
-# Neo4j Configuration
 NEO4J_BOLT_URL = os.getenv("NEO4J_BOLT_URL", "bolt://localhost:7687")
 NEO4J_AUTH = os.getenv("NEO4J_AUTH", "neo4j/123123123")
 
-# MongoDB Configuration
 MONGO_PORT = os.getenv("MONGO_PORT")
 MONGO_URI = os.getenv("MONGO_URI")
 if not MONGO_URI:
@@ -38,10 +33,8 @@ MONGO_USER = os.getenv("MONGO_USER", "")
 MONGO_PASSWORD = os.getenv("MONGO_PASSWORD", "")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "rag_system")
 
-# Data Path Configuration
 DATA_PATH = os.getenv("DOCS_PATH", "./docs")
 
-# MOLT Learning Configuration
 LEARNING = os.getenv("LEARNING", "false").lower() == "true"
 MOLT_SENSORY_COLLECTION = os.getenv("LLP_MOLT_SENSORY_COLLECTION", "molt_sensory_cache")
 MOLT_SENSORY_TTL_SECONDS = int(os.getenv("LLP_MOLT_SENSORY_TTL_SECONDS", "300"))
@@ -92,15 +85,12 @@ LLP_CLAUDE_SKILLS_DIR = os.getenv("LLP_CLAUDE_SKILLS_DIR", "")
 LLP_ENABLE_OPENCLAW = os.getenv("LLP_ENABLE_OPENCLAW", "0")
 LLP_OPENCLAW_ROOT = os.getenv("LLP_OPENCLAW_ROOT", "")
 
-# Task Scheduler & Root Task
 ROOT_TASK = os.getenv("ROOT_TASK", "")
 ROOT_TASK_INTERVAL = int(os.getenv("ROOT_TASK_INTERVAL", "3600"))
 ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "true").lower() == "true"
 
-# Engine Selection
 ENGINE_PREFERENCE = os.getenv("ENGINE_PREFERENCE", "auto")  # auto | vllm | transformers | llama_cpp
 
-# vLLM Configuration
 VLLM_TENSOR_PARALLEL = int(os.getenv("VLLM_TENSOR_PARALLEL", "1"))
 VLLM_GPU_MEMORY_UTIL = float(os.getenv("VLLM_GPU_MEMORY_UTIL", "0.9"))
 VLLM_MAX_MODEL_LEN = int(os.getenv("VLLM_MAX_MODEL_LEN", "8192"))
@@ -113,7 +103,6 @@ CUSTOM_LLM_BASE_URL = os.getenv("CUSTOM_LLM_BASE_URL", "")
 CUSTOM_LLM_MODEL = os.getenv("CUSTOM_LLM_MODEL", "")
 CUSTOM_LLM_PROTOCOL = os.getenv("CUSTOM_LLM_PROTOCOL", "openai")
 
-# Protocol to Base URL mapping for common providers
 PROTOCOL_BASE_URL_MAP = {
     "openai": "https://api.openai.com/v1",
     "deepseek": "https://api.deepseek.com/v1",
@@ -127,7 +116,6 @@ PROTOCOL_BASE_URL_MAP = {
     "poe": "https://api.poe.com/v1",
 }
 
-# Auto-fallback for common protocols if BASE_URL is missing
 if not CUSTOM_LLM_BASE_URL:
     CUSTOM_LLM_BASE_URL = PROTOCOL_BASE_URL_MAP.get(CUSTOM_LLM_PROTOCOL.lower(), "")
 
@@ -140,18 +128,13 @@ VIBEVOICE_SCRIPT = os.getenv(
     else "",
 )
 
-EMBEDDING_MODEL="Alibaba-NLP/gte-Qwen2-1.5B-instruct"
+EMBEDDING_MODEL = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
 
-# TTS Configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_TTS_PREFIX = "tts:" # Strict Scheme B prefix
-
-# MongoDB TTS Collections (Isolated from RAG/Brain)
+REDIS_TTS_PREFIX = "tts:"
 TTS_MONGO_COLLECTION_SPEAKERS = "tts_speakers"
 TTS_MONGO_COLLECTION_PROFILES = "tts_user_profiles"
-
-# TTS quality / alert thresholds (overridable via environment)
 TTS_WER_THRESHOLD = float(os.getenv("TTS_WER_THRESHOLD", "0.08"))
 TTS_DNSMOS_THRESHOLD = float(os.getenv("TTS_DNSMOS_THRESHOLD", "3.8"))
 TTS_SIMILARITY_THRESHOLD = float(os.getenv("TTS_SIMILARITY_THRESHOLD", "0.78"))

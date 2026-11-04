@@ -24,6 +24,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_PATH = Path(__file__).resolve().parent / "quality_baseline.json"
+parse_errors = 0
 
 EXCLUDED_DIRS = {
     "__pycache__",
@@ -108,6 +109,9 @@ def collect() -> Dict[str, Dict[str, int]]:
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source)
         except (OSError, SyntaxError):
+            print(f"  - unparseable source file: {rel}")
+            global parse_errors
+            parse_errors += 1
             continue
 
         lines = line_count(path)
@@ -153,6 +157,8 @@ def compare(current: Dict[str, Dict[str, int]], baseline: Dict[str, str]) -> Lis
             violations.append(f"new violation: {key} = {value}")
         elif int(value) > int(recorded):
             violations.append(f"grew: {key} = {value} (baseline {recorded})")
+    if parse_errors:
+        violations.append(f"{parse_errors} file(s) failed to parse")
     return violations
 
 

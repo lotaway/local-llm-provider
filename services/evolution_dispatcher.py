@@ -64,34 +64,28 @@ class EvolutionDispatcher(IEvolutionDispatcher):
         }
 
     def _aggregate_signals(self) -> Dict[str, Any]:
-        totals = {}
         usable = [
             s
             for s in self._signal_pool
             if s.get("confidence", 0) >= self._config.confidence_threshold
         ]
-        for signal in usable:
-            s_type = signal.get("type", "neutral")
-            for target in signal.get("targets", []):
-                if target not in totals:
-                    totals[target] = {"positive": 0, "negative": 0, "mixed": 0}
-                if s_type not in totals[target]:
-                    totals[target][s_type] = 0
-                totals[target][s_type] += 1
-
-        summary = {}
-        for target, counts in totals.items():
-            dominant = self._dominant_type(counts)
-            summary[target] = {
-                "dominant": dominant,
-                "counts": counts,
-            }
-
+        totals = self._count_target_totals(usable)
         return {
             "total_signals": len(self._signal_pool),
             "usable_signals": len(usable),
-            "summary": summary,
+            "summary": {
+                target: {"dominant": self._dominant_type(counts), "counts": counts}
+                for target, counts in totals.items()
+            },
         }
+
+    def _count_target_totals(self, usable: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+        totals: Dict[str, Dict[str, int]] = {}
+        for signal in usable:
+            for target in signal.get("targets", []):
+                counts = totals.setdefault(target, {"positive": 0, "negative": 0, "mixed": 0})
+                counts[signal.get("type", "neutral")] = counts.get(signal.get("type", "neutral"), 0) + 1
+        return totals
 
     def _dominant_type(self, counts: Dict[str, int]) -> str:
         sorted_counts = sorted(counts.items(), key=lambda x: x[1], reverse=True)
@@ -105,39 +99,39 @@ class EvolutionDispatcher(IEvolutionDispatcher):
         self, aggregated: Dict[str, Any], context: Dict[str, Any], meta: Dict[str, Any]
     ) -> Dict[str, Any]:
         adjustments = {"m1": [], "m2": [], "m3": []}
-        summary = aggregated.get("summary", {})
-        for target, info in summary.items():
-            dominant = info.get("dominant", "neutral")
-            if dominant == "neutral":
-                continue
-            self._apply_m1(context, target, dominant, adjustments)
-
-            if dominant == "mixed":
-                continue
-
-            action = "penalty" if dominant == "negative" else "prefer"
-            if (
-                self._count_consistent_signals(target, dominant)
-                >= self._config.min_signals_m2
-            ):
-                self._apply_m2(context, meta, target, action, adjustments)
-
-            if (
-                self._count_consistent_signals(target, dominant)
-                >= self._config.min_signals_m3
-            ):
-                self._apply_m3(context, target, action, adjustments)
-
-        if adjustments["m1"] or adjustments["m2"] or adjustments["m3"]:
-            history = context.setdefault("evolution_history", [])
-            history.append(
-                {
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                    "aggregated": aggregated,
-                    "adjustments": adjustments,
-                }
-            )
+        for target, info in aggregated.get("summary", {}).items():
+            self._dispatch_dominant_adjustments(target, info, context, meta, adjustments)
+        self._record_adjustment_history(adjustments, aggregated, context)
         return adjustments
+
+    def _dispatch_dominant_adjustments(
+        self, target: str, info: Dict[str, Any], context: Dict[str, Any], meta: Dict[str, Any], adjustments: Dict[str, Any]
+    ) -> None:
+        dominant = info.get("dominant", "neutral")
+        if dominant == "neutral":
+            return
+        self._apply_m1(context, target, dominant, adjustments)
+        if dominant == "mixed":
+            return
+        action = "penalty" if dominant == "negative" else "prefer"
+        if self._count_consistent_signals(target, dominant) >= self._config.min_signals_m2:
+            self._apply_m2(context, meta, target, action, adjustments)
+        if self._count_consistent_signals(target, dominant) >= self._config.min_signals_m3:
+            self._apply_m3(context, target, action, adjustments)
+
+    def _record_adjustment_history(
+        self, adjustments: Dict[str, Any], aggregated: Dict[str, Any], context: Dict[str, Any]
+    ) -> None:
+        if not (adjustments["m1"] or adjustments["m2"] or adjustments["m3"]):
+            return
+        history = context.setdefault("evolution_history", [])
+        history.append(
+            {
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "aggregated": aggregated,
+                "adjustments": adjustments,
+            }
+        )
 
     def _apply_m1(
         self, context: Dict[str, Any], target: str, dominant: str, adjustments: Dict[str, Any]
@@ -176,21 +170,23 @@ class EvolutionDispatcher(IEvolutionDispatcher):
         agent_type = context.get("last_agent_type")
         if not agent_type:
             return
+        self._adjust_agent_type_preference(context, agent_type, delta, adjustments)
+        self._adjust_skill_preferences(context, meta.get("skills_used", []), delta, adjustments)
+
+    def _adjust_agent_type_preference(self, context, agent_type, delta, adjustments) -> None:
         prefs = context.setdefault("agent_type_preferences", {})
         prefs[agent_type] = self._clamp(prefs.get(agent_type, 0.5) + delta)
         adjustments["m2"].append(
             {"target": f"agent_type:{agent_type}", "delta": delta}
         )
 
-        skills_used = meta.get("skills_used", [])
-        if skills_used:
-            skill_prefs = context.setdefault("skill_preferences", {})
-            for skill in skills_used:
-                skill_prefs[skill] = self._clamp(skill_prefs.get(skill, 0.5) + delta)
-                adjustments["m2"].append(
-                    {"target": f"skill:{skill}", "delta": delta}
-                )
-
+    def _adjust_skill_preferences(self, context, skills_used, delta, adjustments) -> None:
+        if not skills_used:
+            return
+        skill_prefs = context.setdefault("skill_preferences", {})
+        for skill in skills_used:
+            skill_prefs[skill] = self._clamp(skill_prefs.get(skill, 0.5) + delta)
+            adjustments["m2"].append({"target": f"skill:{skill}", "delta": delta})
     def _apply_m3(
         self,
         context: Dict[str, Any],
@@ -198,16 +194,17 @@ class EvolutionDispatcher(IEvolutionDispatcher):
         action: str,
         adjustments: Dict[str, Any],
     ) -> None:
-        if not LEARNING or not self._memory_repo:
+        if not LEARNING or not self._memory_repo or target not in {"final_answer", "reasoning"}:
             return
-        if target not in {"final_answer", "reasoning"}:
-            return
-
         chunk_ids = context.get("last_retrieved_chunk_ids") or []
         if not chunk_ids:
             return
-
         delta = self._config.m3_delta if action == "prefer" else -self._config.m3_delta
+        applied = self._increment_chunk_importance(chunk_ids, delta)
+        if applied:
+            adjustments["m3"].append({"delta": delta, "chunk_ids": applied})
+
+    def _increment_chunk_importance(self, chunk_ids: List[str], delta: float) -> List[str]:
         applied = []
         for chunk_id in chunk_ids:
             try:
@@ -215,8 +212,7 @@ class EvolutionDispatcher(IEvolutionDispatcher):
                 applied.append(chunk_id)
             except Exception:
                 continue
-        if applied:
-            adjustments["m3"].append({"delta": delta, "chunk_ids": applied})
+        return applied
 
     def _count_consistent_signals(self, target: str, signal_type: str) -> int:
         count = 0

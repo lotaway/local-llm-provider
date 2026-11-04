@@ -41,6 +41,10 @@ class InferenceDomainService:
         self._session = None
 
     @property
+    def current_engine(self) -> Optional[InferenceEngine]:
+        return self._engine
+
+    @property
     def current_model(self) -> Optional[Model]:
         return self._current_model
 

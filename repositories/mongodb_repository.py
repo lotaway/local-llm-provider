@@ -16,27 +16,24 @@ logger = logging.getLogger(__name__)
 
 class MongoDBRepository:
     def __init__(self):
-        mongo_uri = MONGO_URI
-        db_name = MONGO_DB_NAME
-        mongo_user = MONGO_USER
-        mongo_password = MONGO_PASSWORD
-
-        if mongo_user and mongo_password:
-            if "@" not in mongo_uri:
-                uri_parts = mongo_uri.replace("mongodb://", "").split("/")
-                host_port = uri_parts[0]
-                rest = "/" + "/".join(uri_parts[1:]) if len(uri_parts) > 1 else ""
-                mongo_uri = f"mongodb://{mongo_user}:{mongo_password}@{host_port}{rest}"
-
+        mongo_uri = self._qualified_uri()
         self.client = MongoClient(mongo_uri)
-        self.db: Database = self.client[db_name]
-
+        self.db: Database = self.client[MONGO_DB_NAME]
         self.documents: Collection = self.db["documents"]
         self.chunks: Collection = self.db["chunks"]
-
         self._create_indexes()
+        logger.info(f"MongoDB connected to {mongo_uri}/{MONGO_DB_NAME}")
 
-        logger.info(f"MongoDB connected to {mongo_uri}/{db_name}")
+    def _qualified_uri(self) -> str:
+        if MONGO_USER and MONGO_PASSWORD and "@" not in MONGO_URI:
+            return self._authenticated_uri()
+        return MONGO_URI
+
+    def _authenticated_uri(self) -> str:
+        parts = MONGO_URI.replace("mongodb://", "").split("/")
+        host_port = parts[0]
+        rest = "/" + "/".join(parts[1:]) if len(parts) > 1 else ""
+        return f"mongodb://{MONGO_USER}:{MONGO_PASSWORD}@{host_port}{rest}"
 
     def _create_indexes(self):
         self.documents.create_index("path", unique=True)
@@ -52,47 +49,31 @@ class MongoDBRepository:
         logger.info("MongoDB indexes created")
 
     def save_document(
-        self,
-        doc_id: str,
-        content: str,
-        title: str,
-        source: str,
-        author: Optional[str] = None,
-        summary: Optional[str] = None,
-        path: Optional[str] = None,
-        filename: Optional[str] = None,
-        format: str = "markdown",
-        checksum: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        self, doc_id: str, content: str, title: str, source: str, **fields: Any
     ) -> Dict[str, Any]:
-        now = datetime.utcnow().isoformat() + "Z"
-        existing = self.documents.find_one(
-            {"_id": doc_id}, {"status": 1, "created_at": 1, "last_error": 1}
-        )
+        doc = self._build_document_record(doc_id, fields)
+        self.documents.update_one({"_id": doc_id}, {"$set": doc}, upsert=True)
+        logger.info(f"Document {doc_id} saved to MongoDB with title: {fields.get('title')}")
+        return doc
 
+    def _build_document_record(self, doc_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+        now = datetime.utcnow().isoformat() + "Z"
+        existing = self.documents.find_one({"_id": doc_id}, {"status": 1, "created_at": 1, "last_error": 1})
         doc = {
             "_id": doc_id,
-            "title": title,
-            "source": source or "",
-            "author": author or "",
-            "summary": summary or "",
-            "content": content,
+            "title": fields["title"],
+            "content": fields["content"],
+            "format": fields.get("format", "markdown"),
             "created_at": (existing or {}).get("created_at", now),
             "updated_at": now,
-            "path": path or "",
-            "filename": filename or "",
-            "format": format,
-            "checksum": checksum or "",
-            "status": (existing or {}).get(
-                "status", {"chunked": False, "embedded": False, "graphed": False}
-            ),
-            "metadata": metadata or {},
+            "checksum": fields.get("checksum") or "",
+            "metadata": fields.get("metadata") or {},
+            "status": (existing or {}).get("status", {"chunked": False, "embedded": False, "graphed": False}),
         }
+        for key in ("source", "author", "summary", "path", "filename"):
+            doc[key] = fields.get(key) or ""
         if existing and existing.get("last_error"):
             doc["last_error"] = existing["last_error"]
-
-        self.documents.update_one({"_id": doc_id}, {"$set": doc}, upsert=True)
-        logger.info(f"Document {doc_id} saved to MongoDB with title: {title}")
         return doc
 
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
@@ -170,15 +151,24 @@ class MongoDBRepository:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         now = datetime.utcnow()
-        chunk = {
-            "chunk_id": chunk_id,
-            "doc_id": doc_id,
-            "index": index,
-            "offset_start": offset_start,
-            "offset_end": offset_end,
-            "text": text,
+        spec = {
+            "chunk_id": chunk_id, "doc_id": doc_id, "index": index, "text": text,
+            "offset_start": offset_start, "offset_end": offset_end, "metadata": metadata,
+        }
+        chunk = self._build_chunk_record(spec, now)
+        self.chunks.update_one({"chunk_id": chunk_id}, {"$set": chunk}, upsert=True)
+        return chunk
+
+    def _build_chunk_record(self, spec: Dict[str, Any], now: datetime) -> Dict[str, Any]:
+        return {
+            "chunk_id": spec["chunk_id"],
+            "doc_id": spec["doc_id"],
+            "index": spec["index"],
+            "offset_start": spec.get("offset_start", 0),
+            "offset_end": spec.get("offset_end", 0),
+            "text": spec["text"],
             "embedding_status": "pending",
-            "metadata": metadata or {},
+            "metadata": spec.get("metadata") or {},
             "importance_score": 0.5,
             "last_reviewed": None,
             "decay_rate": 0.01,
@@ -187,8 +177,6 @@ class MongoDBRepository:
             "created_at": now,
             "updated_at": now,
         }
-        self.chunks.update_one({"chunk_id": chunk_id}, {"$set": chunk}, upsert=True)
-        return chunk
 
     def get_chunk(self, chunk_id: str) -> Optional[Dict[str, Any]]:
         return self.chunks.find_one({"chunk_id": chunk_id})
