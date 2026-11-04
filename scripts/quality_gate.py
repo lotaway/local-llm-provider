@@ -41,7 +41,6 @@ ROOT_FILES = [
     "constants.py",
     "main.py",
     "permission_manager.py",
-    "rag.py",
     "test_container_lazy.py",
     "verify_claude_skills.py",
 ]

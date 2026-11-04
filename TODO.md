@@ -97,11 +97,11 @@
 
 ### 6.3 代码原则整改
 
-- [ ] 拆分 `rag.py`（1293 行）：按文档加载、分块、向量库、图抽取、ES、查询编排拆分为独立模块，目标单文件 ≤500 行、单函数 ≤20 行
-- [ ] 清理 `rag.py` 的 43 处注释、3 处 `print`（`:1275`、`:1283`、`:1287`）及 `except: pass`（`:858`）
-- [ ] 降低 `rag.py::load_documents`（`:558`，154 行）的嵌套深度（当前 14 层），并消除 `:578` 起的 9 级 `if/elif` 链
-- [ ] 拆分 `rag.py` 超长函数：`build_vectorstore`、`_sync_get_or_create_vectorstore`、`_async_extract_graph`、`init_rag_chain`、`_select_text_splitter` 等
-- [ ] 拆分 `services/abstraction_engine.py::abstract_to_ltm`（56 行），将 Neo4j/Milvus/ES 写入移至独立仓储方法，消除“返回值 + 副作用”
+- [x] 拆分 `rag.py`（1293 行）为 `rag/` 包：`splitting`（分块策略）、`document_loader`（格式分发）、`document_ingestion`（Mongo 增量摄入 mixin）、`vectorstore_support`（Milvus/ES/图同步 mixin）、`local_rag`（检索链与问答门面）；最大文件 422 行、其余 ≤300 行，全部函数 ≤20 行
+- [x] 清理原 `rag.py` 的解释性注释、3 处 `print` 与 `except: pass`（print/logger 与 ES 检查在此前提交已修复，注释在拆分重写中清除）
+- [x] 降低 `load_documents` 嵌套深度：改为 `rag/document_loader.py` 扩展名→loader 分发表（`EXTENSION_LOADERS`），9 级 if/elif 链消除，最大加载函数 ≤17 行
+- [x] 拆分原 `rag.py` 超长函数：`build_vectorstore`→`_persist_document_chunks`/`_embed_chunks_in_batches`/`_embed_batch`；`_sync_get_or_create_vectorstore`→`_store_state`/`_initialize_stores`/`_handle_missing_documents`；`_async_extract_graph`→`_extract_chunk_graphs`/`_extract_chunk_graph`；`_select_text_splitter` → `splitting.select_text_splitter`
+- [x] 拆分 `services/abstraction_engine.py::abstract_to_ltm`（56 行）为 `abstract_to_ltm`(37)/`_summarize_with_llm`(15)/`_persist_ltm`(24)，Neo4j/Milvus/ES 写入收敛到 `_persist_ltm`
 - [x] 删除 `services/abstraction_engine.py:40`、`:74`、`:92` 与 `clients/agents/runtime_factory.py:119` 的 `except Exception: pass`，改为分类异常 + 日志 + 可追踪错误
 - [ ] 清理 `constants.py` 14 处注释及 `services/neo4j_repository.py:45-79` 等实现说明性注释，用类型、命名、拆函数替代
 - [x] 将 `services/tts_audio_quality.py`、`services/tts_post_processing.py` 的 `numpy` 依赖下沉到基础设施适配器
@@ -141,4 +141,5 @@
 - §6.4 质量门禁：新增 `scripts/quality_gate.py` + `scripts/quality_baseline.json`（基线容错，只拦新增违规与已记录项增长）与 `.github/workflows/ci.yml`（quality-gate + targeted-tests 两个 job）；定向测试 job 固定运行验证通过的 21 个测试文件；CI 安装顺序为先 CPU torch 再 `pip install -e .`，避免拉取默认 PyPI torch 覆盖 ROCm/CUDA 构建。
 - §6.2 后续跟进，2026-11-04：全量失败从 19 降至 16——`pyproject.toml` 增加 `[tool.pytest.ini_options] asyncio_mode=auto` 修复 `tests/test_error_handler.py` / `tests/test_private_context.py`；`model_providers/model_provider.py` 构造期 `asyncio.create_task` 无运行事件循环时崩溃改为惰性启动（`_ensure_scheduler_task`），修复 `tests/test_agent_system.py`。剩余 16 个失败均为 Neo4j 未运行 / API 服务器未启动的连接类错误。
 - §6.3 后续跟进，2026-11-04：`main.py` lifespan 拆分为 `init_molt_scheduler` / `init_tts_service` < 20 行；MOLT 依赖装配下沉到 `bootstrap/molt_factory.py`（`build_molt_controller` + `_optional_repo`）。质量门禁（`scripts/quality_gate.py` + 基线）与全量测试维持通过（143 passed / 16 failed，失败均为 Neo4j 或 API 服务未启动）。
+- §6.3 后续跟进（第 2 批）：`rag.py`→`rag/` 包拆分完成（`splitting`/`document_loader`/`document_ingestion`/`vectorstore_support`/`local_rag`，经 `git mv` 保留历史）；`load_documents` 改为扩展名分发表；超长函数全部拆至 ≤20 行；质量门禁零基线迁移通过；全量测试与拆分前完全一致（143 passed / 16 failed）。
 - §6.3 `clients/agents/runtime_factory.py`：`load_from_env` 失败改为 `logger.exception` 分类处理。

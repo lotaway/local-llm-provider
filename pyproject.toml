@@ -58,6 +58,8 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.setuptools]
 packages = [
   "agents",
+  "rag",
+  "bootstrap",
   "routers",
   "retrievers",
   "controllers",
