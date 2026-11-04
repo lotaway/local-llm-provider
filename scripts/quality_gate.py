@@ -9,9 +9,13 @@ baseline after paying down debt.
 Rules:
 1. Source files must not exceed MAX_FILE_LINES unless recorded in baseline.
 2. Functions must not exceed MAX_FUNCTION_LINES unless recorded in baseline.
-3. ``print(``, ``except ...: pass`` and business-layer direct
+3. ``print(``, ``except ...: pass``, non-directive ``#`` comments and business-layer direct
    ``pymongo`` / ``numpy`` / ``redis`` imports are counted per file and must
    not exceed the recorded baseline.
+4. Every ``.py`` path referenced in a checked TODO.md item must exist (dangling
+   references mean the checkbox claims things about files that were renamed
+   or removed) and every ``path.py::func`` reference must still point at a
+   function that exists in that file.
 """
 
 from __future__ import annotations
