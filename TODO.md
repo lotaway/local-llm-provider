@@ -39,9 +39,6 @@
   - 待人为抉择 D（版本标识）：用 checkpoint 名 / git sha / 模型+配置快照 替换随机 uuid；版本元数据从哪读取。
   - 待人为抉择 E（持久化与曲线）：结果存 MongoDB / 时序库 / 静态报表，对比基线（上一版本 vs 固定基线）、保留窗口、曲线展示方式与回归告警阈值。
   - 待人为抉择 F（手动接口）：是否保留 `POST /tts/regression` 及其 2/min 限流，还是改为只由调度触发。
-- [ ] 为 `tts_estimate` 增加批量评估与 CLI 参数入口（当前 `main.py` 使用 mock 路径）
-  - [ ] 子任务（`§5-6` / PARTIAL）：**另见 §7 P0-2**——`run_evaluation` 返回 JSON 字符串而 `main()` 调用 `report.get(...)`，CLI 批量评估必崩 `AttributeError`。需修 P0-2 并补 CLI 冒烟测试。
-
 ## 6. 代码原则审计整改（2026-10-30）
 
 > 说明：本节按「勾选真实性复核 / 失败测试 / 代码原则 / 质量门禁」分类。2026-11-05 全量核查后，无缺陷的勾选项已从本文件移除，仍有缺陷的项已回退为 `- [ ]` 并挂子任务。
@@ -75,9 +72,6 @@
   - [ ] 子任务（`§6.3-16` / PARTIAL）：4 项中只完成 3 项；`TTSTrendStatistics`（`services/tts_trend_statistics.py:9`）与 `TTSSamplingMonitor`（`services/tts_production_monitor.py:8`）命名仍未统一。需统一剩余命名并同步所有引用。
 - [ ] 消除 `utils/mcp_loader.py:58` 的模块级全局 `_connections` Dict，改为 `MCPConnectionRegistry` 实例封装（set/get/list/values/clear）
   - [ ] 子任务（`§6.3-17` / PARTIAL）：已封装为 `MCPConnectionRegistry`，但 `utils/mcp_loader.py:85` 仍保留模块级 `_connections = MCPConnectionRegistry()` 单例。需改为显式注册与生命周期管理。
-- [ ] 修正 `tts_estimate/main.py:74` 循环内 f-string 日志，改为结构化字段并在循环外汇总
-  - [ ] 子任务（`§6.3-21` / PARTIAL）：**另见 §7 P0-2**——日志汇总实际仍在循环内，未改为循环外汇总。需修 P0-2 时一并处理。
-
 ### 6.4 质量门禁（防止回归）
 
 - [ ] CI 增加禁止 `print(`、`except ...: pass`、业务层直接导入 `pymongo` / `numpy` / `redis` 的检查（同上 quality gate；`services`/`controllers`/`agents`/`application`/`domain`）
@@ -89,7 +83,5 @@
 
 ## 7. P0 运行期缺陷（2026-11-05 核查确认，优先修复）
 
-- [ ] P0-2 `tts_estimate` CLI 批量评估必崩：`run_evaluation()`（`tts_estimate/main.py:47`）返回 `json.dumps(...)` 字符串，`main()`（`:95-96`）却调用 `report.get("status")` / `report.get("wer")` → `AttributeError`；且 §6.3-21 声称的「日志循环外汇总」实际仍在循环内。
-  - [ ] 子任务：让 `run_evaluation` 返回 dict（或在 `main` 中 `json.loads`），日志汇总移到循环外；补 CLI 冒烟测试，再复核 `§5-6` / `§6.3-21`。
 - [ ] P0-3 `save_document` 必抛 `KeyError`：`repositories/mongodb_repository.py:51-65` 的 `save_document(doc_id, content, title, source, **fields)` 只把 `**fields` 传给 `_build_document_record`，后者 `:64-65` 直接索引 `fields["title"]` / `fields["content"]`；而二者是显式形参，不会进入 `**fields`。
   - [ ] 子任务：把 `title` / `content` / `source` 一并传入 `_build_document_record`；补 `save_document` 回归测试，再复核 `§6.3-14`。

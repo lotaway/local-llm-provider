@@ -9,6 +9,7 @@ from .infrastructure.dnsmos import MicrosoftDNSMOSCalculator
 from .infrastructure.speaker_similarity import ECAPASpeakerSimilarityCalculator
 from .infrastructure.wer_calculator import JiwerWERCalculator
 from .application.evaluator_service import TTSQualityEvaluator
+from .report_summary import build_report, summarize_reports
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,20 +32,10 @@ def run_evaluation(
     ref_audio: str,
     gen_audio: str,
     thresholds: Dict[str, float],
-) -> str:
+) -> Dict[str, Any]:
     result = evaluator.evaluate(ref_text, ref_audio, gen_audio, thresholds)
 
-    output = {
-        "wer": result.metrics.wer,
-        "dnsmos": {
-            "overall": result.metrics.dnsmos_overall,
-            "signal": result.metrics.dnsmos_signal,
-            "background": result.metrics.dnsmos_background,
-        },
-        "speaker_similarity": result.metrics.speaker_similarity,
-        "status": "pass" if result.is_passed else "reject",
-    }
-    return json.dumps(output, indent=2)
+    return build_report(result)
 
 
 def build_cases(args: argparse.Namespace) -> List[Dict[str, str]]:
@@ -84,19 +75,15 @@ def main(argv: List[str] = None) -> None:
         "dnsmos_min": args.dnsmos_min if args.dnsmos_min is not None else AppConfig().thresholds.dnsmos_min,
         "similarity_min": args.similarity_min if args.similarity_min is not None else AppConfig().thresholds.similarity_min,
     }
+    reports = []
     for case in build_cases(args):
-        report = run_evaluation(evaluator, case["ref_text"], case["ref_audio"], case["gen_audio"], thresholds)
-        logger.info(
-            "tts_evaluation_completed",
-            extra={
-                "ref_text": case["ref_text"],
-                "ref_audio": case["ref_audio"],
-                "gen_audio": case["gen_audio"],
-                "status": report.get("status"),
-                "wer": report.get("wer"),
-            },
+        reports.append(
+            run_evaluation(evaluator, case["ref_text"], case["ref_audio"], case["gen_audio"], thresholds)
         )
-
+    logger.info(
+        "tts_evaluation_batch_completed",
+        extra={"summary": summarize_reports(reports)},
+    )
 
 if __name__ == "__main__":
     main()
