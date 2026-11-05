@@ -10,6 +10,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
 from constants import MONGO_URI, MONGO_DB_NAME, MONGO_USER, MONGO_PASSWORD
+from repositories.document_record import build_document_record
 
 logger = logging.getLogger(__name__)
 
@@ -51,30 +52,15 @@ class MongoDBRepository:
     def save_document(
         self, doc_id: str, content: str, title: str, source: str, **fields: Any
     ) -> Dict[str, Any]:
-        doc = self._build_document_record(doc_id, fields)
+        record = dict(fields, title=title, content=content, source=source)
+        doc = self._build_document_record(doc_id, record)
         self.documents.update_one({"_id": doc_id}, {"$set": doc}, upsert=True)
-        logger.info(f"Document {doc_id} saved to MongoDB with title: {fields.get('title')}")
+        logger.info("document saved", extra={"doc_id": doc_id, "title": title})
         return doc
 
     def _build_document_record(self, doc_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
-        now = datetime.utcnow().isoformat() + "Z"
         existing = self.documents.find_one({"_id": doc_id}, {"status": 1, "created_at": 1, "last_error": 1})
-        doc = {
-            "_id": doc_id,
-            "title": fields["title"],
-            "content": fields["content"],
-            "format": fields.get("format", "markdown"),
-            "created_at": (existing or {}).get("created_at", now),
-            "updated_at": now,
-            "checksum": fields.get("checksum") or "",
-            "metadata": fields.get("metadata") or {},
-            "status": (existing or {}).get("status", {"chunked": False, "embedded": False, "graphed": False}),
-        }
-        for key in ("source", "author", "summary", "path", "filename"):
-            doc[key] = fields.get(key) or ""
-        if existing and existing.get("last_error"):
-            doc["last_error"] = existing["last_error"]
-        return doc
+        return build_document_record(doc_id, fields, existing)
 
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
         return self.documents.find_one({"_id": doc_id})
@@ -242,7 +228,6 @@ class MongoDBRepository:
             query["memory_type"] = memory_type
         return list(self.chunks.find(query).limit(limit))
 
-    # IMemoryRepository compatibility helpers
     def get_by_id(self, chunk_id: str) -> Optional[Dict[str, Any]]:
         return self.get_chunk(chunk_id)
 

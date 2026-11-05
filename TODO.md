@@ -60,8 +60,6 @@
   - [ ] 子任务（`§6.3-8` / PARTIAL）：`services/tts_post_processing.py:4` 仍 `import numpy as np`（已登记进 `quality_baseline.json`，故门禁不拦）。需下沉到基础设施适配器。
 - [ ] 将 `services/tts_preference_store.py` 的 `pymongo` 与硬编码库名 `"rag_system"`（`:39`）改为注入仓储/配置
   - [ ] 子任务（`§6.3-9` / PARTIAL）：`services/tts_preference_store.py:18` 仍 lazy `from pymongo import MongoClient`（同样已进基线）。需改为注入 collection/database。
-- [ ] 拆分 `repositories/mongodb_repository.py`：`save_document` 改 `(doc_id, content, title, source, **fields)` + `_build_document_record`；`save_chunk` + `_build_chunk_record(spec, now)`；`__init__` + `_qualified_uri`/`_authenticated_uri`；`repositories/neo4j_repository.py` 3 个事务函数提取 `_RELATION_NODES_QUERY`/`_RELATION_MERGE_QUERY`/`_SUBGRAPH_QUERY`/`_LTM_MERGE_QUERY` 常量与 `_ensure_relation_nodes`/`_ltm_params`/`_subgraph_nodes`/`_subgraph_edges`，全部 ≤20 行
-  - [ ] 子任务（`§6.3-14` / PARTIAL）：**另见 §7 P0-3**——`save_document` 未把 `title` / `content` / `source` 传入 `_build_document_record`，正常调用必抛 `KeyError`；另 `repositories/neo4j_repository.py:143-144` 有重复 `@staticmethod`。需修 P0-3、清理重复装饰器、补 `save_document` 回归测试。
 - [ ] 统一 TTS 命名：`TTSTAlertService`、`TTSSpeechQualityGateway`、`TTSSRegressionSuite`、`TTSTrendStatistics` 改为一致的 `TTS...` 前缀
   - [ ] 子任务（`§6.3-16` / PARTIAL）：4 项中只完成 3 项；`TTSTrendStatistics`（`services/tts_trend_statistics.py:9`）与 `TTSSamplingMonitor`（`services/tts_production_monitor.py:8`）命名仍未统一。需统一剩余命名并同步所有引用。
 - [ ] 消除 `utils/mcp_loader.py:58` 的模块级全局 `_connections` Dict，改为 `MCPConnectionRegistry` 实例封装（set/get/list/values/clear）
@@ -74,8 +72,3 @@
   - [ ] 子任务（`§6.4-4` / PARTIAL）：`todo_guard.py` 只抓勾选行里显式反引号引用的 `tests/*.py`，全库仅 6 个文件被关联，§6.1/6.3/6.4 共 38 个勾选项无任何测试约束。需扩展引用解析或引入显式映射表；另 `scripts/todo_guard.py:88` 为 `return 0 if paths else 1`，本文件现无 `- [x]` 行使 `--check` 因 0 引用退出 1，需改为覆盖待处理项关联测试或增加 `--allow-empty` 并同步 CI。
 - [ ] 复核后同步更新第 1–5 节勾选状态
   - [ ] 子任务（`§6.4-5` / PARTIAL）：核查发现多处原记录与代码不符，历史整改记录已移除；各回退项需补可复现证据后再重新勾选。
-
-## 7. P0 运行期缺陷（2026-11-05 核查确认，优先修复）
-
-- [ ] P0-3 `save_document` 必抛 `KeyError`：`repositories/mongodb_repository.py:51-65` 的 `save_document(doc_id, content, title, source, **fields)` 只把 `**fields` 传给 `_build_document_record`，后者 `:64-65` 直接索引 `fields["title"]` / `fields["content"]`；而二者是显式形参，不会进入 `**fields`。
-  - [ ] 子任务：把 `title` / `content` / `source` 一并传入 `_build_document_record`；补 `save_document` 回归测试，再复核 `§6.3-14`。

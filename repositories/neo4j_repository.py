@@ -141,7 +141,6 @@ class Neo4jRepository:
             return session.execute_read(self._query_subgraph_tx, entity_id, hops)
 
     @staticmethod
-    @staticmethod
     def _query_subgraph_tx(tx, entity_id: str, hops: int) -> Dict[str, Any]:
         result = tx.run(_SUBGRAPH_QUERY, entity_id=entity_id, hops=hops)
         record = result.single()
