@@ -1,11 +1,7 @@
-# TODO — 未完成需求汇总
+# TODO — 未完成任务列表
 
-> 整理于 2026-11-05，依据 `audit-2026-11-05.md`（对原 90 个 `- [x]` 已勾选任务的只读静态核查，结论 58 VERIFIED / 31 PARTIAL / 1 NO_EVIDENCE）：
-> - **58 项 VERIFIED**：生产代码/配置中已落地且与描述一致，**已从本文件移除**；原文可从 git 历史 `44d1d81` 的 `TODO.md` 追溯。
-> - **31 项 PARTIAL + 1 项 NO_EVIDENCE**：已回退为 `- [ ]`，并在各条下新增「子任务」，写明缺陷证据与待办动作（§1–§6 就地保留）。
-> - **3 项 P0 运行期缺陷**（`main.py` / `tts_estimate/main.py` / `repositories/mongodb_repository.py`）集中列于 §7，需优先修复。
-> - **§6.5 历史整改记录**保留供追溯，但含已知失实条目，勘误子任务见 §8。
-> 需人为抉择的 3 项任务（§4 质量网关、§5 抽样评估、§5 每日回归）及其抉择方向保持原样。
+> 整理于 2026-11-05：依据 `audit-2026-11-05.md` 移除 58 项已核验完成的任务；其余 31 项 PARTIAL + 1 项 NO_EVIDENCE 回退为待办并挂子任务，另新增 3 项 P0 运行期缺陷。
+> 本文件只保留未完成的任务；已移除内容与历史整改记录见 git 历史 `44d1d81`。
 
 ## 1. Agent 加载 Skill + MCP（来源：CLAUDE_SPEC.md）
 
@@ -81,14 +77,14 @@
 
 ## 6. 代码原则审计整改（2026-10-30）
 
-> 说明：本节按「勾选真实性复核 / 失败测试 / 代码原则 / 质量门禁」分类。2026-11-05 全量核查后，无缺陷的勾选项已从本文件移除，仍有缺陷的项已回退为 `- [ ]` 并挂子任务；§6.5 为历史记录，勘误见 §8。
+> 说明：本节按「勾选真实性复核 / 失败测试 / 代码原则 / 质量门禁」分类。2026-11-05 全量核查后，无缺陷的勾选项已从本文件移除，仍有缺陷的项已回退为 `- [ ]` 并挂子任务。
 
 ### 6.1 TODO 勾选真实性复核
 
 - [ ] 复核 §4 质量网关接入：`TTSSpeechQualityGateway` 除测试外无引用，未进入 TTS 生成链路
   - [ ] 子任务（`§6.1-5` / PARTIAL）：`TTSQualityGateway` 默认 `None` 且 `main.py::init_tts_service` 不注入，`ITTSQualityEvaluator` / `ITTSNotifier` 无生产实现。需与 §4「质量网关接入」的待抉择任务合并推进。
 - [ ] 复核 §4 后处理接入：`TTSPostProcessor` 除测试外无引用，未进入 TTS 生成链路
-  - [ ] 子任务（`§6.1-6` / NO_EVIDENCE）：全库找不到 `TTSPostProcessor` 的生产调用点；实际后处理走 `style_tts2_adapter.py:72` 的 `postprocess=process_samples`。需接入该外观类或删除死代码，并勘误 §6.5 中「后处理已落地」的表述。
+  - [ ] 子任务（`§6.1-6` / NO_EVIDENCE）：全库找不到 `TTSPostProcessor` 的生产调用点；实际后处理走 `style_tts2_adapter.py:72` 的 `postprocess=process_samples`。需接入该外观类或删除死代码。
 - [ ] 复核 §5 生产监控/统计/报警/反馈/回归：`TTSSamplingMonitor`、`TTSTrendStatistics`、`TTSTAlertService`、`TTSFeedbackMonitor`、`TTSAudioQualityService`、`TTSSRegressionSuite` 均只被测试引用，未接入 `/tts` 或定时任务
   - [ ] 子任务（`§6.1-7` / PARTIAL）：部分组件现已在 `TTSService` 构造，但评估流水线、通知实现与每日回归调度仍缺生产接入点。需逐项核实并补可复现证据链。
 - [ ] 复核 §2.1 MoltScheduler 接入：`services/molt_scheduler.py` 未被任何生产代码实例化，`MoltController` / `AbstractionEngine` / `VersionManager` / `DecayScheduler` 也仅出现在测试中
@@ -123,49 +119,15 @@
 - [ ] CI 增加禁止 `print(`、`except ...: pass`、业务层直接导入 `pymongo` / `numpy` / `redis` 的检查（同上 quality gate；`services`/`controllers`/`agents`/`application`/`domain`）
   - [ ] 子任务（`§6.4-2` / PARTIAL）：`scripts/quality_gate.py` 的基线容错把既有违规合法化，`--update-baseline` 可一键绕过。需加基线变更审查（保护分支/PR 审批）或收紧绕过条件。
 - [ ] CI 增加 TODO 勾选与测试结果一致性检查（`scripts/todo_guard.py` + CI `--junitxml` 报告断言：勾选任务对应测试必须为绿）
-  - [ ] 子任务（`§6.4-4` / PARTIAL）：`todo_guard.py` 只抓勾选行里显式反引号引用的 `tests/*.py`，全库仅 6 个文件被关联，§6.1/6.3/6.4 共 38 个勾选项无任何测试约束。需扩展引用解析或引入显式映射表。
-- [ ] 复核后同步更新第 1–5 节勾选状态，并在本节记录整改结果（证据链与 3 项回退见 §6.5）
-  - [ ] 子任务（`§6.4-5` / PARTIAL）：§6.5 多处记录与代码不符（见 §8 勘误）。需按 §8 重写为可复现证据后再重新勾选。
-
-### 6.5 整改结果记录（2026-10-30）
-
-> 注意：以下为历史整改记录，保留供追溯。2026-11-05 核查发现其中若干条与当前代码不符（见 §8 勘误子任务），以代码现状为准。
-
-- §6.2 失败测试修复：已完成 `tests/test_mcp_env_loading.py`、`tests/test_mcp_protocol.py`、`tests/test_molt_integration.py`、`tests/test_molt_scheduler.py`、`tests/test_skills_env_loading.py`、`tests/test_version_manager.py` 的失败用例全部修复并通过；另修复 MCP 侧失败用例（agent 默认工具注册、`execute` 参数、`dead process` 注册）。
-- §6.1 MCP stdout 健壮性：`utils/mcp_protocol.py` 阻塞式 `stdout.read` 改为 `read1()`（支持大 JSON/无换行）；`utils/mcp_loader.py` 日志 `extra={"name": ...}` 与 `LogRecord.name` 冲突改为 `extra={"connection": ...}`；loader 对已退出进程不再注册/降级注册 tools。
-- §6.3 依赖下沉：`services/tts_audio_quality.py`、`services/tts_post_processing.py` 移除业务层 `numpy`；`services/tts_preference_store.py` 改为注入 collection/database。
-- §4 TTS 真实接入：新增 `model_providers/tts/style_tts2_engine.py`（`StyleTTS2Engine` 懒加载 checkpoint、真实推理、句子级流式 WAV、speaker embedding）、`infrastructure/tts/speaker_repository.py`、`interfaces/tts_types.py`；重写 `model_providers/tts/style_tts2_adapter.py`（真实 streamer/cloner、Redis embedding、Mongo 持久化、偏好注入）；`services/tts_service.py` 编排监控/质量/趋势/报警/反馈/回归；`controllers/tts_controller.py` 改 `StreamingResponse(audio/wav)` + 校验 + `/tts/*` 监控接口。
-- §2.1 MOLT 生产接入：`main.py` lifespan 中实例化 `MoltController`（注入 Mongo/Neo4j/Decay/Abstraction/Version/Feedback 依赖）并启动 `MoltScheduler`，任务经 `AsyncTaskScheduler` 提交执行（`LEARNING` 关闭时跳过）。
-- §6.3 TTS 命名与配置：重命名 `TTSTAlertService`→`TTSAlertService`、`TTSSpeechQualityGateway`→`TTSQualityGateway`、`TTSSRegressionSuite`→`TTSRegressionSuite`；WER/DNSMOS/similarity/告警数/采样率/最大时长阈值迁移到 `constants`（`TTS_*`）；`tts_estimate/main.py` 循环内 f-string 日志改为结构化字段。
-- §6.3 TTS 服务接口：`interfaces/tts_types.py` 新增 `ITTSQualityEvaluator` / `ITTSNotifier` 端口，质量网关与告警服务改用端口类型（替代 `Any`）。
-- §6.3 `rag.py`：`command_line_rag` 的 print 改为 logger；ES 存在性检查的裸 `except Exception: pass` 改为分类日志。
-- §6.3 依赖注入收尾：`interfaces/tts_types.py` 新增 `ITTSCollection` 协议替换 `collection: Any`；`main.py` lifespan 作为 TTS 组合根注入 `TTSService`（adapter/speaker repo/preference store），控制器未注入时返回 503 而非兜底实例化。
-- §6.4 质量门禁：新增 `scripts/quality_gate.py` + `scripts/quality_baseline.json`（基线容错，只拦新增违规与已记录项增长）与 `.github/workflows/ci.yml`（quality-gate + targeted-tests 两个 job）；定向测试 job 固定运行验证通过的 21 个测试文件；CI 安装顺序为先 CPU torch 再 `pip install -e .`，避免拉取默认 PyPI torch 覆盖 ROCm/CUDA 构建。
-- §6.2 后续跟进，2026-11-04：全量失败从 19 降至 16——`pyproject.toml` 增加 `[tool.pytest.ini_options] asyncio_mode=auto` 修复 `tests/test_error_handler.py` / `tests/test_private_context.py`；`model_providers/model_provider.py` 构造期 `asyncio.create_task` 无运行事件循环时崩溃改为惰性启动（`_ensure_scheduler_task`），修复 `tests/test_agent_system.py`。剩余 16 个失败均为 Neo4j 未运行 / API 服务器未启动的连接类错误。
-- §6.3 后续跟进，2026-11-04：`main.py` lifespan 拆分为 `init_molt_scheduler` / `init_tts_service` < 20 行；MOLT 依赖装配下沉到 `bootstrap/molt_factory.py`（`build_molt_controller` + `_optional_repo`）。质量门禁（`scripts/quality_gate.py` + 基线）与全量测试维持通过（143 passed / 16 failed，失败均为 Neo4j 或 API 服务未启动）。
-- §6.3 后续跟进（第 2 批）：`rag.py`→`rag/` 包拆分完成（`splitting`/`document_loader`/`document_ingestion`/`vectorstore_support`/`local_rag`，经 `git mv` 保留历史）；`load_documents` 改为扩展名分发表；超长函数全部拆至 ≤20 行；质量门禁零基线迁移通过；全量测试与拆分前完全一致（143 passed / 16 failed）。
-- §6.3 后续跟进（第 3 批）：`evolution_dispatcher`/`mongodb`/`neo4j` 超长函数拆分完成（全部 ≤20 行，质量门禁零基线迁移）；`save_document` 改 kwargs 形态；`wire_routes` 私有属性泄漏经 `InferenceDomainService.current_engine` 公开属性消除；`quality_gate.py` 语法解析失败不再静默跳过（计入 parse_errors 违规）；全量测试维持 143 passed / 16 failed（环境类）。
-- §6.3 `clients/agents/runtime_factory.py`：`load_from_env` 失败改为 `logger.exception` 分类处理。
-
-- §6.1 DNSMOS 复核，2026-11-05：按官方 `microsoft/DNS-Challenge` 的 `dnsmos_local.py` 重写 `tts_estimate/infrastructure/dnsmos.py`——16 kHz 波形、9.01 s/144160 采样窗口、`[1, 144160]` float32 输入、1 s hop、短音频重复补齐、首个输出 `[1, 3]` 按 SIG/BAK/OVR 取值并做官方 polyfit 校准，领域映射 `overall=OVR / signal=SIG / background=BAK`；`onnxruntime`/`librosa` 改为按需导入、`session` 可注入，新增 `tests/test_dnsmos_inference.py`（7 项）与 `tts_estimate/README.md` 推理契约表。
-- §6.3 bitsandbytes 复核，2026-11-05：`bitsandbytes>=0.43.0` 从主依赖移到 `[quantization]` extra；新增 `scripts/check_torch_build.py`（宿主 torch 预检 + 生成 torch/torchaudio/torchvision 版本 constraints）与 `scripts/install.sh`（预检 → `-c` 安装 → 复核），`scripts/setup_styletts2.sh` 复用同一生成器；CI 安装步骤加 `-c torch-constraints.txt`。
-- §6.4 质量门禁，2026-11-05：`scripts/quality_gate.py` 新增 `explanatory_comments` 规则（tokenize 提取注释，排除 shebang/编码/工具指令/契约类型文档/纯分隔线），基线容错只拦新增与增长，`scripts/quality_baseline.json` 重新生成；新增 `scripts/todo_guard.py`（`--list` / `--check` / `--report`）在 CI 校验勾选任务引用的测试文件存在且 JUnit 报告全绿。
-- §6.4 第 1–5 节勾选同步，2026-11-05（证据链）：§4 生成/克隆/流式/偏好已落地（`style_tts2_adapter.py:120-167`、`tts_controller.py:106`、`main.py:110-118`）；后处理经 `style_tts2_engine.py:106` 的 `postprocess=process_samples` 落地，`TTSPostProcessor` 外观类仍无调用点（保留勾选，列为清理项）；§2.1 `MoltScheduler` 经 `main.py:170` 接入，`abstraction_engine.py:27` 的 `memory_repo` 别名已去除；§1 MCP `read1()` 见 `utils/mcp_protocol.py:194-197`。回退为 `[ ]` 的 3 项：§4 质量网关（`TTSService.quality_gateway` 默认 `None` 且 `main.py` 未注入，生产链路无 evaluator）、§5 抽样接入评估流水线（`_record_request` 只记录时长/重复）、§5 每日回归/版本对比（`/tts/regression` 为手动接口，`TTSRegressionSuite.compare` 未被调用且无每日调度）。
-- 验证，2026-11-05：便携 Python 3.12 运行 `scripts/quality_gate.py`（通过）与 `scripts/todo_guard.py --check`（6 个引用全部解析）；新增测试需在 WSL 环境执行 `python -m pytest -q tests/test_dnsmos_inference.py tests/test_todo_guard.py`。
+  - [ ] 子任务（`§6.4-4` / PARTIAL）：`todo_guard.py` 只抓勾选行里显式反引号引用的 `tests/*.py`，全库仅 6 个文件被关联，§6.1/6.3/6.4 共 38 个勾选项无任何测试约束。需扩展引用解析或引入显式映射表；另 `scripts/todo_guard.py:88` 为 `return 0 if paths else 1`，本文件现无 `- [x]` 行使 `--check` 因 0 引用退出 1，需改为覆盖待处理项关联测试或增加 `--allow-empty` 并同步 CI。
+- [ ] 复核后同步更新第 1–5 节勾选状态
+  - [ ] 子任务（`§6.4-5` / PARTIAL）：核查发现多处原记录与代码不符，历史整改记录已移除；各回退项需补可复现证据后再重新勾选。
 
 ## 7. P0 运行期缺陷（2026-11-05 核查确认，优先修复）
 
-- [ ] P0-1 MOLT 生产链路永不启动：`main.py:93` 调用 `current_memory_repo()`，但 `main.py:41` 只导入了 `build_molt_controller`；该函数仅定义于 `bootstrap/molt_factory.py:21`，全项目无其它导入 → 每次 lifespan 的 `init_molt_scheduler()` 必抛 `NameError`，且被 `main.py:97-98` 的 `except Exception` 静默吞掉，与 §6.5「已实例化并启动」直接矛盾。
+- [ ] P0-1 MOLT 生产链路永不启动：`main.py:93` 调用 `current_memory_repo()`，但 `main.py:41` 只导入了 `build_molt_controller`；该函数仅定义于 `bootstrap/molt_factory.py:21`，全项目无其它导入 → 每次 lifespan 的 `init_molt_scheduler()` 必抛 `NameError`，且被 `main.py:97-98` 的 `except Exception` 静默吞掉。
   - [ ] 子任务：补 `current_memory_repo` 导入；把该 `except` 改为 `logger.exception` 保留堆栈；补启动成功的集成断言，再复核 `§2.1-7` / `§6.1-9`。
 - [ ] P0-2 `tts_estimate` CLI 批量评估必崩：`run_evaluation()`（`tts_estimate/main.py:47`）返回 `json.dumps(...)` 字符串，`main()`（`:95-96`）却调用 `report.get("status")` / `report.get("wer")` → `AttributeError`；且 §6.3-21 声称的「日志循环外汇总」实际仍在循环内。
   - [ ] 子任务：让 `run_evaluation` 返回 dict（或在 `main` 中 `json.loads`），日志汇总移到循环外；补 CLI 冒烟测试，再复核 `§5-6` / `§6.3-21`。
 - [ ] P0-3 `save_document` 必抛 `KeyError`：`repositories/mongodb_repository.py:51-65` 的 `save_document(doc_id, content, title, source, **fields)` 只把 `**fields` 传给 `_build_document_record`，后者 `:64-65` 直接索引 `fields["title"]` / `fields["content"]`；而二者是显式形参，不会进入 `**fields`。
   - [ ] 子任务：把 `title` / `content` / `source` 一并传入 `_build_document_record`；补 `save_document` 回归测试，再复核 `§6.3-14`。
-
-## 8. 记录与门禁勘误（P2）
-
-- [ ] 勘误 §6.5 的 `postprocess` 绑定位置：记录写 `style_tts2_engine.py:106`，实际绑定在 `style_tts2_adapter.py:72`，engine:106 只是后处理调用点。
-- [ ] 勘误 §6.5 的测试数字：多处「143 passed / 16 failed」仅 TODO 文字记录，仓库无 junit/报告产物，CI 不含全量 pytest，数字无法复现；且「16 failed」与「维持通过」自相矛盾。需改为可复现命令 + 产物路径，或删除数字。
-- [ ] 勘误 §6.5 的「移除业务层 numpy / pymongo」：`services/tts_post_processing.py:4` 仍 `import numpy as np`，`services/tts_preference_store.py:18` 仍 lazy `from pymongo import MongoClient`（两者已登记进 `quality_baseline.json`，故门禁不拦）。记录应改为「已登记基线，待下沉」，与 `§6.3-8` / `§6.3-9` 子任务对齐。
-- [ ] 勘误 §6.5 的「§2.1 MOLT 生产接入：已实例化并启动 `MoltScheduler`」：与 §7 P0-1 冲突；修 P0-1 后据实重写。
-- [ ] 门禁语义隐患：`scripts/todo_guard.py:88` 为 `return 0 if paths else 1`，本次回退后 TODO.md 不再有 `- [x]` 行 → `--check` 会因 0 个引用退出 1；`--report` 虽仍检查 JUnit 失败用例，但覆盖不到任何任务。需改为覆盖「待处理项关联测试」或增加 `--allow-empty` 显式开关，并同步 CI。
