@@ -21,6 +21,7 @@ from services.ingestion_checkpoint import (
     checksum_matches,
     is_complete,
     needs_rebuild,
+    needs_retry,
     normalize_status,
     pending_steps,
 )
@@ -28,8 +29,29 @@ from services.ingestion_checkpoint import (
 logger = logging.getLogger(__name__)
 
 
+class DocumentIngestionError(RuntimeError):
+    pass
+
+
 class DocumentIngestionMixin:
     """Compound document add/checksum/rebuild/checkpoint behaviour for LocalRAG."""
+
+    async def retry_document(self, doc_id: str):
+        document = self.mongo_repo.get_document(doc_id)
+        if document is None:
+            raise DocumentIngestionError(f"unknown document: {doc_id}")
+        if not needs_retry(document):
+            return {"doc_id": doc_id, "retried": False}
+        chunks = await self._run_ingestion_steps(
+            doc_id,
+            document.get("content", ""),
+            document.get("source", ""),
+            document.get("title", ""),
+            document.get("format", "md"),
+            normalize_status(document.get("status")),
+        )
+        return {"doc_id": doc_id, "retried": True, "chunks": len(chunks)}
+
 
     async def add_document(
         self, title: str, content: str, source: str, content_type: str = "md", **kwargs

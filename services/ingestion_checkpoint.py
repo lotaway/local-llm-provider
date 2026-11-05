@@ -35,3 +35,15 @@ def needs_rebuild(document: Optional[Dict[str, Any]], checksum: str) -> bool:
 def completed_steps(status: Optional[Dict[str, Any]]) -> Iterable[str]:
     normalized = normalize_status(status)
     return (key for key in STATUS_KEYS if normalized[key])
+
+def failed_step(document: Optional[Dict[str, Any]]) -> Optional[str]:
+    error = (document or {}).get("last_error") or {}
+    return error.get("step")
+
+
+def has_failure(document: Optional[Dict[str, Any]]) -> bool:
+    return failed_step(document) is not None
+
+
+def needs_retry(document: Optional[Dict[str, Any]]) -> bool:
+    return has_failure(document) or not is_complete((document or {}).get("status"))

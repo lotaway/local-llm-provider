@@ -7,9 +7,6 @@
 
 - [ ] 补齐 `infrastructure/rag/milvus_store.py` 与 `infrastructure/rag/local_rag_service.py::MilvusVectorStore` 的占位实现（`add_documents` 仅返回 id、`similarity_search` 返回空）
   - [ ] 子任务（`§3-3` / PARTIAL）：`MilvusVectorStore` / `LocalRAGService` 只注册在 `bootstrap/container.py`，`wire_routes()` 不注入 `rag_service`，唯一外部调用点是 `tests/test_container_lazy.py`；主链路仍用 `rag.LocalRAG` + `langchain_milvus`。需决策保留哪条链路：接入生产或清理死代码。
-- [ ] 增加 checksum 变更触发重建与失败状态重试
-  - [ ] 子任务（`§3-5` / PARTIAL）：`rag/document_ingestion.py:39-45` 的 checksum 比对、重建与 `status` 断点续跑已落地（`services/ingestion_checkpoint.py`），但「失败状态重试」无独立状态机/重试入口，仅 `_execute_step` 记日志。需补失败状态持久化与可重跑/重试入口。
-
 ## 4. TTS 情感语音系统（来源：TTS_SPEC.md）
 
 - [ ] 将质量网关（WER/DNSMOS/Similarity 自动拦截）接入 TTS 生成链路
