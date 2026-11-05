@@ -5,26 +5,10 @@
 
 ## 2. MOLT 类脑记忆系统（来源：MOLT_BRAIN_PLAN.md + MOLT_BRAIN_SPEC.md）
 
-- [ ] 实现 `AbstractionEngine.abstract_to_ltm`：LLM 抽象总结、生成标准化结论（conclusion/conditions/confidence/sources）、写入 Neo4j LTM、结论向量写入 Milvus、关键词写入 ES
-  - [ ] 子任务（`§2-3` / PARTIAL）：`bootstrap/molt_factory.py:31-38` 的 `build_molt_controller` 只注入 `mongo_repo` 派生依赖，`AbstractionEngine` 缺 `neo4j_repo` / `ltm_index` → `_persist_ltm` 的 Neo4j / Milvus / ES 分支生产不执行。需补齐组合根依赖注入并加生产链路集成测试。
-- [ ] 实现 M1 感觉缓存（MongoDB TTL collection）与 M2 工作记忆（进程内 7±2、rehearsal count）
-  - [ ] 子任务（`§2-8` / PARTIAL）：`MongoSensoryCache` 零生产实例化点，`MoltController` 未注入 `sensory_cache` / `working_memory`。需在组合根实例化并注入，补命中/过期统计的生产验证。
-- [ ] 实现 LTM 结论向量（Milvus）与 ES 关键词 Tag 写入，补全可解释性字段（来源、过期/强化时间）
-  - [ ] 子任务（`§2-9` / PARTIAL）：`constants.py` 的 `LLP_MOLT_*` 与 `.env.example` 对应变量无生产消费者，`ltm_index` 未注入。需接入消费者或删除无效配置，并补字段写入验证。
-
 ### 2.1 MOLT 工程化打磨（补充任务）
 
-- [ ] **完善 M1/M2 真正实现**：新增 M1 感觉缓存（MongoDB TTL collection，带过期/命中统计）、M2 工作记忆（进程内环形缓冲，容量 7±2，rehearsal count、最近访问时间），接入 `EvolutionDispatcher` 与 `MoltController` 生命周期
-  - [ ] 子任务（`§2.1-2` / PARTIAL）：实现类只在定义/测试中出现，未接入 `EvolutionDispatcher` 与 `MoltController` 生命周期；与 `§2-8` 属同一装配缺口，合并处理。
-- [ ] **补全 LTM 向量/关键词真实入库**：在 `repositories/` 或 `infrastructure/rag/` 实现 `save_ltm_vector`（Milvus）与 `index_ltm_keywords`（ES），写入可解释性字段（来源 chunk_ids、首次/最后强化时间、过期时间、版本关系）
-  - [ ] 子任务（`§2.1-4` / PARTIAL）：生产 `ltm_index` 未注入，向量/关键词入库分支不执行；与 `§2-3` 合并补齐依赖注入。
-- [ ] **强化 VersionManager 冲突检测与合并**：接入 Milvus 向量相似度参与 `detect_conflict`，实现同源合并（条件/来源去重、置信度加权）、异源保留版本链（`create_ltm_version_relation` 写入 `PREV_VERSION/NEXT_VERSION/SUPERSEDES/DERIVED_FROM`），完善 `rollback_to`（校验版本链、依赖、回滚影响范围并返回详细结果）
-  - [ ] 子任务（`§2.1-5` / PARTIAL）：`VersionManager` 缺 `ltm_index` → `detect_conflict` 的向量相似度恒为 `None`。需注入 `ltm_index` 并补相似度参与断言。
 - [ ] **打通 MoltScheduler 与现有任务调度器**：查找并接入项目实际的统一调度器（若无则新增最小适配），配置 decay/abstraction/evaluation 周期、失败重试、并发控制，并在 `LEARNING` 开关下安全注册
   - [ ] 子任务（`§2.1-7` / PARTIAL）：`LEARNING` 默认 false，且 `current_memory_repo()` 依赖仅在 `PRE_INIT_RAG=true` 时创建的 `backend_globals.local_rag`，整条链可能为空；**另见 §7 P0-1**（`main.py:93` 的 `NameError` 使 MOLT 生产链路永不启动）。修 P0-1 后补启动验证与开关矩阵测试。
-- [ ] **策略配置化与可观测性**：将 `evaluate_and_adjust` 的阈值/步长迁移到配置（环境变量或配置类），持久化策略调整历史并暴露到 metrics，补充日志与追踪
-  - [ ] 子任务（`§2.1-10` / PARTIAL）：`MoltController` 缺 `history_store`，`MongoStrategyHistoryStore` 零生产实例化 → 策略历史持久化生产不生效。需注入后补 metrics 断言。
-
 ## 3. RAG 架构（来源：RAG_SPEC.md）
 
 - [ ] 补齐 `infrastructure/rag/milvus_store.py` 与 `infrastructure/rag/local_rag_service.py::MilvusVectorStore` 的占位实现（`add_documents` 仅返回 id、`similarity_search` 返回空）

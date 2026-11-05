@@ -38,13 +38,6 @@ class RuntimeFactory:
         llm, max_iters, storage, session_id, rag
     ) -> AgentRuntime:
         from services.feedback_judge import FeedbackJudge
-        from services.evolution_dispatcher import EvolutionDispatcher
-        from services.skill_researcher import SkillResearcher, SkillCreatorBridge
-        from skills import registry
-
-        memory_repo = getattr(rag, "mongo_repo", None)
-        researcher = SkillResearcher(llm)
-        creator = SkillCreatorBridge(registry)
 
         return AgentRuntime(
             llm,
@@ -52,11 +45,23 @@ class RuntimeFactory:
             context_storage=storage,
             session_id=session_id,
             feedback_judge=FeedbackJudge(),
-            evolution_dispatcher=EvolutionDispatcher(
-                memory_repo=memory_repo,
-                skill_researcher=researcher,
-                skill_creator=creator,
-            ),
+            evolution_dispatcher=RuntimeFactory._evolution_dispatcher(rag, llm),
+        )
+
+    @staticmethod
+    def _evolution_dispatcher(rag, llm):
+        from bootstrap.molt_dependencies import build_memory_tiers
+        from services.evolution_dispatcher import EvolutionDispatcher
+        from services.skill_researcher import SkillResearcher, SkillCreatorBridge
+        from skills import registry
+
+        tiers = build_memory_tiers(rag)
+        return EvolutionDispatcher(
+            memory_repo=getattr(rag, "mongo_repo", None),
+            skill_researcher=SkillResearcher(llm),
+            skill_creator=SkillCreatorBridge(registry),
+            sensory_cache=tiers.sensory_cache,
+            working_memory=tiers.working_memory,
         )
 
     @staticmethod
