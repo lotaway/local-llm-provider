@@ -219,7 +219,12 @@ class Container:
         if inference_svc is not None:
             unload_uc.set_current(inference_svc.current_engine, inference_svc.current_model)
 
+        self._wire_rag_routes()
         logger.info("Routes wired successfully")
+
+    def _wire_rag_routes(self) -> None:
+        from interfaces.http.routes.rag_routes import set_rag_service
+        set_rag_service(self.rag_service())
 
 
 # Global container instance (singleton)

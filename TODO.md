@@ -3,10 +3,6 @@
 > 整理于 2026-11-05：依据 `audit-2026-11-05.md` 移除 58 项已核验完成的任务；其余 31 项 PARTIAL + 1 项 NO_EVIDENCE 回退为待办并挂子任务，另新增 3 项 P0 运行期缺陷。
 > 本文件只保留未完成的任务；已移除内容与历史整改记录见 git 历史 `44d1d81`。
 
-## 3. RAG 架构（来源：RAG_SPEC.md）
-
-- [ ] 补齐 `infrastructure/rag/milvus_store.py` 与 `infrastructure/rag/local_rag_service.py::MilvusVectorStore` 的占位实现（`add_documents` 仅返回 id、`similarity_search` 返回空）
-  - [ ] 子任务（`§3-3` / PARTIAL）：`MilvusVectorStore` / `LocalRAGService` 只注册在 `bootstrap/container.py`，`wire_routes()` 不注入 `rag_service`，唯一外部调用点是 `tests/test_container_lazy.py`；主链路仍用 `rag.LocalRAG` + `langchain_milvus`。决策保留链路：接入生产，全面检查并启用container方案。
 ## 4. TTS 情感语音系统（来源：TTS_SPEC.md）
 
 - [ ] 将质量网关（WER/DNSMOS/Similarity 自动拦截）接入 TTS 生成链路

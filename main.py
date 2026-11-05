@@ -42,6 +42,8 @@ from bootstrap.molt_factory import build_molt_controller, current_memory_repo
 from services.molt_scheduler import MoltScheduler
 from routers import version_router
 from controllers.base_controller import router as base_router
+from interfaces.http.routes.chat_routes import router as chat_router
+from interfaces.http.routes.rag_routes import router as rag_router
 import auth
 from auth import get_multimodal_headers
 
@@ -110,10 +112,24 @@ def init_tts_service() -> None:
         logger.error(f"Failed to init TTS service: {e}")
 
 
+async def init_container_runtime() -> None:
+    from bootstrap.container import initialize_container
+    from infrastructure.config.settings import get_settings
+
+    if not get_settings().container_enabled:
+        return
+    try:
+        await initialize_container()
+    except Exception:
+        logger.exception("Failed to initialize dependency container")
+
+
 async def shutdown_runtime() -> None:
+    from bootstrap.container import shutdown_container
     await _stop_schedulers()
     _stop_mcp_connections()
     _unload_model()
+    await shutdown_container()
 
 
 async def _stop_schedulers() -> None:
@@ -194,6 +210,7 @@ async def lifespan(app: FastAPI):
 
     await init_molt_scheduler()
     init_tts_service()
+    await init_container_runtime()
 
     yield
     await shutdown_runtime()
@@ -211,7 +228,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include version router
+app.include_router(chat_router)
+app.include_router(rag_router)
 app.include_router(version_router)
 app.include_router(base_router)
 
