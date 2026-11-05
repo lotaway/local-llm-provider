@@ -12,7 +12,7 @@ import redis
 from constants import REDIS_HOST, REDIS_PORT, REDIS_TTS_PREFIX
 from interfaces.tts_types import ISpeakerRepository
 from infrastructure.tts.speaker_repository import MongoSpeakerRepository
-from model_providers.tts.audio_processing import process_samples
+
 from model_providers.tts.style_tts2_engine import StyleTTS2Engine, StyleTTS2Unavailable
 from services.emotion_parser import EmotionParser
 from services.tts_post_processing import TTSPostProcessor
@@ -69,7 +69,7 @@ class StyleTTS2Adapter:
             self._engine = StyleTTS2Engine(
                 checkpoint_path=self.model_checkpoint,
                 device=str(self.device),
-                postprocess=process_samples,
+                postprocess=self.post_processor.process,
             )
         return self._engine
 

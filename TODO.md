@@ -18,9 +18,6 @@
   - 待人为抉择 E（失败语义）：拦截后返回的 HTTP 状态码/错误体、是否触发异步重生成，以及流式已发出音频时如何向客户端表达质量不合格。
 - [ ] 实现流式输出（首包延迟 <500ms）
   - [ ] 子任务（`§4-7` / PARTIAL）：`StreamingResponse` 与 `elapsed_ms` 计时存在，但首包是整句 10 步 diffusion 合成后的完整 WAV，无首包延迟测量或断言（测试只断言 `>=0`）。需定义首包口径并加 SLA 断言，或把描述修正为实际能力。
-- [ ] 实现后处理呼吸感与随机 jitter
-  - [ ] 子任务（`§4-9` / PARTIAL）：`style_tts2_engine.py:113` 只传 `(wave, emotion_params)` 两参，`process_samples` 的 `seed` 恒为 `None`，`audio_processing.py:28-29` 直接 return → 只有呼吸感生效，jitter 空转。需传入 seed 并打通 jitter 分支。
-
 ## 5. TTS 质量评估与线上监控（来源：TTS_QUALITY_ESTIMATE.md）
 
 - [ ] 生产监控抽样（5%~10% 请求）接入评估流水线
