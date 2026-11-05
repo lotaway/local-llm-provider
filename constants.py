@@ -89,12 +89,12 @@ ROOT_TASK = os.getenv("ROOT_TASK", "")
 ROOT_TASK_INTERVAL = int(os.getenv("ROOT_TASK_INTERVAL", "3600"))
 ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "true").lower() == "true"
 
-ENGINE_PREFERENCE = os.getenv("ENGINE_PREFERENCE", "auto")  # auto | vllm | transformers | llama_cpp
+ENGINE_PREFERENCE = os.getenv("ENGINE_PREFERENCE", "auto")
 
 VLLM_TENSOR_PARALLEL = int(os.getenv("VLLM_TENSOR_PARALLEL", "1"))
 VLLM_GPU_MEMORY_UTIL = float(os.getenv("VLLM_GPU_MEMORY_UTIL", "0.9"))
 VLLM_MAX_MODEL_LEN = int(os.getenv("VLLM_MAX_MODEL_LEN", "8192"))
-VLLM_QUANTIZATION = os.getenv("VLLM_QUANTIZATION")  # awq, gptq, fp8, None
+VLLM_QUANTIZATION = os.getenv("VLLM_QUANTIZATION")
 VLLM_ENFORCE_EAGER = os.getenv("VLLM_ENFORCE_EAGER", "false").lower() == "true"
 VLLM_DTYPE = os.getenv("VLLM_DTYPE", "auto")
 
