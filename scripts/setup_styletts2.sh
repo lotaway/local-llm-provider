@@ -143,19 +143,12 @@ if [[ ${#TTS_DEPENDENCIES[@]} -eq 0 ]]; then
     die "No [tts] dependencies found in pyproject.toml"
 fi
 
-# Pin torch/torchaudio to the already-installed host build for the duration of
+# Pin torch/torchaudio/torchvision to the installed host build via the shared
 # this install.  Some extras (vector-quantize-pytorch) depend on torch, and
 # without a constraint pip could upgrade it to the default PyPI wheel.
 CONSTRAINTS_FILE="$(mktemp)"
 trap 'rm -f "$CONSTRAINTS_FILE"' EXIT
-"$PYTHON" - "$CONSTRAINTS_FILE" <<'PY'
-import importlib.metadata as metadata
-import sys
-
-with open(sys.argv[1], "w", encoding="utf-8") as handle:
-    for name in ("torch", "torchaudio"):
-        handle.write(f"{name}=={metadata.version(name)}\n")
-PY
+"$PYTHON" scripts/check_torch_build.py --constraints "$CONSTRAINTS_FILE"
 
 "$PYTHON" -m pip install \
     --upgrade-strategy only-if-needed \

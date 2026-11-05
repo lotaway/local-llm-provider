@@ -9,13 +9,13 @@ baseline after paying down debt.
 Rules:
 1. Source files must not exceed MAX_FILE_LINES unless recorded in baseline.
 2. Functions must not exceed MAX_FUNCTION_LINES unless recorded in baseline.
-3. ``print(``, ``except ...: pass``, non-directive ``#`` comments and business-layer direct
-   ``pymongo`` / ``numpy`` / ``redis`` imports are counted per file and must
-   not exceed the recorded baseline.
-4. Every ``.py`` path referenced in a checked TODO.md item must exist (dangling
-   references mean the checkbox claims things about files that were renamed
-   or removed) and every ``path.py::func`` reference must still point at a
-   function that exists in that file.
+3. ``print(``, ``except ...: pass``, explanatory ``#`` comments and business-layer
+   direct ``pymongo`` / ``numpy`` / ``redis`` imports are counted per file and
+   must not exceed the recorded baseline. Tool directives (``# type:``,
+   ``# noqa``, ...), contract/type documentation (``#:``, ``# Args:``, ...)
+   and pure separator lines are exempt from the comment rule.
+4. Checked TODO items are validated against pytest by scripts/todo_guard.py
+   in the CI targeted-tests job.
 """
 
 from __future__ import annotations
@@ -54,6 +54,12 @@ MAX_FILE_LINES = 500
 MAX_FUNCTION_LINES = 20
 FORBIDDEN_IMPORT_MODULES = {"pymongo", "numpy", "redis"}
 FORBIDDEN_IMPORT_DIRS = {"services", "controllers", "agents", "application", "domain"}
+COMMENT_EXCLUSIONS = (
+    "#!", "# -*-", "# coding", "# encoding", "# type:", "# noqa", "# noinspection",
+    "# pylint:", "# ruff:", "# mypy:", "# fmt:", "# pragma:", "# isort:",
+    "# TODO", "# FIXME", "#:", "# @param", "# @return", "# Args:", "# Returns:",
+    "# Raises:", "# Contract:", "# Invariant:", "# Precondition", "# Postcondition",
+)
 
 
 def source_files() -> List[Path]:
@@ -100,48 +106,89 @@ def pattern_counts(source: str) -> Dict[str, int]:
     return {"print": prints, "bare_except_pass": bare_excepts, "forbidden_imports": forbidden_imports}
 
 
-def collect() -> Dict[str, Dict[str, int]]:
-    files: Dict[str, int] = {}
-    functions: Dict[str, int] = {}
-    print_counts: Dict[str, int] = {}
-    bare_except_counts: Dict[str, int] = {}
-    import_counts: Dict[str, int] = {}
+def is_explanatory_comment(text: str) -> bool:
+    stripped = text.strip()
+    if stripped.startswith(COMMENT_EXCLUSIONS):
+        return False
+    body = stripped.lstrip("#").strip()
+    return bool(body) and any(character.isalpha() for character in body)
 
+
+def explanatory_comment_count(source: str) -> int:
+    import io
+    import tokenize
+
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+        return sum(
+            1
+            for token in tokens
+            if token.type == tokenize.COMMENT and is_explanatory_comment(token.string)
+        )
+    except (tokenize.TokenError, IndentationError):
+        return 0
+
+
+def report_parse_error(rel: str) -> None:
+    global parse_errors
+    print(f"  - unparseable source file: {rel}")
+    parse_errors += 1
+
+
+def record_lines(source: str, rel: str, current: Dict[str, Dict[str, int]]) -> None:
+    lines = len(source.splitlines())
+    if lines > MAX_FILE_LINES:
+        current["files"][rel] = lines
+
+
+def record_functions(tree: ast.AST, rel: str, current: Dict[str, Dict[str, int]]) -> None:
+    for key, length in longest_functions(tree, rel):
+        if length > MAX_FUNCTION_LINES:
+            current["functions"][key] = max(current["functions"].get(key, 0), length)
+
+
+def record_patterns(source: str, rel: str, current: Dict[str, Dict[str, int]]) -> None:
+    counts = pattern_counts(source)
+    if counts["print"]:
+        current["print"][rel] = counts["print"]
+    if counts["bare_except_pass"]:
+        current["bare_except_pass"][rel] = counts["bare_except_pass"]
+    if counts["forbidden_imports"] and rel.split("/", 1)[0] in FORBIDDEN_IMPORT_DIRS:
+        current["forbidden_imports"][rel] = counts["forbidden_imports"]
+
+
+def record_comments(source: str, rel: str, current: Dict[str, Dict[str, int]]) -> None:
+    comments = explanatory_comment_count(source)
+    if comments:
+        current["explanatory_comments"][rel] = comments
+
+
+def measure_file(source: str, tree: ast.AST, rel: str, current: Dict[str, Dict[str, int]]) -> None:
+    record_lines(source, rel, current)
+    record_functions(tree, rel, current)
+    record_patterns(source, rel, current)
+    record_comments(source, rel, current)
+
+
+def collect() -> Dict[str, Dict[str, int]]:
+    current: Dict[str, Dict[str, int]] = {
+        "files": {},
+        "functions": {},
+        "print": {},
+        "bare_except_pass": {},
+        "forbidden_imports": {},
+        "explanatory_comments": {},
+    }
     for path in source_files():
         rel = path.relative_to(ROOT).as_posix()
         try:
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source)
         except (OSError, SyntaxError):
-            print(f"  - unparseable source file: {rel}")
-            global parse_errors
-            parse_errors += 1
+            report_parse_error(rel)
             continue
-
-        lines = line_count(path)
-        if lines > MAX_FILE_LINES:
-            files[rel] = lines
-
-        for key, length in longest_functions(tree, rel):
-            if length > MAX_FUNCTION_LINES:
-                current = functions.get(key, 0)
-                functions[key] = max(current, length)
-
-        counts = pattern_counts(source)
-        if counts["print"]:
-            print_counts[rel] = counts["print"]
-        if counts["bare_except_pass"]:
-            bare_except_counts[rel] = counts["bare_except_pass"]
-        if counts["forbidden_imports"] and rel.split("/", 1)[0] in FORBIDDEN_IMPORT_DIRS:
-            import_counts[rel] = counts["forbidden_imports"]
-
-    return {
-        "files": files,
-        "functions": functions,
-        "print": print_counts,
-        "bare_except_pass": bare_except_counts,
-        "forbidden_imports": import_counts,
-    }
+        measure_file(source, tree, rel, current)
+    return current
 
 
 def flatten(current: Dict[str, Dict[str, int]]) -> Dict[str, str]:
@@ -166,6 +213,12 @@ def compare(current: Dict[str, Dict[str, int]], baseline: Dict[str, str]) -> Lis
     return violations
 
 
+def read_baseline() -> Dict[str, str]:
+    if not BASELINE_PATH.exists():
+        return {}
+    return json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+
+
 def main() -> int:
     update_baseline = "--update-baseline" in sys.argv
     current = collect()
@@ -183,12 +236,6 @@ def main() -> int:
         return 1
     print("quality gate passed")
     return 0
-
-
-def read_baseline() -> Dict[str, str]:
-    if not BASELINE_PATH.exists():
-        return {}
-    return json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

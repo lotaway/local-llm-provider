@@ -18,7 +18,7 @@ jobs:
         run: python scripts/quality_gate.py
 
   targeted-tests:
-    name: Targeted tests
+    name: Targeted tests + TODO consistency
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,11 +27,15 @@ jobs:
           python-version: "3.13"
       - name: Install CPU torch first (do not replace host ROCm/CUDA builds)
         run: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+      - name: Pin the installed torch build
+        run: python scripts/check_torch_build.py --constraints torch-constraints.txt
       - name: Install project
-        run: pip install -e ".[tts]" pytest pytest-asyncio
+        run: pip install --upgrade-strategy only-if-needed -c torch-constraints.txt -e ".[tts]" pytest pytest-asyncio
+      - name: Verify checked TODO references
+        run: python scripts/todo_guard.py --check
       - name: Run targeted test suite (green set; env-dependent tests excluded)
         run: |
-          python -m pytest -q \
+          python -m pytest -q --junitxml=todo_junit.xml \
             tests/test_tts_quality_gateway.py \
             tests/test_tts_audio_quality.py \
             tests/test_tts_post_processing.py \
@@ -52,4 +56,9 @@ jobs:
             tests/test_skills_env_loading.py \
             tests/test_version_manager.py \
             tests/test_agent_protocol.py \
-            tests/test_agent_protocol_integration.py
+            tests/test_agent_protocol_integration.py \
+            tests/test_dnsmos_inference.py \
+            tests/test_todo_guard.py
+      - name: Assert checked TODO tests are green
+        if: always()
+        run: python scripts/todo_guard.py --report todo_junit.xml

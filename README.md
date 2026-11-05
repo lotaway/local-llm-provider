@@ -359,3 +359,22 @@ if not hasattr(transformers, "PreTrainedTokenizer"):
     transformers.PreTrainedTokenizer = PreTrainedTokenizer
 ```
 
+## Dependency install order (torch / bitsandbytes)
+
+`bitsandbytes` is no longer a base dependency. It lives in the
+`[quantization]` extra because its transitive `torch>=2.3` requirement can make
+pip replace a host-specific ROCm/CUDA wheel with the default PyPI build.
+
+1. Install the host PyTorch build first (ROCm / CUDA / CPU); see HARDWARE.md.
+2. Verify it and pin its exact versions:
+   `python scripts/check_torch_build.py --constraints /tmp/torch-constraints.txt`
+3. Install through the guarded entry point:
+   `bash scripts/install.sh` or `EXTRAS=tts,quantization bash scripts/install.sh`
+   (`pip install -c /tmp/torch-constraints.txt -e ".[...]"` under the hood).
+
+`scripts/setup_styletts2.sh` uses the same constraints generator, so TTS extras
+cannot silently upgrade torch either. CI applies the same constraint file.
+
+Quality gates: `python scripts/quality_gate.py` (code principles, baseline-tolerant)
+and `python scripts/todo_guard.py --check` (checked TODO references resolve).
+The CI job additionally asserts those referenced tests are green in the JUnit report.

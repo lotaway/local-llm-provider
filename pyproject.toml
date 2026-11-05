@@ -36,7 +36,6 @@ dependencies = [
   "python-multipart>=0.0.20",
   "elasticsearch>=9.0.0",
   "neo4j>=6.1.0",
-  "bitsandbytes>=0.43.0",
   "slowapi>=0.1.9",
   "Pillow>=10.0.0",
 ]
@@ -79,6 +78,12 @@ acp-agent = "adapters.stdio_adapter:main"
 
 # Optional dependencies
 [project.optional-dependencies]
+# Quantization is optional: bitsandbytes pulls torch>=2.3, which can replace
+# a host ROCm/CUDA wheel during a plain "pip install -e .". Install the host
+# PyTorch build first, then use scripts/install.sh and the [quantization] extra.
+quantization = [
+    "bitsandbytes>=0.43.0",
+]
 vllm = [
     "vllm>=0.6.0",
 ]
@@ -105,3 +110,5 @@ tts = [
 ]
 # 使用方式: pip install -e .[vllm] / pip install -e .[tts]
 # 注意: [tts] 不包含 torch/torchaudio，需先按宿主安装对应的 ROCm/CUDA/CPU 构建。
+# 安装顺序见 scripts/install.sh：check_torch_build.py 生成 constraints，
+# pip install -c <constraints> -e . 保证不会覆盖宿主 torch。

@@ -52,17 +52,36 @@
 - [x] 实现 Emotion Parser（连续 VAD：valence/arousal/dominance/speed/pitch/energy）
 - [x] 实现流式输出（首包延迟 <500ms）
 - [x] 接入用户偏好记忆 `tts_user_profiles`
-- [x] 将质量网关（WER/DNSMOS/Similarity 自动拦截）接入 TTS 生成链路
+- [ ] 将质量网关（WER/DNSMOS/Similarity 自动拦截）接入 TTS 生成链路
+  - 现状证据：`TTSService.quality_gateway` 默认 `None` 且 `main.py::init_tts_service` 未注入（`services/tts_service.py:30,42`、`main.py:111-117`）；`interfaces/tts_types.py:17` 的 `ITTSQualityEvaluator` 无生产实现，`tts_estimate/main.py:25` 的组合根只服务独立评估项目；未注入 evaluator 时 `TTSQualityGateway.evaluate` 返回 `rejected` 会把全部请求拒掉；`/tts` 未传 `reference_audio`（`controllers/tts_controller.py:103-105`）；`_record_request` 在流全部 yield 之后才执行（`services/tts_service.py:78`），抛 `TTSQualityRejected` 已无法阻断本次响应。
+  - 待人为抉择 A（拦截时机/强度）：生成前预检 / 逐句生成时拦截并流式回退 / 仅事后评估+告警不阻断。流式首包 <500ms 约束下是否允许同步评估，需明确。
+  - 待人为抉择 B（参考音频来源）：克隆会话的 speaker embedding 缓存 / 请求携带参考音频 / 固定基准音频库；并决定无参考音频时是跳过网关还是降级为仅 DNSMOS。
+  - 待人为抉择 C（评估器与成本）：是否复用 `tts_estimate` 的 Whisper + DNSMOS ONNX + ECAPA（每次抽样推理成本较高），或先用轻量代理指标；是否允许按需懒加载模型。
+  - 待人为抉择 D（阈值与降级）：WER/DNSMOS/Similarity 的拦截阈值取值、`should_block` 的判定逻辑，以及 evaluator 不可用/超时时是放行、告警还是拒绝（当前为拒绝）。
+  - 待人为抉择 E（失败语义）：拦截后返回的 HTTP 状态码/错误体、是否触发异步重生成，以及流式已发出音频时如何向客户端表达质量不合格。
 - [x] 实现后处理呼吸感与随机 jitter
 
 ## 5. TTS 质量评估与线上监控（来源：TTS_QUALITY_ESTIMATE.md）
 
-- [x] 生产监控抽样（5%~10% 请求）接入评估流水线
+- [ ] 生产监控抽样（5%~10% 请求）接入评估流水线
+  - 现状证据：抽样钩子已存在且默认 5%（`services/tts_production_monitor.py:9`、`services/tts_service.py:123-124`），但记录的 `result` 只有 status/时长/时长异常/重复片段/文本（`services/tts_service.py:115-121`），不含 WER/DNSMOS/Similarity；`tts_estimate` 的评估器从未在 `TTSService` 中实例化，故 `metrics()` 里的三项质量统计（`services/tts_service.py:86-88`）在生产中恒为空；`TTSSamplingMonitor._results` 仅为进程内 list，无持久化。
+  - 待人为抉择 A（抽样率与策略）：固定 5% / 10% / 可配置区间，是否按用户、speaker、时段分层抽样，是否对失败请求 100% 采样。
+  - 待人为抉择 B（评估深度）：全量三项指标 / 仅 DNSMOS / 按请求类型分级；以及 WER 所需参考文本、Similarity 所需参考音频从哪里取。
+  - 待人为抉择 C（同步 vs 异步）：当前在请求路径内同步执行，是否改为后台任务队列 + 结果落库，避免拖慢音频响应；队列满载时的丢弃策略。
+  - 待人为抉择 D（结果落点与保留期）：写回 `TTSTrendStatistics` / `TTSAlertService` / 采样记录 / MongoDB 时序集合，保留窗口与脱敏要求（当前文本原文会进入内存记录）。
+  - 待人为抉择 E（成本与配额）：每日评估次数上限、模型推理并发上限、超预算时的降级策略。
 - [x] 每日统计、滚动均值、P90/P95、异常比例
 - [x] 报警阈值与通知（WER / DNSMOS / Speaker Similarity / 失败率）
 - [x] 生成失败率、音频时长异常、重复片段检测
 - [x] 用户反馈分布（差评 / 投诉 / 重新生成次数）
-- [x] 固定测试句集 + 每日回归测试 + 版本对比曲线
+- [ ] 固定测试句集 + 每日回归测试 + 版本对比曲线
+  - 现状证据：固定句集已有 3 句英文（`services/tts_regression_suite.py:11-15`），但只有手动接口 `POST /tts/regression`（`controllers/tts_controller.py:138-141`，限流 2/min），无任何每日调度（`main.py:170` 只注册 MOLT 任务）；`TTSService.run_regression` 只返回 `duration_seconds`/`bytes`（`services/tts_service.py:94-107`），未调用 `TTSRegressionSuite.run()`，`_runs` 历史不写入；`compare()`（`services/tts_regression_suite.py:40`）唯一调用点是 `tests/test_tts_regression_suite.py:18`；`version` 为随机 `uuid4()[:8]`，无真实版本与持久化，无法形成曲线。
+  - 待人为抉择 A（句集内容）：是否保留现有 3 句英文，改为中文/中英混合、覆盖多情绪与长难句、数字与专有名词；句集数量与存放位置（代码常量 / 配置文件 / 数据库）。
+  - 待人为抉择 B（调度方式）：复用 `AsyncTaskScheduler` / `TaskScheduler` / 独立 cron / CI 定时任务；执行时间、时区、并发与失败重试策略。
+  - 待人为抉择 C（回归指标）：在时长/字节之外是否加入 WER/DNSMOS/Similarity、首包延迟、失败率；阈值与判定为回归的标准。
+  - 待人为抉择 D（版本标识）：用 checkpoint 名 / git sha / 模型+配置快照 替换随机 uuid；版本元数据从哪读取。
+  - 待人为抉择 E（持久化与曲线）：结果存 MongoDB / 时序库 / 静态报表，对比基线（上一版本 vs 固定基线）、保留窗口、曲线展示方式与回归告警阈值。
+  - 待人为抉择 F（手动接口）：是否保留 `POST /tts/regression` 及其 2/min 限流，还是改为只由调度触发。
 - [x] 补齐 `tts_estimate` 的 DNSMOS 真实推理细节（当前 `_run_inference` 为简化实现，需按官方前处理/分帧）
 - [x] 为 `tts_estimate` 增加批量评估与 CLI 参数入口（当前 `main.py` 使用 mock 路径）
 
@@ -79,7 +98,7 @@
 - [x] 复核 §4 质量网关接入：`TTSSpeechQualityGateway` 除测试外无引用，未进入 TTS 生成链路
 - [x] 复核 §4 后处理接入：`TTSPostProcessor` 除测试外无引用，未进入 TTS 生成链路
 - [x] 复核 §5 生产监控/统计/报警/反馈/回归：`TTSSamplingMonitor`、`TTSTrendStatistics`、`TTSTAlertService`、`TTSFeedbackMonitor`、`TTSAudioQualityService`、`TTSSRegressionSuite` 均只被测试引用，未接入 `/tts` 或定时任务
-- [ ] 复核 §5 DNSMOS 真实推理：`tts_estimate/infrastructure/dnsmos.py::_infer_frame` 的输入形状 `[frame]` 与输出索引需按官方模型确认，当前实现可能无法得到有效分数
+- [x] 复核 §5 DNSMOS 真实推理：按官方 `dnsmos_local.py` 修正输入形状 `[1, 144160]`、首个输出 `[1, 3]` 的 SIG/BAK/OVR 索引与 polyfit 校准（`tts_estimate/infrastructure/dnsmos.py`），并补充契约文档与定向测试
 - [x] 复核 §2.1 MoltScheduler 接入：`services/molt_scheduler.py` 未被任何生产代码实例化，`MoltController` / `AbstractionEngine` / `VersionManager` / `DecayScheduler` 也仅出现在测试中
 - [x] 复核 §2.1 API 收敛：`services/abstraction_engine.py:24` 仍保留 `self._repo = memory_repo or mongo_repo` 别名，与“去除 `memory_repo` 别名”不一致
 - [x] 复核 §1 MCP stdout 健壮性：`utils/mcp_protocol.py:181-183` 使用阻塞式 `stdout.read(READ_CHUNK_SIZE)`，无换行的大 JSON 响应会超时，未达到“处理大 JSON/无换行”的勾选描述
@@ -106,7 +125,7 @@
 - [x] 清理 `constants.py` 14 处实现说明性注释（配置命名已自解释）；TODO 所引 `services/neo4j_repository.py` 为笔误，实际 `repositories/neo4j_repository.py` 的 `_merge_entity_tx` 说明注释已删除
 - [x] 将 `services/tts_audio_quality.py`、`services/tts_post_processing.py` 的 `numpy` 依赖下沉到基础设施适配器
 - [x] 将 `services/tts_preference_store.py` 的 `pymongo` 与硬编码库名 `"rag_system"`（`:39`）改为注入仓储/配置
-- [ ] 复核主依赖 `bitsandbytes`（传递依赖 `torch>=2.3`）在全新环境安装时可能拉取默认 PyPI torch 的问题；首次安装前应先安装宿主 ROCm/CUDA 构建，或提供统一 constraints
+- [x] 复核主依赖 `bitsandbytes`（传递依赖 `torch>=2.3`）在全新环境安装时可能拉取默认 PyPI torch 的问题：移入 `[quantization]` extra，新增 `scripts/check_torch_build.py` 与 `scripts/install.sh` 提供统一 constraints 与安装顺序预检
 - [x] 为 TTS 服务定义接口，替换 `evaluator: Any`（`ITTSQualityEvaluator`）、`notifier: Any`（`ITTSNotifier`）、`collection: Any`（`ITTSCollection` 协议）
 - [x] `controllers/tts_controller.py` 改为依赖注入：`main.py` lifespan 组合 `TTSService`/`StyleTTS2Adapter` 并调用 `set_tts_service`；控制器不再直接实例化适配器，未注入时返回 503
 - [x] 拆分 `services/evolution_dispatcher.py`：`_apply_adjustments`(37→`_dispatch_dominant_adjustments`/`_record_adjustment_history`)、`_aggregate_signals`(29→`_count_target_totals`)、`_apply_m3`(26→`_increment_chunk_importance`)、`_adjust_agent_preferences`(24→`_adjust_agent_type_preference`/`_adjust_skill_preferences`)，全部 ≤20 行
@@ -123,9 +142,9 @@
 
 - [x] CI 增加单文件 ≤500 行、单函数 ≤20 行检查（`scripts/quality_gate.py`，基线容错：新违规即失败、已记录项不允许增长）
 - [x] CI 增加禁止 `print(`、`except ...: pass`、业务层直接导入 `pymongo` / `numpy` / `redis` 的检查（同上 quality gate；`services`/`controllers`/`agents`/`application`/`domain`）
-- [ ] CI 增加禁止新增解释性注释的检查（契约/类型文档除外）
-- [ ] CI 增加 TODO 勾选与测试结果一致性检查：勾选任务对应测试必须为绿
-- [ ] 复核后同步更新第 1–5 节勾选状态，并在本节记录整改结果
+- [x] CI 增加禁止新增解释性注释的检查（`scripts/quality_gate.py` 的 `explanatory_comments` 规则，排除工具指令与契约/类型文档，基线容错）
+- [x] CI 增加 TODO 勾选与测试结果一致性检查（`scripts/todo_guard.py` + CI `--junitxml` 报告断言：勾选任务对应测试必须为绿）
+- [x] 复核后同步更新第 1–5 节勾选状态，并在本节记录整改结果（证据链与 3 项回退见 §6.5）
 
 ### 6.5 整改结果记录（2026-10-30）
 
@@ -144,3 +163,9 @@
 - §6.3 后续跟进（第 2 批）：`rag.py`→`rag/` 包拆分完成（`splitting`/`document_loader`/`document_ingestion`/`vectorstore_support`/`local_rag`，经 `git mv` 保留历史）；`load_documents` 改为扩展名分发表；超长函数全部拆至 ≤20 行；质量门禁零基线迁移通过；全量测试与拆分前完全一致（143 passed / 16 failed）。
 - §6.3 后续跟进（第 3 批）：`evolution_dispatcher`/`mongodb`/`neo4j` 超长函数拆分完成（全部 ≤20 行，质量门禁零基线迁移）；`save_document` 改 kwargs 形态；`wire_routes` 私有属性泄漏经 `InferenceDomainService.current_engine` 公开属性消除；`quality_gate.py` 语法解析失败不再静默跳过（计入 parse_errors 违规）；全量测试维持 143 passed / 16 failed（环境类）。
 - §6.3 `clients/agents/runtime_factory.py`：`load_from_env` 失败改为 `logger.exception` 分类处理。
+
+- §6.1 DNSMOS 复核，2026-11-05：按官方 `microsoft/DNS-Challenge` 的 `dnsmos_local.py` 重写 `tts_estimate/infrastructure/dnsmos.py`——16 kHz 波形、9.01 s/144160 采样窗口、`[1, 144160]` float32 输入、1 s hop、短音频重复补齐、首个输出 `[1, 3]` 按 SIG/BAK/OVR 取值并做官方 polyfit 校准，领域映射 `overall=OVR / signal=SIG / background=BAK`；`onnxruntime`/`librosa` 改为按需导入、`session` 可注入，新增 `tests/test_dnsmos_inference.py`（7 项）与 `tts_estimate/README.md` 推理契约表。
+- §6.3 bitsandbytes 复核，2026-11-05：`bitsandbytes>=0.43.0` 从主依赖移到 `[quantization]` extra；新增 `scripts/check_torch_build.py`（宿主 torch 预检 + 生成 torch/torchaudio/torchvision 版本 constraints）与 `scripts/install.sh`（预检 → `-c` 安装 → 复核），`scripts/setup_styletts2.sh` 复用同一生成器；CI 安装步骤加 `-c torch-constraints.txt`。
+- §6.4 质量门禁，2026-11-05：`scripts/quality_gate.py` 新增 `explanatory_comments` 规则（tokenize 提取注释，排除 shebang/编码/工具指令/契约类型文档/纯分隔线），基线容错只拦新增与增长，`scripts/quality_baseline.json` 重新生成；新增 `scripts/todo_guard.py`（`--list` / `--check` / `--report`）在 CI 校验勾选任务引用的测试文件存在且 JUnit 报告全绿。
+- §6.4 第 1–5 节勾选同步，2026-11-05（证据链）：§4 生成/克隆/流式/偏好已落地（`style_tts2_adapter.py:120-167`、`tts_controller.py:106`、`main.py:110-118`）；后处理经 `style_tts2_engine.py:106` 的 `postprocess=process_samples` 落地，`TTSPostProcessor` 外观类仍无调用点（保留勾选，列为清理项）；§2.1 `MoltScheduler` 经 `main.py:170` 接入，`abstraction_engine.py:27` 的 `memory_repo` 别名已去除；§1 MCP `read1()` 见 `utils/mcp_protocol.py:194-197`。回退为 `[ ]` 的 3 项：§4 质量网关（`TTSService.quality_gateway` 默认 `None` 且 `main.py` 未注入，生产链路无 evaluator）、§5 抽样接入评估流水线（`_record_request` 只记录时长/重复）、§5 每日回归/版本对比（`/tts/regression` 为手动接口，`TTSRegressionSuite.compare` 未被调用且无每日调度）。
+- 验证，2026-11-05：便携 Python 3.12 运行 `scripts/quality_gate.py`（通过）与 `scripts/todo_guard.py --check`（6 个引用全部解析）；新增测试需在 WSL 环境执行 `python -m pytest -q tests/test_dnsmos_inference.py tests/test_todo_guard.py`。
