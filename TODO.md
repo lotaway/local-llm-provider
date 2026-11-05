@@ -56,8 +56,6 @@
 
 ### 6.3 代码原则整改
 
-- [ ] 将 `services/tts_audio_quality.py`、`services/tts_post_processing.py` 的 `numpy` 依赖下沉到基础设施适配器
-  - [ ] 子任务（`§6.3-8` / PARTIAL）：`services/tts_post_processing.py:4` 仍 `import numpy as np`（已登记进 `quality_baseline.json`，故门禁不拦）。需下沉到基础设施适配器。
 - [ ] 将 `services/tts_preference_store.py` 的 `pymongo` 与硬编码库名 `"rag_system"`（`:39`）改为注入仓储/配置
   - [ ] 子任务（`§6.3-9` / PARTIAL）：`services/tts_preference_store.py:18` 仍 lazy `from pymongo import MongoClient`（同样已进基线）。需改为注入 collection/database。
 - [ ] 统一 TTS 命名：`TTSTAlertService`、`TTSSpeechQualityGateway`、`TTSSRegressionSuite`、`TTSTrendStatistics` 改为一致的 `TTS...` 前缀
