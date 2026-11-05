@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
-class TTSTrendStatistics:
+class TTSQualityStatistics:
     def __init__(self, window: int = 1000):
         if window < 1:
             raise ValueError(f"window must be at least 1, got {window}")

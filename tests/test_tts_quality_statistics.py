@@ -1,8 +1,8 @@
-from services.tts_trend_statistics import TTSTrendStatistics
+from services.tts_quality_statistics import TTSQualityStatistics
 
 
 def test_trend_statistics_aggregates_failures_and_percentiles():
-    statistics = TTSTrendStatistics(window=20)
+    statistics = TTSQualityStatistics(window=20)
     for index in range(20):
         statistics.add({"status": "reject" if index % 4 == 3 else "pass", "wer": 0.1 * index, "dnsmos": {"overall": 3.9}, "speaker_similarity": 0.9})
 
@@ -21,4 +21,4 @@ def test_trend_statistics_rejects_invalid_window():
     from pytest import raises
 
     with raises(ValueError):
-        TTSTrendStatistics(window=0)
+        TTSQualityStatistics(window=0)

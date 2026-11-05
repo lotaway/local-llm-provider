@@ -21,11 +21,11 @@
 ## 5. TTS 质量评估与线上监控（来源：TTS_QUALITY_ESTIMATE.md）
 
 - [ ] 生产监控抽样（5%~10% 请求）接入评估流水线
-  - 现状证据：抽样钩子已存在且默认 5%（`services/tts_production_monitor.py:9`、`services/tts_service.py:123-124`），但记录的 `result` 只有 status/时长/时长异常/重复片段/文本（`services/tts_service.py:115-121`），不含 WER/DNSMOS/Similarity；`tts_estimate` 的评估器从未在 `TTSService` 中实例化，故 `metrics()` 里的三项质量统计（`services/tts_service.py:86-88`）在生产中恒为空；`TTSSamplingMonitor._results` 仅为进程内 list，无持久化。
+  - 现状证据：抽样钩子已存在且默认 5%（`services/tts_request_sampler.py:9`、`services/tts_service.py:123-124`），但记录的 `result` 只有 status/时长/时长异常/重复片段/文本（`services/tts_service.py:115-121`），不含 WER/DNSMOS/Similarity；`tts_estimate` 的评估器从未在 `TTSService` 中实例化，故 `metrics()` 里的三项质量统计（`services/tts_service.py:86-88`）在生产中恒为空；`TTSRequestSampler._results` 仅为进程内 list，无持久化。
   - 待人为抉择 A（抽样率与策略）：固定 5% / 10% / 可配置区间，是否按用户、speaker、时段分层抽样，是否对失败请求 100% 采样。
   - 待人为抉择 B（评估深度）：全量三项指标 / 仅 DNSMOS / 按请求类型分级；以及 WER 所需参考文本、Similarity 所需参考音频从哪里取。
   - 待人为抉择 C（同步 vs 异步）：当前在请求路径内同步执行，是否改为后台任务队列 + 结果落库，避免拖慢音频响应；队列满载时的丢弃策略。
-  - 待人为抉择 D（结果落点与保留期）：写回 `TTSTrendStatistics` / `TTSAlertService` / 采样记录 / MongoDB 时序集合，保留窗口与脱敏要求（当前文本原文会进入内存记录）。
+  - 待人为抉择 D（结果落点与保留期）：写回 `TTSQualityStatistics` / `TTSAlertService` / 采样记录 / MongoDB 时序集合，保留窗口与脱敏要求（当前文本原文会进入内存记录）。
   - 待人为抉择 E（成本与配额）：每日评估次数上限、模型推理并发上限、超预算时的降级策略。
 - [ ] 每日统计、滚动均值、P90/P95、异常比例
   - [ ] 子任务（`§5-1` / PARTIAL）：统计方法真实且已接入 `metrics()`，但 `_record_request` 的 `result` 不含 wer/dnsmos/similarity → 三项质量统计生产恒为 0；仅进程内 `deque(maxlen=1000)`，无「每日」聚合与持久化。需补指标来源、每日聚合与持久化。
@@ -47,7 +47,7 @@
 
 - [ ] 复核 §4 质量网关接入：`TTSSpeechQualityGateway` 除测试外无引用，未进入 TTS 生成链路
   - [ ] 子任务（`§6.1-5` / PARTIAL）：`TTSQualityGateway` 默认 `None` 且 `main.py::init_tts_service` 不注入，`ITTSQualityEvaluator` / `ITTSNotifier` 无生产实现。需与 §4「质量网关接入」的待抉择任务合并推进。
-- [ ] 复核 §5 生产监控/统计/报警/反馈/回归：`TTSSamplingMonitor`、`TTSTrendStatistics`、`TTSTAlertService`、`TTSFeedbackMonitor`、`TTSAudioQualityService`、`TTSSRegressionSuite` 均只被测试引用，未接入 `/tts` 或定时任务
+- [ ] 复核 §5 生产监控/统计/报警/反馈/回归：`TTSRequestSampler`、`TTSQualityStatistics`、`TTSTAlertService`、`TTSFeedbackMonitor`、`TTSAudioQualityService`、`TTSSRegressionSuite` 均只被测试引用，未接入 `/tts` 或定时任务
   - [ ] 子任务（`§6.1-7` / PARTIAL）：部分组件现已在 `TTSService` 构造，但评估流水线、通知实现与每日回归调度仍缺生产接入点。需逐项核实并补可复现证据链。
 ### 6.2 失败测试修复
 
@@ -56,8 +56,6 @@
 
 ### 6.3 代码原则整改
 
-- [ ] 统一 TTS 命名：`TTSTAlertService`、`TTSSpeechQualityGateway`、`TTSSRegressionSuite`、`TTSTrendStatistics` 改为一致的 `TTS...` 前缀
-  - [ ] 子任务（`§6.3-16` / PARTIAL）：4 项中只完成 3 项；`TTSTrendStatistics`（`services/tts_trend_statistics.py:9`）与 `TTSSamplingMonitor`（`services/tts_production_monitor.py:8`）命名仍未统一。需统一剩余命名并同步所有引用。
 - [ ] 消除 `utils/mcp_loader.py:58` 的模块级全局 `_connections` Dict，改为 `MCPConnectionRegistry` 实例封装（set/get/list/values/clear）
   - [ ] 子任务（`§6.3-17` / PARTIAL）：已封装为 `MCPConnectionRegistry`，但 `utils/mcp_loader.py:85` 仍保留模块级 `_connections = MCPConnectionRegistry()` 单例。需改为显式注册与生命周期管理。
 ### 6.4 质量门禁（防止回归）

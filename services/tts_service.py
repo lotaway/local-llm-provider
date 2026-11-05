@@ -7,10 +7,10 @@ from services.tts_alerts import TTSAlertService
 from services.tts_audio_quality import TTSAudioQualityService
 from services.tts_feedback_monitor import TTSFeedbackMonitor
 from services.tts_post_processing import TTSPostProcessor
-from services.tts_production_monitor import TTSSamplingMonitor
+from services.tts_request_sampler import TTSRequestSampler
 from services.tts_quality_gateway import TTSQualityGateway
 from services.tts_regression_suite import TTSRegressionSuite
-from services.tts_trend_statistics import TTSTrendStatistics
+from services.tts_quality_statistics import TTSQualityStatistics
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,10 @@ class TTSService:
         preference_store=None,
         post_processor: Optional[TTSPostProcessor] = None,
         quality_gateway: Optional[TTSQualityGateway] = None,
-        sampling_monitor: Optional[TTSSamplingMonitor] = None,
+        sampling_monitor: Optional[TTSRequestSampler] = None,
         audio_quality: Optional[TTSAudioQualityService] = None,
         alerts: Optional[TTSAlertService] = None,
-        trends: Optional[TTSTrendStatistics] = None,
+        trends: Optional[TTSQualityStatistics] = None,
         feedback: Optional[TTSFeedbackMonitor] = None,
         regression: Optional[TTSRegressionSuite] = None,
         sample_rate: int = DEFAULT_SAMPLE_RATE,
@@ -40,10 +40,10 @@ class TTSService:
         self.preference_store = preference_store
         self.post_processor = post_processor or TTSPostProcessor()
         self.quality_gateway = quality_gateway
-        self.sampling_monitor = sampling_monitor or TTSSamplingMonitor()
+        self.sampling_monitor = sampling_monitor or TTSRequestSampler()
         self.audio_quality = audio_quality or TTSAudioQualityService(sample_rate=sample_rate)
         self.alerts = alerts or TTSAlertService()
-        self.trends = trends or TTSTrendStatistics()
+        self.trends = trends or TTSQualityStatistics()
         self.feedback = feedback or TTSFeedbackMonitor()
         self.regression = regression or TTSRegressionSuite()
         self.sample_rate = sample_rate

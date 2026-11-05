@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 logger = logging.getLogger(__name__)
 
 
-class TTSSamplingMonitor:
+class TTSRequestSampler:
     def __init__(self, sample_rate: float = 0.05):
         if not 0.0 < sample_rate <= 1.0:
             raise ValueError(f"sample_rate must be within (0, 1], got {sample_rate}")
