@@ -170,6 +170,11 @@ class Container:
 
         return self._get_or_create(RAGService, factory)
 
+    def runtime_clock(self):
+        from domain.runtime.ports import RuntimeClock
+        from infrastructure.runtime.monotonic_clock import MonotonicRuntimeClock
+        return self._get_or_create(RuntimeClock, lambda c: MonotonicRuntimeClock())
+
     async def start_schedulers(self):
         """Start schedulers (explicit call, not automatic)."""
         scheduler = self.task_scheduler()
@@ -202,7 +207,6 @@ class Container:
             inference.clear_engine()
 
     def wire_routes(self):
-        """Wire routes (production entry point)."""
         from interfaces.http.routes.chat_routes import set_dependencies
 
         set_dependencies(
@@ -220,11 +224,16 @@ class Container:
             unload_uc.set_current(inference_svc.current_engine, inference_svc.current_model)
 
         self._wire_rag_routes()
+        self._wire_runtime_clock()
         logger.info("Routes wired successfully")
 
     def _wire_rag_routes(self) -> None:
         from interfaces.http.routes.rag_routes import set_rag_service
         set_rag_service(self.rag_service())
+
+    def _wire_runtime_clock(self) -> None:
+        from interfaces.http.routes.chat_routes import set_runtime_clock
+        set_runtime_clock(self.runtime_clock())
 
 
 # Global container instance (singleton)

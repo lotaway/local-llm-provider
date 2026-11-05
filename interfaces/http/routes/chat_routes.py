@@ -23,6 +23,7 @@ from application.model.handlers import (
     LoadModelCommand, UnloadModelCommand, ListModelsQuery,
 )
 from domain.model.entities import GenerationConfig, EngineType
+from domain.runtime.ports import RuntimeClock
 from domain.inference.ports import InferenceChunk
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ _token_count_use_case: Optional[TokenCountUseCase] = None
 _load_model_use_case: Optional[LoadModelUseCase] = None
 _unload_model_use_case: Optional[UnloadModelUseCase] = None
 _list_models_use_case: Optional[ListModelsUseCase] = None
+_runtime_clock: Optional[RuntimeClock] = None
 
 
 def set_dependencies(
@@ -54,6 +56,17 @@ def set_dependencies(
     _load_model_use_case = load_model_use_case
     _unload_model_use_case = unload_model_use_case
     _list_models_use_case = list_models_use_case
+
+
+def set_runtime_clock(runtime_clock: RuntimeClock) -> None:
+    global _runtime_clock
+    _runtime_clock = runtime_clock
+
+
+def _require_runtime_clock() -> RuntimeClock:
+    if _runtime_clock is None:
+        raise HTTPException(status_code=503, detail="Runtime clock not initialized")
+    return _runtime_clock
 
 
 def _to_domain_config(dto) -> GenerationConfig:
@@ -295,8 +308,8 @@ async def list_models():
 
 @router.get("/health", response_model=HealthResponseDTO)
 async def health_check():
-    """Health check."""
     return HealthResponseDTO(
         status="healthy",
         model_loaded=False,
+        uptime_seconds=_require_runtime_clock().elapsed_seconds(),
     )
