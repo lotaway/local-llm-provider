@@ -121,6 +121,37 @@ def init_tts_service() -> None:
         logger.error(f"Failed to init TTS service: {e}")
 
 
+async def shutdown_runtime() -> None:
+    await _stop_schedulers()
+    _stop_mcp_connections()
+    _unload_model()
+
+
+async def _stop_schedulers() -> None:
+    if backend_globals.task_scheduler:
+        await backend_globals.task_scheduler.stop()
+    if backend_globals.molt_scheduler:
+        await backend_globals.molt_scheduler.stop()
+    if backend_globals.molt_controller:
+        backend_globals.molt_controller.stop()
+    if getattr(backend_globals, "molt_task_scheduler", None):
+        await backend_globals.molt_task_scheduler.shutdown(graceful=True)
+
+
+def _stop_mcp_connections() -> None:
+    from utils.mcp_loader import stop_all
+
+    stop_all()
+
+
+def _unload_model() -> None:
+    import model_providers
+
+    if getattr(model_providers, "local_model", None):
+        logger.info("Shutting down... unloading local model.")
+        model_providers.local_model.unload_model()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.limiter = limiter
@@ -172,31 +203,7 @@ async def lifespan(app: FastAPI):
     init_tts_service()
 
     yield
-    # Shutdown
-    if backend_globals.task_scheduler:
-        await backend_globals.task_scheduler.stop()
-    if backend_globals.molt_scheduler:
-        await backend_globals.molt_scheduler.stop()
-    if backend_globals.molt_controller:
-        backend_globals.molt_controller.stop()
-    if getattr(backend_globals, "molt_task_scheduler", None):
-        try:
-            await backend_globals.molt_task_scheduler.shutdown(graceful=True)
-        except Exception:
-            pass
-
-    import model_providers
-
-    try:
-        from utils.mcp_loader import stop_all
-
-        stop_all()
-    except Exception:
-        pass
-
-    if getattr(model_providers, "local_model", None):
-        logger.info("Shutting down... unloading local model.")
-        model_providers.local_model.unload_model()
+    await shutdown_runtime()
 
 
 app = FastAPI(lifespan=lifespan)
