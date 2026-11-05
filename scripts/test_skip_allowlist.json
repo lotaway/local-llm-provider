@@ -1,0 +1,161 @@
+{
+  "policy": "Every test file must run in the targeted CI job or be listed here with a reason and a review date.",
+  "review_by": "2026-12-31",
+  "skips": [
+    {
+      "path": "tests/test_agent_system.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_api_endpoints.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_bitsandbytes.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_chatgpt_loader.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_cuda.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_emotion_parser.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_error_handler.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_execution_protocol.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_graph_evidence.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_http_adapter.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_ingestion_retry.py",
+      "reason": "pure unit test pending inclusion in the targeted CI job",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_json_parsing.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_keyword_queries.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_ltm_index.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_memory_simple.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_molt_composition.py",
+      "reason": "pure unit test pending inclusion in the targeted CI job",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_molt_memory_tiers.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_molt_phase1.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_multimodal_api.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_neo4j_integration.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_private_context.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_protocol_bridge.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_queries.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_rag_query_coordination.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_rocm.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_safety_level_alignment.py",
+      "reason": "pure unit test pending inclusion in the targeted CI job",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_topic_extractor.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_torchvision_version.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_triton.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_upload_context.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    },
+    {
+      "path": "tests/test_zluda.py",
+      "reason": "requires an external runtime, service or hardware not available in CI",
+      "review_by": "2026-12-31"
+    }
+  ]
+}

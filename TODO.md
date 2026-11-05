@@ -49,11 +49,6 @@
   - [ ] 子任务（`§6.1-5` / PARTIAL）：`TTSQualityGateway` 默认 `None` 且 `main.py::init_tts_service` 不注入，`ITTSQualityEvaluator` / `ITTSNotifier` 无生产实现。需与 §4「质量网关接入」的待抉择任务合并推进。
 - [ ] 复核 §5 生产监控/统计/报警/反馈/回归：`TTSRequestSampler`、`TTSQualityStatistics`、`TTSTAlertService`、`TTSFeedbackMonitor`、`TTSAudioQualityService`、`TTSSRegressionSuite` 均只被测试引用，未接入 `/tts` 或定时任务
   - [ ] 子任务（`§6.1-7` / PARTIAL）：部分组件现已在 `TTSService` 构造，但评估流水线、通知实现与每日回归调度仍缺生产接入点。需逐项核实并补可复现证据链。
-### 6.2 失败测试修复
-
-- [ ] CI 增加定向测试步骤（`.github/workflows/ci.yml` 运行 21 个已验证通过的定向测试文件），禁止以「环境问题」跳过上述失败用例
-  - [ ] 子任务（`§6.2-8` / PARTIAL）：`ci.yml` 注释明写 "green set; env-dependent tests excluded"，只跑 23 个定向文件，无全量 pytest；「禁止跳过」无制度保障。需增加全量 pytest job，或改为可复现的跳过白名单 + 到期复核。
-
 ### 6.3 代码原则整改
 
 - [ ] 消除 `utils/mcp_loader.py:58` 的模块级全局 `_connections` Dict，改为 `MCPConnectionRegistry` 实例封装（set/get/list/values/clear）
