@@ -22,11 +22,14 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from baseline_policy import growth_violations
 BASELINE_PATH = Path(__file__).resolve().parent / "quality_baseline.json"
 parse_errors = 0
 
@@ -219,12 +222,20 @@ def read_baseline() -> Dict[str, str]:
     return json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
 
 
+def require_baseline_approval(current: Dict[str, Dict[str, int]], baseline: Dict[str, str]) -> None:
+    growth = growth_violations(flatten(current), baseline)
+    if growth and os.getenv("LLP_BASELINE_CHANGE_APPROVED") != "1":
+        sys.exit("baseline update blocked: " + "; ".join(growth))
+
+
 def main() -> int:
     update_baseline = "--update-baseline" in sys.argv
     current = collect()
-    violations = compare(current, read_baseline())
+    baseline = read_baseline()
+    violations = compare(current, baseline)
 
     if update_baseline:
+        require_baseline_approval(current, baseline)
         BASELINE_PATH.write_text(json.dumps(flatten(current), indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(f"baseline updated: {BASELINE_PATH}")
         return 0

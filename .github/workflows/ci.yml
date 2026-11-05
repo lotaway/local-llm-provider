@@ -11,11 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       - name: Run quality gate
         run: python scripts/quality_gate.py
+      - name: Guard baseline edits
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          LLP_BASELINE_CHANGE_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'baseline-approved') && '1' || '0' }}
+        run: python scripts/baseline_policy.py
 
   targeted-tests:
     name: Targeted tests + TODO consistency

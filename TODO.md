@@ -51,8 +51,6 @@
   - [ ] 子任务（`§6.1-7` / PARTIAL）：部分组件现已在 `TTSService` 构造，但评估流水线、通知实现与每日回归调度仍缺生产接入点。需逐项核实并补可复现证据链。
 ### 6.4 质量门禁（防止回归）
 
-- [ ] CI 增加禁止 `print(`、`except ...: pass`、业务层直接导入 `pymongo` / `numpy` / `redis` 的检查（同上 quality gate；`services`/`controllers`/`agents`/`application`/`domain`）
-  - [ ] 子任务（`§6.4-2` / PARTIAL）：`scripts/quality_gate.py` 的基线容错把既有违规合法化，`--update-baseline` 可一键绕过。需加基线变更审查（保护分支/PR 审批）或收紧绕过条件。
 - [ ] CI 增加 TODO 勾选与测试结果一致性检查（`scripts/todo_guard.py` + CI `--junitxml` 报告断言：勾选任务对应测试必须为绿）
   - [ ] 子任务（`§6.4-4` / PARTIAL）：`todo_guard.py` 只抓勾选行里显式反引号引用的 `tests/*.py`，全库仅 6 个文件被关联，§6.1/6.3/6.4 共 38 个勾选项无任何测试约束。需扩展引用解析或引入显式映射表；另 `scripts/todo_guard.py:88` 为 `return 0 if paths else 1`，本文件现无 `- [x]` 行使 `--check` 因 0 引用退出 1，需改为覆盖待处理项关联测试或增加 `--allow-empty` 并同步 CI。
 - [ ] 复核后同步更新第 1–5 节勾选状态
