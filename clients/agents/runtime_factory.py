@@ -122,9 +122,11 @@ class RuntimeFactory:
     @staticmethod
     def _load_mcp(mcp, runtime):
         try:
-            from utils.mcp_loader import load_from_env
+            from utils.mcp_loader import MCPConnectionRegistry, load_from_env
 
-            load_from_env(mcp)
+            registry = MCPConnectionRegistry()
+            runtime.state.context["mcp_registry"] = registry
+            load_from_env(mcp, registry)
         except MCP_LOAD_FAILURES as error:
             logging.getLogger(__name__).exception(
                 "Failed to load MCP tools into runtime context",

@@ -83,8 +83,6 @@ class MCPConnectionRegistry:
         return list(self._connections.values())
 
 
-_connections = MCPConnectionRegistry()
-
 
 def _get_default_safety() -> str:
     val = str(os.getenv("LLP_MCP_DEFAULT_SAFETY", SafetyLevel.MEDIUM.name)).strip().upper()
@@ -164,7 +162,7 @@ def _parse_tool_spec(item: Any, source: str) -> Optional[MCPToolSpec]:
     )
 
 
-def _start_connection(cfg: Dict[str, Any]) -> Optional[MCPConnection]:
+def _start_connection(cfg: Dict[str, Any], registry: MCPConnectionRegistry) -> Optional[MCPConnection]:
     name = cfg.get("name")
     command = cfg.get("command")
     if not name or not command:
@@ -174,7 +172,7 @@ def _start_connection(cfg: Dict[str, Any]) -> Optional[MCPConnection]:
         process = _spawn_process(cfg)
         connection = _build_connection(cfg, process)
         connection.transport = JsonRpcTransport(process)
-        _connections.set(connection)
+        registry.set(connection)
         return connection
     except (OSError, MCPError) as error:
         logger.error("failed to start MCP connection", extra={"connection": name, "error": str(error)})
@@ -283,14 +281,14 @@ def _build_tool_callable(conn: MCPConnection, spec: MCPToolSpec):
     return invoke
 
 
-def get_connections() -> Dict[str, MCPConnection]:
-    return _connections.list()
+def get_connections(registry: MCPConnectionRegistry) -> Dict[str, MCPConnection]:
+    return registry.list()
 
 
-def load_from_env(mcp_agent) -> List[MCPConnection]:
+def load_from_env(mcp_agent, registry: MCPConnectionRegistry) -> List[MCPConnection]:
     connections: List[MCPConnection] = []
     for cfg in _parse_config():
-        conn = _start_connection(cfg)
+        conn = _start_connection(cfg, registry)
         if conn is None:
             continue
         if not _heartbeat(conn):
@@ -318,12 +316,12 @@ def load_from_env(mcp_agent) -> List[MCPConnection]:
     return connections
 
 
-def stop_all() -> None:
-    for conn in _connections.list().values():
+def stop_all(registry: MCPConnectionRegistry) -> None:
+    for conn in registry.list().values():
         if conn.transport:
             conn.transport.close()
         _stop_process(conn.process)
-    _connections.clear()
+    registry.clear()
 
 
 def _stop_process(process: Optional[subprocess.Popen]) -> None:

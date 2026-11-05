@@ -21,10 +21,11 @@ def test_mcp_env_loading(monkeypatch, tmp_path):
     monkeypatch.setenv("LLP_MCP_DEFAULT_SAFETY", "MEDIUM")
 
     agent = DummyAgent()
+    registry = mcp_loader.MCPConnectionRegistry()
     try:
-        conns = mcp_loader.load_from_env(agent)
+        conns = mcp_loader.load_from_env(agent, registry)
     finally:
-        mcp_loader.stop_all()
+        mcp_loader.stop_all(registry)
 
     assert conns
     conn = conns[0]

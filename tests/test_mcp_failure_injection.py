@@ -4,7 +4,7 @@ import tempfile
 import yaml
 
 from clients.agents.task_agents.mcp_agent import MCPTaskAgent
-from utils.mcp_loader import load_from_env, ConnectionStatus
+from utils.mcp_loader import MCPConnectionRegistry, load_from_env, stop_all, ConnectionStatus
 
 
 class MockLLM:
@@ -31,8 +31,10 @@ def test_mcp_dead_process_not_registered():
     os.environ["LLP_MCP_CONNECTIONS_FILE"] = path
     llm = MockLLM()
     agent = MCPTaskAgent(llm)
-    conns = load_from_env(agent)
+    registry = MCPConnectionRegistry()
+    conns = load_from_env(agent, registry)
     tools = agent.get_available_tools()
+    stop_all(registry)
     assert "dead_tool" not in tools
     os.remove(path)
     return True

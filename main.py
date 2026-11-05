@@ -141,7 +141,11 @@ async def _stop_schedulers() -> None:
 def _stop_mcp_connections() -> None:
     from utils.mcp_loader import stop_all
 
-    stop_all()
+    runtime = backend_globals.agent_runtime
+    context = getattr(getattr(runtime, "state", None), "context", {})
+    registry = context.get("mcp_registry")
+    if registry is not None:
+        stop_all(registry)
 
 
 def _unload_model() -> None:
