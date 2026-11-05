@@ -47,8 +47,6 @@
 
 - [ ] 复核 §4 质量网关接入：`TTSSpeechQualityGateway` 除测试外无引用，未进入 TTS 生成链路
   - [ ] 子任务（`§6.1-5` / PARTIAL）：`TTSQualityGateway` 默认 `None` 且 `main.py::init_tts_service` 不注入，`ITTSQualityEvaluator` / `ITTSNotifier` 无生产实现。需与 §4「质量网关接入」的待抉择任务合并推进。
-- [ ] 复核 §4 后处理接入：`TTSPostProcessor` 除测试外无引用，未进入 TTS 生成链路
-  - [ ] 子任务（`§6.1-6` / NO_EVIDENCE）：全库找不到 `TTSPostProcessor` 的生产调用点；实际后处理走 `style_tts2_adapter.py:72` 的 `postprocess=process_samples`。需接入该外观类或删除死代码。
 - [ ] 复核 §5 生产监控/统计/报警/反馈/回归：`TTSSamplingMonitor`、`TTSTrendStatistics`、`TTSTAlertService`、`TTSFeedbackMonitor`、`TTSAudioQualityService`、`TTSSRegressionSuite` 均只被测试引用，未接入 `/tts` 或定时任务
   - [ ] 子任务（`§6.1-7` / PARTIAL）：部分组件现已在 `TTSService` 构造，但评估流水线、通知实现与每日回归调度仍缺生产接入点。需逐项核实并补可复现证据链。
 ### 6.2 失败测试修复
