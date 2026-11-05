@@ -2,24 +2,22 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from constants import MONGO_DB_NAME, MONGO_URI, TTS_MONGO_COLLECTION_PROFILES
 from interfaces.tts_types import ITTSCollection
 
 logger = logging.getLogger(__name__)
 
 
+class TTSPreferenceStoreUnconfigured(RuntimeError):
+    pass
+
+
 class TTSPreferenceStore:
-    def __init__(self, collection: Optional[ITTSCollection] = None, database: str = MONGO_DB_NAME):
+    def __init__(self, collection: Optional[ITTSCollection] = None):
         self._collection = collection
-        self._database = database
 
-    def _get_collection(self):
+    def _get_collection(self) -> ITTSCollection:
         if self._collection is None:
-            from pymongo import MongoClient
-
-            self._collection = MongoClient(MONGO_URI)[self._database][
-                TTS_MONGO_COLLECTION_PROFILES
-            ]
+            raise TTSPreferenceStoreUnconfigured("a preference collection must be injected")
         return self._collection
 
     def save(self, user_id: str, preferences: Dict[str, Any]) -> None:

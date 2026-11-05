@@ -56,8 +56,6 @@
 
 ### 6.3 代码原则整改
 
-- [ ] 将 `services/tts_preference_store.py` 的 `pymongo` 与硬编码库名 `"rag_system"`（`:39`）改为注入仓储/配置
-  - [ ] 子任务（`§6.3-9` / PARTIAL）：`services/tts_preference_store.py:18` 仍 lazy `from pymongo import MongoClient`（同样已进基线）。需改为注入 collection/database。
 - [ ] 统一 TTS 命名：`TTSTAlertService`、`TTSSpeechQualityGateway`、`TTSSRegressionSuite`、`TTSTrendStatistics` 改为一致的 `TTS...` 前缀
   - [ ] 子任务（`§6.3-16` / PARTIAL）：4 项中只完成 3 项；`TTSTrendStatistics`（`services/tts_trend_statistics.py:9`）与 `TTSSamplingMonitor`（`services/tts_production_monitor.py:8`）命名仍未统一。需统一剩余命名并同步所有引用。
 - [ ] 消除 `utils/mcp_loader.py:58` 的模块级全局 `_connections` Dict，改为 `MCPConnectionRegistry` 实例封装（set/get/list/values/clear）
