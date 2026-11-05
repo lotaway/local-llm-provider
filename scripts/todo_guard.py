@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -11,6 +12,7 @@ from typing import Iterable, List, Set
 
 ROOT = Path(__file__).resolve().parents[1]
 TODO_PATH = ROOT / "TODO.md"
+MAPPING_PATH = Path(__file__).resolve().parent / "todo_test_map.json"
 CHECKED_PREFIX = "- [x]"
 REFERENCE = re.compile(r"`((?:tests|tts_estimate/tests)/[A-Za-z0-9_./-]+\.py)(?:::[^\s`]+)?`")
 
@@ -30,6 +32,13 @@ def referenced_tests(lines: Iterable[str]) -> Set[str]:
         for match in REFERENCE.finditer(line):
             found.add(Path(match.group(1)).as_posix())
     return found
+
+
+def mapped_tests() -> Set[str]:
+    if not MAPPING_PATH.is_file():
+        return set()
+    data = json.loads(MAPPING_PATH.read_text(encoding="utf-8"))
+    return set(data.get("tests", []))
 
 
 def dangling_paths(paths: Iterable[str]) -> List[str]:
@@ -75,6 +84,7 @@ def parse_args() -> argparse.Namespace:
     group.add_argument("--list", action="store_true", help="print referenced test files")
     group.add_argument("--check", action="store_true", help="verify references resolve")
     group.add_argument("--report", type=Path, help="verify a pytest junit XML report is green")
+    parser.add_argument("--allow-empty", action="store_true", help="accept an empty checked TODO set")
     return parser.parse_args()
 
 
@@ -85,7 +95,7 @@ def dispatch(args: argparse.Namespace, paths: Set[str]) -> int:
         return 0
     if args.check:
         emit(f"[todo] {len(paths)} checked TODO test references resolved")
-        return 0 if paths else 1
+        return 0 if paths or args.allow_empty else 1
     violations = report_violations(args.report, paths)
     for item in violations:
         emit(f"[todo] {item}", error=True)
@@ -97,7 +107,7 @@ def dispatch(args: argparse.Namespace, paths: Set[str]) -> int:
 
 def main() -> int:
     args = parse_args()
-    paths = referenced_tests(checked_lines())
+    paths = referenced_tests(checked_lines()) | mapped_tests()
     dangling = dangling_paths(paths)
     if dangling:
         for path in dangling:

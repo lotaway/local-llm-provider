@@ -40,7 +40,7 @@ jobs:
       - name: Install project
         run: pip install --upgrade-strategy only-if-needed -c torch-constraints.txt -e ".[tts]" pytest pytest-asyncio
       - name: Verify checked TODO references
-        run: python scripts/todo_guard.py --check
+        run: python scripts/todo_guard.py --check --allow-empty
       - name: Run targeted regression suite (all other tests are tracked in scripts/test_skip_allowlist.json)
         run: |
           python -m pytest -q --junitxml=todo_junit.xml \

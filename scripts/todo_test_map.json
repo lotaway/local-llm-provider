@@ -1,0 +1,19 @@
+{
+  "policy": "Regression tests for completed TODO items; each must be green in the targeted CI job.",
+  "tests": [
+    "tests/test_molt_startup.py",
+    "tests/test_tts_jitter.py",
+    "tests/test_tts_estimate_summary.py",
+    "tests/test_tts_post_processor_wiring.py",
+    "tests/test_constants_comments.py",
+    "tests/test_exception_handling_contract.py",
+    "tests/test_document_record.py",
+    "tests/test_tts_post_processing_boundary.py",
+    "tests/test_tts_preference_store_boundary.py",
+    "tests/test_tts_naming.py",
+    "tests/test_mcp_registry_lifecycle.py",
+    "tests/test_skip_allowlist.py",
+    "tests/test_baseline_policy.py",
+    "tests/test_todo_guard_policy.py"
+  ]
+}
