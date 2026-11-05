@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 import yaml
 
+from schemas.permission import SAFETY_LEVEL_NAMES, SafetyLevel, normalize_safety_level
 from utils.mcp_protocol import JsonRpcTransport, MCPError
 
 logger = logging.getLogger(__name__)
@@ -86,21 +87,18 @@ _connections = MCPConnectionRegistry()
 
 
 def _get_default_safety() -> str:
-    val = os.getenv("LLP_MCP_DEFAULT_SAFETY", "MEDIUM")
-    val = str(val).strip().upper()
-    if val in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
+    val = str(os.getenv("LLP_MCP_DEFAULT_SAFETY", SafetyLevel.MEDIUM.name)).strip().upper()
+    if val in SAFETY_LEVEL_NAMES:
         return val
-    return "MEDIUM"
+    return SafetyLevel.MEDIUM.name
 
 
 def _normalize_safety(val: Any) -> str:
     if val is None:
         return _get_default_safety()
-    safety = str(val).strip().upper()
-    if safety in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
-        return safety
-    if safety == "SAFE":
-        return "LOW"
+    name = normalize_safety_level(val)
+    if name in SAFETY_LEVEL_NAMES:
+        return name
     return _get_default_safety()
 
 

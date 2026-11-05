@@ -1,16 +1,16 @@
 from typing import Any, Dict, List
 from .agent_base import BaseAgent, AgentResult, AgentStatus
+from schemas.permission import SAFETY_LEVEL_NAMES, SafetyLevel
 
 class RiskLevel:
-    SAFE = "safe"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+    LOW = SafetyLevel.LOW.name.lower()
+    MEDIUM = SafetyLevel.MEDIUM.name.lower()
+    HIGH = SafetyLevel.HIGH.name.lower()
+    CRITICAL = SafetyLevel.CRITICAL.name.lower()
 
 class RiskAgent(BaseAgent):
     SYSTEM_PROMPT = """你是一个风险评估专家。任务：
-1. 评估安全级别 (safe|low|medium|high|critical)
+1. 评估安全级别 (low|medium|high|critical)
 2. 检查权限和人工审批需求
 3. 识别风险因素
 
@@ -26,7 +26,7 @@ class RiskAgent(BaseAgent):
     def __init__(self, llm_model, name: str = None, risk_threshold: str = RiskLevel.HIGH):
         super().__init__(llm_model, name)
         self.risk_threshold = risk_threshold
-        self.risk_order = [RiskLevel.SAFE, RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.CRITICAL]
+        self.risk_order = [name.lower() for name in SAFETY_LEVEL_NAMES]
 
     async def execute(
         self,

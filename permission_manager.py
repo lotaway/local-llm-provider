@@ -48,14 +48,14 @@ class PermissionManager:
         # LLM operations
         self.register_permission(Permission(
             name=PermissionNames.LLM_QUERY,
-            safety_level=SafetyLevel.SAFE,
+            safety_level=SafetyLevel.LOW,
             description="Direct LLM query without tools"
         ))
         
         # RAG operations
         self.register_permission(Permission(
             name=PermissionNames.RAG_QUERY,
-            safety_level=SafetyLevel.SAFE,
+            safety_level=SafetyLevel.LOW,
             description="RAG document retrieval and query"
         ))
         
@@ -204,8 +204,8 @@ def test_permission_manager():
     
     # Test various permissions
     test_cases = [
-        PermissionNames.LLM_QUERY,           # SAFE - should not need human
-        PermissionNames.RAG_QUERY,           # SAFE - should not need human
+        PermissionNames.LLM_QUERY,
+        PermissionNames.RAG_QUERY,
         PermissionNames.MCP_WEB_SEARCH,      # MEDIUM - should not need human (threshold is HIGH)
         PermissionNames.MCP_FILE_READ,       # MEDIUM - should not need human
         PermissionNames.MCP_FILE_WRITE,      # HIGH - should need human

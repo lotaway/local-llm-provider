@@ -1,26 +1,31 @@
-"""Permission names and safety level definitions."""
-
 from enum import Enum
+from typing import Any
+
 
 class SafetyLevel(Enum):
-    """Tool safety levels"""
-    SAFE = 0        # Read-only, no side effects
-    LOW = 1         # Minimal risk (e.g., simple calculations)
-    MEDIUM = 2      # Moderate risk (e.g., file read)
-    HIGH = 3        # High risk (e.g., file write, network requests)
-    CRITICAL = 4    # Critical risk (e.g., system commands, delete operations)
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    CRITICAL = 4
+
+
+SAFETY_LEVEL_NAMES = tuple(level.name for level in SafetyLevel)
+UNKNOWN_SAFETY_LEVEL = "UNKNOWN"
+LEGACY_SAFE_LEVEL = "SAFE"
+
+
+def normalize_safety_level(value: Any) -> str:
+    name = str(value or "").strip().upper()
+    if name in SAFETY_LEVEL_NAMES:
+        return name
+    if name == LEGACY_SAFE_LEVEL:
+        return SafetyLevel.LOW.name
+    return UNKNOWN_SAFETY_LEVEL
 
 
 class PermissionNames:
-    """Unique permission identifiers to avoid hardcoding strings project-wide."""
-    
-    # LLM operations
     LLM_QUERY = "llm.query"
-    
-    # RAG operations
     RAG_QUERY = "rag.query"
-    
-    # MCP tools
     MCP_WEB_SEARCH = "mcp.web_search"
     MCP_FILE_READ = "mcp.file_read"
     MCP_FILE_WRITE = "mcp.file_write"
@@ -32,5 +37,4 @@ class PermissionNames:
 
     @staticmethod
     def from_tool_name(tool_name: str) -> str:
-        """Standardize mapping from tool name to permission name."""
         return f"mcp.{tool_name}"

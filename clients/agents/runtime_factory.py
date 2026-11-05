@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 from .agent_runtime import AgentRuntime
 from constants import DATA_PATH
 from schemas.capability import Capability, CapabilityKind
+from schemas.permission import SafetyLevel, normalize_safety_level
 
 
 class RuntimeFactory:
@@ -157,7 +158,7 @@ class RuntimeFactory:
             kind=CapabilityKind.SKILL,
             name=s.name,
             description=s.description,
-            safety_level="SAFE",
+            safety_level=SafetyLevel.LOW.name,
         ).to_dict()
 
     @staticmethod
@@ -171,19 +172,12 @@ class RuntimeFactory:
                 safety = r.get("safety_level", "UNKNOWN")
             needs_human = bool(r.get("needs_human", False))
 
-        # normalize safety to LOW/MEDIUM/HIGH/CRITICAL where possible
-        s_up = str(safety).upper()
-        if s_up == "SAFE":
-            s_up = "LOW"
-        if s_up not in ("LOW", "MEDIUM", "HIGH", "CRITICAL", "UNKNOWN"):
-            s_up = "UNKNOWN"
-
         return Capability(
             id=f"mcp.{name}",
             kind=CapabilityKind.MCP,
             name=name,
             description=name,
-            safety_level=s_up,
+            safety_level=normalize_safety_level(safety),
             permission=p_name,
             requires_approval=needs_human,
         ).to_dict()

@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from schemas.permission import SafetyLevel
+
 
 class CapabilityKind(Enum):
     SKILL = "SKILL"
@@ -16,7 +18,7 @@ class Capability:
     description: str
     input_schema: Dict[str, Any] = field(default_factory=dict)
     output_schema: Dict[str, Any] = field(default_factory=dict)
-    safety_level: str = "SAFE"
+    safety_level: str = SafetyLevel.LOW.name
     permission: Optional[str] = None
     cost_hint: Optional[str] = None
     latency_hint: Optional[str] = None

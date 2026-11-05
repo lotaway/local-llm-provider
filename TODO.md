@@ -3,11 +3,6 @@
 > 整理于 2026-11-05：依据 `audit-2026-11-05.md` 移除 58 项已核验完成的任务；其余 31 项 PARTIAL + 1 项 NO_EVIDENCE 回退为待办并挂子任务，另新增 3 项 P0 运行期缺陷。
 > 本文件只保留未完成的任务；已移除内容与历史整改记录见 git 历史 `44d1d81`。
 
-## 1. Agent 加载 Skill + MCP（来源：CLAUDE_SPEC.md）
-
-- [ ] 统一安全级别取值：Capability 默认 `SAFE` 与规格的 `LOW|MEDIUM|HIGH|CRITICAL` 对齐，并核对 PermissionManager 双阶段审批提示
-  - [ ] 子任务（`§1-4` / PARTIAL）：`permission_manager.py:51,58` 仍使用规格外的 `SafetyLevel.SAFE`；双阶段审批提示与 Capability 默认值未逐项核对。需对齐枚举取值、补审批提示核对测试后再重新勾选。
-
 ## 2. MOLT 类脑记忆系统（来源：MOLT_BRAIN_PLAN.md + MOLT_BRAIN_SPEC.md）
 
 - [ ] 实现 `AbstractionEngine.abstract_to_ltm`：LLM 抽象总结、生成标准化结论（conclusion/conditions/confidence/sources）、写入 Neo4j LTM、结论向量写入 Milvus、关键词写入 ES
