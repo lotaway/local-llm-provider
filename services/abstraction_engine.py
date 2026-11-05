@@ -34,7 +34,6 @@ class AbstractionEngine(IAbstractionEngine):
     def can_abstraction_trigger(self, topic: str) -> bool:
         episodes, avg_importance = self._find_related(topic)
         if not episodes:
-            # try alternative
             if self._repo and hasattr(self._repo, "get_chunks_by_memory_type"):
                 try:
                     all_eps = self._repo.get_chunks_by_memory_type("episodic") or []
@@ -163,7 +162,6 @@ class AbstractionEngine(IAbstractionEngine):
     def _can_trigger(self, count: int, avg_importance: float) -> bool:
         return count >= self.MIN_EPISODES and avg_importance >= self.MIN_AVG_IMPORTANCE
 
-    # compatibility
     def find_related_episodes(self, topic: str):
         eps, avg = self._find_related(topic)
         return eps, avg

@@ -56,8 +56,6 @@
 
 ### 6.3 代码原则整改
 
-- [ ] 删除 `services/abstraction_engine.py:40`、`:74`、`:92` 与 `clients/agents/runtime_factory.py:119` 的 `except Exception: pass`，改为分类异常 + 日志 + 可追踪错误
-  - [ ] 子任务（`§6.3-6` / PARTIAL）：抽查未发现字面 `except Exception: pass` 残留，但「分类异常 + 日志 + 可追踪错误」未逐点复核（尤其 `clients/agents/runtime_factory.py:119`）。需逐点复核并补回归测试。
 - [ ] 将 `services/tts_audio_quality.py`、`services/tts_post_processing.py` 的 `numpy` 依赖下沉到基础设施适配器
   - [ ] 子任务（`§6.3-8` / PARTIAL）：`services/tts_post_processing.py:4` 仍 `import numpy as np`（已登记进 `quality_baseline.json`，故门禁不拦）。需下沉到基础设施适配器。
 - [ ] 将 `services/tts_preference_store.py` 的 `pymongo` 与硬编码库名 `"rag_system"`（`:39`）改为注入仓储/配置

@@ -6,6 +6,8 @@ from constants import DATA_PATH
 from schemas.capability import Capability, CapabilityKind
 from schemas.permission import SafetyLevel, normalize_safety_level
 
+MCP_LOAD_FAILURES = (ImportError, OSError, ValueError, TypeError, AttributeError)
+
 
 class RuntimeFactory:
     @staticmethod
@@ -123,7 +125,7 @@ class RuntimeFactory:
             from utils.mcp_loader import load_from_env
 
             load_from_env(mcp)
-        except Exception as error:
+        except MCP_LOAD_FAILURES as error:
             logging.getLogger(__name__).exception(
                 "Failed to load MCP tools into runtime context",
                 extra={"error": str(error)},
