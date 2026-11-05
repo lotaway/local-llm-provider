@@ -3,12 +3,6 @@
 > 整理于 2026-11-05：依据 `audit-2026-11-05.md` 移除 58 项已核验完成的任务；其余 31 项 PARTIAL + 1 项 NO_EVIDENCE 回退为待办并挂子任务，另新增 3 项 P0 运行期缺陷。
 > 本文件只保留未完成的任务；已移除内容与历史整改记录见 git 历史 `44d1d81`。
 
-## 2. MOLT 类脑记忆系统（来源：MOLT_BRAIN_PLAN.md + MOLT_BRAIN_SPEC.md）
-
-### 2.1 MOLT 工程化打磨（补充任务）
-
-- [ ] **打通 MoltScheduler 与现有任务调度器**：查找并接入项目实际的统一调度器（若无则新增最小适配），配置 decay/abstraction/evaluation 周期、失败重试、并发控制，并在 `LEARNING` 开关下安全注册
-  - [ ] 子任务（`§2.1-7` / PARTIAL）：`LEARNING` 默认 false，且 `current_memory_repo()` 依赖仅在 `PRE_INIT_RAG=true` 时创建的 `backend_globals.local_rag`，整条链可能为空；**另见 §7 P0-1**（`main.py:93` 的 `NameError` 使 MOLT 生产链路永不启动）。修 P0-1 后补启动验证与开关矩阵测试。
 ## 3. RAG 架构（来源：RAG_SPEC.md）
 
 - [ ] 补齐 `infrastructure/rag/milvus_store.py` 与 `infrastructure/rag/local_rag_service.py::MilvusVectorStore` 的占位实现（`add_documents` 仅返回 id、`similarity_search` 返回空）
@@ -66,9 +60,6 @@
   - [ ] 子任务（`§6.1-6` / NO_EVIDENCE）：全库找不到 `TTSPostProcessor` 的生产调用点；实际后处理走 `style_tts2_adapter.py:72` 的 `postprocess=process_samples`。需接入该外观类或删除死代码。
 - [ ] 复核 §5 生产监控/统计/报警/反馈/回归：`TTSSamplingMonitor`、`TTSTrendStatistics`、`TTSTAlertService`、`TTSFeedbackMonitor`、`TTSAudioQualityService`、`TTSSRegressionSuite` 均只被测试引用，未接入 `/tts` 或定时任务
   - [ ] 子任务（`§6.1-7` / PARTIAL）：部分组件现已在 `TTSService` 构造，但评估流水线、通知实现与每日回归调度仍缺生产接入点。需逐项核实并补可复现证据链。
-- [ ] 复核 §2.1 MoltScheduler 接入：`services/molt_scheduler.py` 未被任何生产代码实例化，`MoltController` / `AbstractionEngine` / `VersionManager` / `DecayScheduler` 也仅出现在测试中
-  - [ ] 子任务（`§6.1-9` / PARTIAL）：**另见 §7 P0-1**。修 P0-1 后重新核对实例化与启动证据，再决定是否重新勾选。
-
 ### 6.2 失败测试修复
 
 - [ ] CI 增加定向测试步骤（`.github/workflows/ci.yml` 运行 21 个已验证通过的定向测试文件），禁止以「环境问题」跳过上述失败用例
@@ -104,8 +95,6 @@
 
 ## 7. P0 运行期缺陷（2026-11-05 核查确认，优先修复）
 
-- [ ] P0-1 MOLT 生产链路永不启动：`main.py:93` 调用 `current_memory_repo()`，但 `main.py:41` 只导入了 `build_molt_controller`；该函数仅定义于 `bootstrap/molt_factory.py:21`，全项目无其它导入 → 每次 lifespan 的 `init_molt_scheduler()` 必抛 `NameError`，且被 `main.py:97-98` 的 `except Exception` 静默吞掉。
-  - [ ] 子任务：补 `current_memory_repo` 导入；把该 `except` 改为 `logger.exception` 保留堆栈；补启动成功的集成断言，再复核 `§2.1-7` / `§6.1-9`。
 - [ ] P0-2 `tts_estimate` CLI 批量评估必崩：`run_evaluation()`（`tts_estimate/main.py:47`）返回 `json.dumps(...)` 字符串，`main()`（`:95-96`）却调用 `report.get("status")` / `report.get("wer")` → `AttributeError`；且 §6.3-21 声称的「日志循环外汇总」实际仍在循环内。
   - [ ] 子任务：让 `run_evaluation` 返回 dict（或在 `main` 中 `json.loads`），日志汇总移到循环外；补 CLI 冒烟测试，再复核 `§5-6` / `§6.3-21`。
 - [ ] P0-3 `save_document` 必抛 `KeyError`：`repositories/mongodb_repository.py:51-65` 的 `save_document(doc_id, content, title, source, **fields)` 只把 `**fields` 传给 `_build_document_record`，后者 `:64-65` 直接索引 `fields["title"]` / `fields["content"]`；而二者是显式形参，不会进入 `**fields`。

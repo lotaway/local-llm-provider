@@ -9,6 +9,10 @@ agent_runtime = None
 permission_manager = None
 context_storage = None
 task_scheduler = None
+molt_controller = None
+molt_scheduler = None
+molt_task_scheduler = None
+tts_service = None
 
 MULTIMODAL_PROVIDER_URL = os.getenv("MULTIMODAL_PROVIDER_URL")
 remote_multimodal_status = False

@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 import globals as backend_globals
 from model_providers import LocalLLModel
 from model_providers.multimodal_provider import MultimodalFactory
-from bootstrap.molt_factory import build_molt_controller
+from bootstrap.molt_factory import build_molt_controller, current_memory_repo
 from services.molt_scheduler import MoltScheduler
 from routers import version_router
 from controllers.base_controller import router as base_router
@@ -92,10 +92,11 @@ async def init_molt_scheduler() -> None:
         backend_globals.molt_task_scheduler = task_scheduler
         controller = build_molt_controller(current_memory_repo())
         backend_globals.molt_controller = controller
+        controller.start()
         backend_globals.molt_scheduler = MoltScheduler(controller, task_scheduler=task_scheduler)
         await backend_globals.molt_scheduler.start()
-    except Exception as e:
-        logger.error(f"Failed to start MOLT scheduler: {e}")
+    except Exception:
+        logger.exception("Failed to start MOLT scheduler")
 
 
 def init_tts_service() -> None:
@@ -176,6 +177,8 @@ async def lifespan(app: FastAPI):
         await backend_globals.task_scheduler.stop()
     if backend_globals.molt_scheduler:
         await backend_globals.molt_scheduler.stop()
+    if backend_globals.molt_controller:
+        backend_globals.molt_controller.stop()
     if getattr(backend_globals, "molt_task_scheduler", None):
         try:
             await backend_globals.molt_task_scheduler.shutdown(graceful=True)
