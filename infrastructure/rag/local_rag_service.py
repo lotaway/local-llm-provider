@@ -8,9 +8,8 @@ from typing import List, Optional, Dict, Any, AsyncGenerator, Union
 from domain.rag.ports import RAGService, VectorStore, Document, RetrievalResult, GenerationResult
 from domain.model.entities import Model
 from infrastructure.config.settings import Settings
-from infrastructure.rag.milvus_store import MilvusVectorStore
 
-__all__ = ["LocalRAGService", "MilvusVectorStore"]
+__all__ = ["LocalRAGService"]
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@
 ## 3. RAG 架构（来源：RAG_SPEC.md）
 
 - [ ] 补齐 `infrastructure/rag/milvus_store.py` 与 `infrastructure/rag/local_rag_service.py::MilvusVectorStore` 的占位实现（`add_documents` 仅返回 id、`similarity_search` 返回空）
-  - [ ] 子任务（`§3-3` / PARTIAL）：`MilvusVectorStore` / `LocalRAGService` 只注册在 `bootstrap/container.py`，`wire_routes()` 不注入 `rag_service`，唯一外部调用点是 `tests/test_container_lazy.py`；主链路仍用 `rag.LocalRAG` + `langchain_milvus`。需决策保留哪条链路：接入生产或清理死代码。
+  - [ ] 子任务（`§3-3` / PARTIAL）：`MilvusVectorStore` / `LocalRAGService` 只注册在 `bootstrap/container.py`，`wire_routes()` 不注入 `rag_service`，唯一外部调用点是 `tests/test_container_lazy.py`；主链路仍用 `rag.LocalRAG` + `langchain_milvus`。决策保留链路：接入生产，全面检查并启用container方案。
 ## 4. TTS 情感语音系统（来源：TTS_SPEC.md）
 
 - [ ] 将质量网关（WER/DNSMOS/Similarity 自动拦截）接入 TTS 生成链路

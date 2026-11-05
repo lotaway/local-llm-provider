@@ -182,27 +182,24 @@ class Container:
     async def shutdown(self):
         """Shutdown all resources."""
         logger.info("Shutting down container...")
-
-        from domain.inference.services import InferenceDomainService
-        from infrastructure.scheduling.async_scheduler import (
-            AsyncBatchScheduler,
-            AsyncTaskScheduler,
-        )
-
-        if InferenceDomainService in self._singletons:
-            inference = self._singletons[InferenceDomainService]
-            if hasattr(inference, 'clear_engine'):
-                inference.clear_engine()
-
-        if AsyncTaskScheduler in self._singletons:
-            await self._singletons[AsyncTaskScheduler].shutdown(graceful=True)
-
-        if AsyncBatchScheduler in self._singletons:
-            await self._singletons[AsyncBatchScheduler].shutdown()
-
+        await self._stop_schedulers()
+        self._clear_inference_engine()
         self._singletons.clear()
         self._initialized = False
         logger.info("Container shutdown complete")
+
+    async def _stop_schedulers(self) -> None:
+        from domain.scheduling.ports import BatchScheduler, TaskScheduler
+        if TaskScheduler in self._singletons:
+            await self._singletons[TaskScheduler].shutdown(graceful=True)
+        if BatchScheduler in self._singletons:
+            await self._singletons[BatchScheduler].shutdown()
+
+    def _clear_inference_engine(self) -> None:
+        from domain.inference.services import InferenceDomainService
+        inference = self._singletons.get(InferenceDomainService)
+        if inference is not None and hasattr(inference, "clear_engine"):
+            inference.clear_engine()
 
     def wire_routes(self):
         """Wire routes (production entry point)."""

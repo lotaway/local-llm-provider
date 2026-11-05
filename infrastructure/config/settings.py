@@ -99,6 +99,7 @@ class Settings:
     # Feature flags
     learning_enabled: bool = False
     scheduler_enabled: bool = True
+    container_enabled: bool = field(default_factory=lambda: os.getenv("LLP_ENABLE_CONTAINER", "true").lower() == "true")
     root_task: str = ""
     root_task_interval: int = 3600
 

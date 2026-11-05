@@ -4,7 +4,7 @@ Interface: Chat routes.
 import logging
 import time
 import uuid
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -14,8 +14,14 @@ from interfaces.http.dto.chat_dto import (
     LoadModelRequestDTO, LoadModelResponseDTO,
     ModelInfoDTO, HealthResponseDTO,
 )
-from application.inference.handlers import ChatUseCase, CompletionUseCase, TokenCountUseCase
-from application.model.handlers import LoadModelUseCase, UnloadModelUseCase, ListModelsUseCase
+from application.inference.handlers import (
+    ChatUseCase, CompletionUseCase, TokenCountUseCase,
+    ChatCommand, CompletionCommand,
+)
+from application.model.handlers import (
+    LoadModelUseCase, UnloadModelUseCase, ListModelsUseCase,
+    LoadModelCommand, UnloadModelCommand, ListModelsQuery,
+)
 from domain.model.entities import GenerationConfig, EngineType
 from domain.inference.ports import InferenceChunk
 
