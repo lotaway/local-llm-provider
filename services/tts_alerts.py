@@ -8,6 +8,7 @@ from constants import (
     TTS_WER_THRESHOLD,
 )
 from interfaces.tts_types import ITTSNotifier
+from services.tts_alert_rules import should_alert as breaches_quality_rules
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +28,9 @@ class TTSAlertService:
         self._alerts: List[Dict[str, Any]] = []
 
     def should_alert(self, result: Dict[str, Any]) -> bool:
-        metrics = result.get("dnsmos") or {}
-        wer = float(result.get("wer") or 0.0)
-        similarity = float(result.get("speaker_similarity") or 0.0)
-        failed = result.get("status") == "reject"
-        dnsmos = float(metrics.get("overall") or 0.0)
-        if failed or wer > self._wer_threshold or dnsmos < self._dnsmos_threshold or similarity < self._similarity_threshold:
-            return True
-        return False
+        return breaches_quality_rules(
+            result, self._wer_threshold, self._dnsmos_threshold, self._similarity_threshold
+        )
 
     def check(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         alerts = [result for result in results if self.should_alert(result)]

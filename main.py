@@ -101,21 +101,10 @@ async def init_molt_scheduler() -> None:
 
 def init_tts_service() -> None:
     try:
+        from bootstrap.tts_composition import build_tts_service
         from controllers.tts_controller import set_tts_service
-        from infrastructure.tts.preference_collection import build_preference_collection
-        from infrastructure.tts.speaker_repository import MongoSpeakerRepository
-        from model_providers.tts.style_tts2_adapter import StyleTTS2Adapter
-        from services.tts_preference_store import TTSPreferenceStore
-        from services.tts_service import TTSService
 
-        tts_preference_store = TTSPreferenceStore(collection=build_preference_collection())
-        backend_globals.tts_service = TTSService(
-            adapter=StyleTTS2Adapter(
-                preference_store=tts_preference_store,
-                speaker_repository=MongoSpeakerRepository(),
-            ),
-            preference_store=tts_preference_store,
-        )
+        backend_globals.tts_service = build_tts_service()
         set_tts_service(backend_globals.tts_service)
     except Exception as e:
         logger.error(f"Failed to init TTS service: {e}")

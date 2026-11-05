@@ -127,5 +127,4 @@ class TTSService:
             result.update(report)
             if self.quality_gateway.should_block(report):
                 raise TTSQualityRejected(report)
-        if status != "pass":
-            self.alerts.check([result])
+        self.alerts.check([result])

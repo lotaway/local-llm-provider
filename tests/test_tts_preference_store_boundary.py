@@ -42,5 +42,5 @@ def test_collection_factory_reads_injectable_configuration():
 
 
 def test_composition_root_injects_the_collection():
-    source = (ROOT / "main.py").read_text(encoding="utf-8")
+    source = (ROOT / "bootstrap" / "tts_composition.py").read_text(encoding="utf-8")
     assert "TTSPreferenceStore(collection=build_preference_collection())" in source

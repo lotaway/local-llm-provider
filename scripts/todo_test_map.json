@@ -14,6 +14,7 @@
     "tests/test_mcp_registry_lifecycle.py",
     "tests/test_skip_allowlist.py",
     "tests/test_baseline_policy.py",
-    "tests/test_todo_guard_policy.py"
+    "tests/test_todo_guard_policy.py",
+    "tests/test_tts_alert_wiring.py"
   ]
 }

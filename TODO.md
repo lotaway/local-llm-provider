@@ -29,8 +29,6 @@
   - 待人为抉择 E（成本与配额）：每日评估次数上限、模型推理并发上限、超预算时的降级策略。
 - [ ] 每日统计、滚动均值、P90/P95、异常比例
   - [ ] 子任务（`§5-1` / PARTIAL）：统计方法真实且已接入 `metrics()`，但 `_record_request` 的 `result` 不含 wer/dnsmos/similarity → 三项质量统计生产恒为 0；仅进程内 `deque(maxlen=1000)`，无「每日」聚合与持久化。需补指标来源、每日聚合与持久化。
-- [ ] 报警阈值与通知（WER / DNSMOS / Speaker Similarity / 失败率）
-  - [ ] 子任务（`§5-2` / PARTIAL）：`should_alert` 四阈值真实，但 `notifier` 未注入、生产仅在时长/重复异常时 `check`，三个质量阈值分支恒不触发。需注入生产 notifier 并覆盖质量分支。
 - [ ] 固定测试句集 + 每日回归测试 + 版本对比曲线
   - 现状证据：固定句集已有 3 句英文（`services/tts_regression_suite.py:11-15`），但只有手动接口 `POST /tts/regression`（`controllers/tts_controller.py:138-141`，限流 2/min），无任何每日调度（`main.py:170` 只注册 MOLT 任务）；`TTSService.run_regression` 只返回 `duration_seconds`/`bytes`（`services/tts_service.py:94-107`），未调用 `TTSRegressionSuite.run()`，`_runs` 历史不写入；`compare()`（`services/tts_regression_suite.py:40`）唯一调用点是 `tests/test_tts_regression_suite.py:18`；`version` 为随机 `uuid4()[:8]`，无真实版本与持久化，无法形成曲线。
   - 待人为抉择 A（句集内容）：是否保留现有 3 句英文，改为中文/中英混合、覆盖多情绪与长难句、数字与专有名词；句集数量与存放位置（代码常量 / 配置文件 / 数据库）。
