@@ -27,6 +27,11 @@
   - 已决议 E：并发与队列上限已生效；模型缺失或推理失败放行并告警；每日次数上限未纳入本期。
   - [ ] 遗留：结果持久化（MongoDB 时序集合）、保留窗口与文本脱敏。
   - [ ] 遗留：分层抽样、失败请求 100% 采样、每日评估次数上限与超预算降级。
+- [ ] 补齐生产评估模型的部署与端到端验证
+  - 现状证据：仓库无 `models/dnsmos.onnx`；`ProductionTTSQualityEvaluator` 依赖的 Whisper / DNSMOS ONNX / ECAPA 模型文件，以及 `onnxruntime` / `librosa` / `speechbrain` 等运行时依赖，均未纳入部署流程（本机默认 Python 亦缺失）。当前 `tests/test_tts_quality_integration.py` 以可注入的 fake evaluator 覆盖契约与装配，未跑真实模型推理；生产上模型缺失时观察器降级为日志 + 告警并放行响应。
+  - 待人为抉择 A（模型来源与放置）：随镜像打包 / 启动时下载 / 挂载卷；模型版本、校验与回滚方式。
+  - 待人为抉择 B（依赖与资源）：把推理依赖加入 `pyproject.toml` 的 `tts` extra 与镜像；CPU/GPU 选择、显存与并发上限。
+  - 验收：用真实 `sig_bak_ovr.onnx` 等模型跑通一次完整 `/tts` 抽样评估（WER / DNSMOS / Similarity 三项均有值），并在部署文档中记录模型路径与降级行为。
 - [ ] 每日统计、滚动均值、P90/P95、异常比例
   - [ ] 子任务（`§5-1` / PARTIAL）：指标来源已补齐——抽样请求的 WER/DNSMOS/Similarity 现经 `TTSQualityObserver` 异步写回 `TTSQualityStatistics`，`metrics()` 三项不再恒为 0；但仍仅进程内 `deque(maxlen=1000)`，无「每日」聚合、P90/P95 分位与持久化。需补每日聚合与持久化。
 - [ ] 固定测试句集 + 每日回归测试 + 版本对比曲线
@@ -53,3 +58,9 @@
 
 - [ ] 复核后同步更新第 1–5 节勾选状态
   - [ ] 子任务（`§6.4-5` / PARTIAL）：核查发现多处原记录与代码不符，历史整改记录已移除；各回退项需补可复现证据后再重新勾选。
+- [ ] 修复质量门禁的既有红项：`tests/test_molt_startup.py` 的 AST 断言与 `main.py` 调用形态不符
+  - 现状证据：`tests/test_molt_startup.py:20` 只收集 `ast.Call` 中 `node.func` 为 `ast.Attribute` 的调用名，`:22-23` 却断言 `build_molt_controller` / `current_memory_repo` 在其中；而 `main.py:95` 的 `controller = build_molt_controller(current_memory_repo())` 两者都是普通 `ast.Name` 调用。实测 `attr calls=['start','start','exception']`、`name calls=['build_molt_controller','MoltScheduler','AsyncTaskScheduler','current_memory_repo','hasattr']`，断言恒失败。`bb5cd9c` 引入该测试时 `main.py:93` 已是同样写法；`main.py` 在 `2712f04` 与 `fec244e` 均未改动，属既有红项，与 TTS 质量评估改动无关。
+  - 影响：`scripts/todo_guard.py::failing_cases` 扫描整个 JUnit 报告，任意 failure / error / skipped 都判违规；`.github/workflows/ci.yml:87-89` 的 `Assert checked TODO tests are green`（`if: always()`）因此持续报红，导致 §4 / §5 / §6.1 已勾选项的绿灯证据在 CI 上无法成立。
+  - 待人为抉择 A（修哪一侧）：改测试为同时收集 `ast.Name` 调用名（推荐，与 `main.py` 现状一致），或把 `main.py` 改成模块属性调用以迎合断言。
+  - 待人为抉择 B（门禁口径）：`failing_cases()` 是否只校验勾选项引用 / `todo_test_map.json` 登记的用例，而非整个报告；若改需同步 `tests/test_todo_guard_policy.py` 的防护断言，避免门禁被架空。
+  - 验收：`python -m pytest tests/test_molt_startup.py -q` 全绿；`python scripts/todo_guard.py --report <junit>` 返回 0；CI `Assert checked TODO tests are green` 步骤通过。
