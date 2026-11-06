@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
-from ..application.evaluator_service import TTSQualityEvaluator
-from ..domain.interfaces import AudioQualityMetrics
+from tts_estimate.application.evaluator_service import TTSQualityEvaluator
+from tts_estimate.domain.interfaces import AudioQualityMetrics
 
 @pytest.fixture
 def mock_evaluator():

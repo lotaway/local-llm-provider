@@ -30,7 +30,8 @@ class TTSQualityGateway:
 
     def evaluate(self, ref_text: str, ref_audio: bytes, gen_audio: bytes) -> Dict[str, Any]:
         if self._evaluator is None:
-            return {"status": "rejected", "reason": "evaluator_unavailable"}
+            logger.warning("tts_quality_evaluator_unavailable")
+            return {"status": "skipped", "reason": "evaluator_unavailable"}
         result = self._evaluate_internal(ref_text, ref_audio, gen_audio)
         report = self._to_report(result)
         logger.info(
@@ -54,10 +55,13 @@ class TTSQualityGateway:
         return self._evaluator.evaluate(ref_text, ref_audio, gen_audio, **kwargs)
 
     def should_block(self, report: Dict[str, Any]) -> bool:
-        return report.get("status") != "pass"
+        return report.get("status") == "reject"
 
     def _to_report(self, result: Any) -> Dict[str, Any]:
         metrics = getattr(result, "metrics", None)
+        similarity = getattr(metrics, "speaker_similarity", None)
+        if similarity is None:
+            similarity = getattr(result, "speaker_similarity", None)
         status = "pass" if bool(getattr(result, "is_passed", True)) else "reject"
         return {
             "status": status,
@@ -67,5 +71,5 @@ class TTSQualityGateway:
                 "signal": float(getattr(metrics, "dnsmos_signal", 0.0) or 0.0),
                 "background": float(getattr(metrics, "dnsmos_background", 0.0) or 0.0),
             },
-            "speaker_similarity": float(getattr(result, "speaker_similarity", 0.0) or 0.0),
+            "speaker_similarity": None if similarity is None else float(similarity),
         }

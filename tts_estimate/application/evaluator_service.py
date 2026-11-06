@@ -36,7 +36,7 @@ class TTSQualityEvaluator:
         transcription = self._asr.transcribe(gen_audio)
         wer_val = self._wer_calc.compute_wer(ref_text, transcription)
         mos_scores = self._mos.calculate_score(gen_audio)
-        similarity = self._speaker.calculate_similarity(ref_audio, gen_audio)
+        similarity = self._speaker.calculate_similarity(ref_audio, gen_audio) if ref_audio else None
         
         return AudioQualityMetrics(
             wer=wer_val,
@@ -51,6 +51,6 @@ class TTSQualityEvaluator:
             return False
         if metrics.dnsmos_overall < thresholds["dnsmos_min"]:
             return False
-        if metrics.speaker_similarity < thresholds["similarity_min"]:
+        if metrics.speaker_similarity is not None and metrics.speaker_similarity < thresholds["similarity_min"]:
             return False
         return True

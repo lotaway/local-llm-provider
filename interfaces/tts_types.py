@@ -32,6 +32,17 @@ class ITTSNotifier(ABC):
     def notify(self, result: Dict[str, Any]) -> None: ...
 
 
+class ITTSQualityObserver(Protocol):
+    """Port for sampled, asynchronous quality observation after a TTS request."""
+
+    def observe(
+        self,
+        result: Dict[str, Any],
+        audio: bytes,
+        reference_audio: Optional[bytes],
+    ) -> None: ...
+
+
 class ISpeakerRepository(ABC):
     @abstractmethod
     def save(self, speaker_id: str, record: Dict[str, Any]) -> None: ...

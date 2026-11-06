@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Optional
 
 @dataclass(frozen=True)
 class AudioQualityMetrics:
@@ -8,7 +8,7 @@ class AudioQualityMetrics:
     dnsmos_overall: float
     dnsmos_signal: float
     dnsmos_background: float
-    speaker_similarity: float
+    speaker_similarity: Optional[float] = None
 
 @dataclass(frozen=True)
 class EvaluationResult:

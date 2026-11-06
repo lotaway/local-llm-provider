@@ -2,13 +2,12 @@ import base64
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from interfaces.tts_types import ITTSAdapter
+from interfaces.tts_types import ITTSAdapter, ITTSQualityObserver
 from services.tts_alerts import TTSAlertService
 from services.tts_audio_quality import TTSAudioQualityService
 from services.tts_feedback_monitor import TTSFeedbackMonitor
 from services.tts_post_processing import TTSPostProcessor
 from services.tts_request_sampler import TTSRequestSampler
-from services.tts_quality_gateway import TTSQualityGateway
 from services.tts_regression_suite import TTSRegressionSuite
 from services.tts_quality_statistics import TTSQualityStatistics
 
@@ -17,17 +16,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_SAMPLE_RATE = 24000
 
 
-class TTSQualityRejected(RuntimeError):
-    pass
-
-
 class TTSService:
     def __init__(
         self,
         adapter: ITTSAdapter,
         preference_store=None,
         post_processor: Optional[TTSPostProcessor] = None,
-        quality_gateway: Optional[TTSQualityGateway] = None,
+        quality_observer: Optional[ITTSQualityObserver] = None,
         sampling_monitor: Optional[TTSRequestSampler] = None,
         audio_quality: Optional[TTSAudioQualityService] = None,
         alerts: Optional[TTSAlertService] = None,
@@ -39,7 +34,7 @@ class TTSService:
         self.adapter = adapter
         self.preference_store = preference_store
         self.post_processor = post_processor or TTSPostProcessor()
-        self.quality_gateway = quality_gateway
+        self.quality_observer = quality_observer
         self.sampling_monitor = sampling_monitor or TTSRequestSampler()
         self.audio_quality = audio_quality or TTSAudioQualityService(sample_rate=sample_rate)
         self.alerts = alerts or TTSAlertService()
@@ -119,12 +114,8 @@ class TTSService:
             "duplicate": duplicate,
             "text": text,
         }
-        self.trends.add(result)
-        if self.sampling_monitor.should_sample():
-            self.sampling_monitor.record(result)
-        if self.quality_gateway is not None and reference_audio is not None:
-            report = self.quality_gateway.evaluate(text, reference_audio, audio)
-            result.update(report)
-            if self.quality_gateway.should_block(report):
-                raise TTSQualityRejected(report)
         self.alerts.check([result])
+        if self.quality_observer is None:
+            self.trends.add(result)
+            return
+        self.quality_observer.observe(result, audio, reference_audio)

@@ -45,6 +45,7 @@ jobs:
         run: |
           python -m pytest -q --junitxml=todo_junit.xml \
             tests/test_tts_quality_gateway.py \
+            tests/test_tts_quality_integration.py \
             tests/test_tts_audio_quality.py \
             tests/test_tts_post_processing.py \
             tests/test_tts_alerts.py \

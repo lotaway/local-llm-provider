@@ -16,7 +16,9 @@ class TTSQualityStatistics:
         self._results.append(dict(result))
 
     def wer_statistics(self) -> Dict[str, float]:
-        values = [float(item.get("wer", 0.0) or 0.0) for item in self._results]
+        values = [
+            float(item["wer"]) for item in self._results if item.get("wer") is not None
+        ]
         return {
             "mean": statistics.mean(values) if values else 0.0,
             "p90": self._percentile(values, 0.90),
@@ -26,8 +28,9 @@ class TTSQualityStatistics:
 
     def dnsmos_statistics(self) -> Dict[str, float]:
         values = [
-            float((item.get("dnsmos") or {}).get("overall", 0.0) or 0.0)
+            float(item["dnsmos"]["overall"])
             for item in self._results
+            if (item.get("dnsmos") or {}).get("overall") is not None
         ]
         return {
             "mean": statistics.mean(values) if values else 0.0,
@@ -38,8 +41,9 @@ class TTSQualityStatistics:
 
     def similarity_statistics(self) -> Dict[str, float]:
         values = [
-            float((item.get("speaker_similarity") or item.get("similarity") or 0.0))
+            float(value)
             for item in self._results
+            if (value := item.get("speaker_similarity", item.get("similarity"))) is not None
         ]
         return {
             "mean": statistics.mean(values) if values else 0.0,

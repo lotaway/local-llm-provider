@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from globals import limiter
 from interfaces.tts_types import ITTSAdapter
-from services.tts_service import TTSQualityRejected, TTSService
+from services.tts_service import TTSService
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ class GenerateSpeechRequest(BaseModel):
     speaker_id: str = Field(default="", max_length=128)
     emotion_params: Optional[Dict[str, float]] = None
     user_id: str = Field(default="", max_length=128)
+    reference_audio: Optional[str] = None
 
     @field_validator("text")
     @classmethod
@@ -82,7 +83,7 @@ def set_tts_adapter(adapter: ITTSAdapter) -> None:
     set_tts_service(TTSService(adapter=adapter))
 
 
-def _decode_clone_audio(audio_data: str) -> bytes:
+def _decode_audio_base64(audio_data: str) -> bytes:
     try:
         decoded = base64.b64decode(audio_data, validate=True)
     except (binascii.Error, ValueError) as error:
@@ -90,6 +91,12 @@ def _decode_clone_audio(audio_data: str) -> bytes:
     if len(decoded) > AUDIO_MAX_BYTES:
         raise HTTPException(status_code=413, detail="audio_data exceeds the size limit")
     return decoded
+
+
+def _decode_optional_audio(audio_data: Optional[str]) -> Optional[bytes]:
+    if audio_data is None:
+        return None
+    return _decode_audio_base64(audio_data)
 
 
 @router.post("")
@@ -100,8 +107,10 @@ async def generate_speech(req: GenerateSpeechRequest, request: Request):
         service.ensure_ready()
     except Exception as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+    reference_audio = _decode_optional_audio(req.reference_audio)
     stream = service.stream(
-        req.text, req.emotion_params, req.speaker_id, req.user_id
+        req.text, req.emotion_params, req.speaker_id, req.user_id,
+        reference_audio=reference_audio,
     )
     return StreamingResponse(
         stream,
@@ -113,7 +122,7 @@ async def generate_speech(req: GenerateSpeechRequest, request: Request):
 @router.post("/clone")
 @limiter.limit("5/minute")
 async def clone_voice(req: CloneVoiceRequest, request: Request):
-    audio_data = _decode_clone_audio(req.audio_data)
+    audio_data = _decode_audio_base64(req.audio_data)
     service = get_tts_service()
     try:
         result = await service.adapter.clone_voice(audio_data, req.user_id, req.alias)
