@@ -153,6 +153,9 @@ cython_debug/
 .cursorindexingignore
 .idea
 
+# WorkBuddy local workspace data
+.workbuddy/
+
 # Ruff stuff:
 .ruff_cache/
 
