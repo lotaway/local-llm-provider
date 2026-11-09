@@ -4,9 +4,11 @@ from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from functools import partial
 from typing import Any, Dict, Optional
 
-from constants import TTS_QUALITY_MAX_PENDING, TTS_QUALITY_MAX_WORKERS
+from constants import TTS_QUALITY_DAILY_LIMIT, TTS_QUALITY_MAX_PENDING, TTS_QUALITY_MAX_WORKERS
+from interfaces.tts_types import ITTSQualityRecordStore
 from services.tts_alerts import TTSAlertService
 from services.tts_quality_gateway import TTSQualityGateway
+from services.tts_quality_quota import DailyEvaluationQuota
 from services.tts_quality_statistics import TTSQualityStatistics
 from services.tts_request_sampler import TTSRequestSampler
 
@@ -20,8 +22,9 @@ class TTSQualityObserver:
         trends: TTSQualityStatistics,
         sampler: TTSRequestSampler,
         alerts: TTSAlertService,
-        executor: Optional[Executor] = None,
-        max_pending: int = TTS_QUALITY_MAX_PENDING,
+        executor: Optional[Executor] = None, max_pending: int = TTS_QUALITY_MAX_PENDING,
+        record_store: Optional[ITTSQualityRecordStore] = None,
+        quota: Optional[DailyEvaluationQuota] = None,
     ) -> None:
         if max_pending < 1:
             raise ValueError(f"max_pending must be at least 1, got {max_pending}")
@@ -29,21 +32,37 @@ class TTSQualityObserver:
         self._trends = trends
         self._sampler = sampler
         self._alerts = alerts
-        self._executor = executor or ThreadPoolExecutor(
+        self._executor = executor or self._build_executor()
+        self._capacity = threading.BoundedSemaphore(max_pending)
+        self._record_store = record_store
+        self._quota = quota or DailyEvaluationQuota(TTS_QUALITY_DAILY_LIMIT)
+
+    @staticmethod
+    def _build_executor() -> Executor:
+        return ThreadPoolExecutor(
             max_workers=TTS_QUALITY_MAX_WORKERS, thread_name_prefix="tts-quality"
         )
-        self._capacity = threading.BoundedSemaphore(max_pending)
 
     def observe(
         self, result: Dict[str, Any], audio: bytes, reference_audio: Optional[bytes]
     ) -> None:
-        if not self._sampler.should_sample():
+        if not self._sampler.should_sample(result):
             self._trends.add(result)
             return
         if not self._capacity.acquire(blocking=False):
             logger.warning("tts_quality_evaluation_dropped", extra={"reason": "queue_full"})
             self._trends.add(result)
             return
+        if not self._quota.reserve():
+            self._capacity.release()
+            logger.warning("tts_quality_evaluation_quota_exceeded", extra={"limit": self._quota.limit})
+            self._trends.add(result)
+            return
+        self._submit(result, audio, reference_audio)
+
+    def _submit(
+        self, result: Dict[str, Any], audio: bytes, reference_audio: Optional[bytes]
+    ) -> None:
         try:
             future = self._executor.submit(self._evaluate_and_record, result, audio, reference_audio)
         except RuntimeError:
@@ -61,6 +80,17 @@ class TTSQualityObserver:
         self._trends.add(evaluated)
         self._sampler.record(evaluated)
         self._alerts.check([evaluated])
+        self._persist(evaluated)
+
+    def _persist(self, record: Dict[str, Any]) -> None:
+        if self._record_store is None:
+            return
+        try:
+            self._record_store.save(record)
+        except Exception as error:
+            logger.error(
+                "tts_quality_record_persist_failed", extra={"error_type": type(error).__name__}
+            )
 
     def _on_completed(self, future: Future, result: Dict[str, Any]) -> None:
         self._capacity.release()

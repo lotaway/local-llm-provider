@@ -17,6 +17,7 @@
     "tests/test_todo_guard_policy.py",
     "tests/test_tts_alert_wiring.py",
     "tests/test_tts_quality_integration.py",
-    "tests/test_tts_quality_statistics.py"
+    "tests/test_tts_quality_statistics.py",
+    "tests/test_tts_request_sampler.py"
   ]
 }

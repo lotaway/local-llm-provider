@@ -32,6 +32,12 @@ class ITTSNotifier(ABC):
     def notify(self, result: Dict[str, Any]) -> None: ...
 
 
+class ITTSQualityRecordStore(Protocol):
+    """Port for persisting sanitized TTS quality records."""
+
+    def save(self, record: Dict[str, Any]) -> None: ...
+
+
 class ITTSQualityObserver(Protocol):
     """Port for sampled, asynchronous quality observation after a TTS request."""
 

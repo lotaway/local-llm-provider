@@ -92,3 +92,14 @@ def test_skipped_records_are_not_anomalies_but_evaluation_failures_are():
     assert summary["count"] == 4.0
     assert summary["failure_rate"] == 0.25
     assert summary["anomaly_rate"] == 0.5
+
+
+def test_first_chunk_latency_is_summarized_without_missing_records():
+    statistics = TTSQualityStatistics(window=20, clock=_FakeClock(7))
+    statistics.add({"status": "pass", "first_chunk_ms": 120.0})
+    statistics.add({"status": "pass", "first_chunk_ms": 180.0})
+    statistics.add({"status": "pass"})
+    summary = statistics.first_chunk_statistics()
+    assert summary["count"] == 2.0
+    assert summary["mean"] == 150.0
+    assert statistics.daily_statistics()["first_chunk"]["p95"] == 180.0

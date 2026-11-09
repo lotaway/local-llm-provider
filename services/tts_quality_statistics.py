@@ -36,6 +36,9 @@ class TTSQualityStatistics:
     def similarity_statistics(self) -> Dict[str, float]:
         return self._summary(list(self._results), lambda item: item.get("speaker_similarity", item.get("similarity")))
 
+    def first_chunk_statistics(self) -> Dict[str, float]:
+        return self._summary(list(self._results), lambda item: item.get("first_chunk_ms"))
+
     def failure_rate(self) -> float:
         return self._ratio(list(self._results), lambda item: item.get("status") == "reject")
 
@@ -53,6 +56,7 @@ class TTSQualityStatistics:
             "wer": self._summary(records, lambda item: item.get("wer")),
             "dnsmos": self._summary(records, lambda item: (item.get("dnsmos") or {}).get("overall")),
             "speaker_similarity": self._summary(records, lambda item: item.get("speaker_similarity", item.get("similarity"))),
+            "first_chunk": self._summary(records, lambda item: item.get("first_chunk_ms")),
             "failure_rate": self._ratio(records, lambda item: item.get("status") == "reject"),
             "anomaly_rate": self._ratio(records, self._is_anomaly),
         }

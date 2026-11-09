@@ -7,6 +7,7 @@ import time
 import types
 import wave
 from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
@@ -14,11 +15,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from constants import TTS_MONGO_COLLECTION_QUALITY
 from infrastructure.tts.quality_evaluator_adapter import ProductionTTSQualityEvaluator
+from infrastructure.tts.quality_record_repository import MongoTTSQualityRecordRepository
 from infrastructure.tts.wav_bytes import merge_wav_segments
 from services.tts_alerts import TTSAlertService
 from services.tts_quality_gateway import TTSQualityGateway
 from services.tts_quality_observer import TTSQualityObserver
+from services.tts_quality_quota import DailyEvaluationQuota
 from services.tts_quality_statistics import TTSQualityStatistics
 from services.tts_request_sampler import TTSRequestSampler
 
@@ -100,11 +104,70 @@ class _RecordingEvaluator:
 
 
 class _FakeAdapter:
-    def __init__(self, chunk: bytes) -> None:
+    def __init__(self, chunk: bytes, first_chunk_ms: Optional[float] = None) -> None:
         self._chunk = chunk
+        self._first_chunk_ms = first_chunk_ms
 
-    async def generate_speech_stream(self, text, emotion_params, speaker_id, user_id=""):
+    async def generate_speech_stream(
+        self, text, emotion_params, speaker_id, callback=None, user_id=""
+    ):
+        if callback is not None and self._first_chunk_ms is not None:
+            callback({"type": "first_chunk", "elapsed_ms": self._first_chunk_ms})
         yield base64.b64encode(self._chunk).decode("ascii")
+
+
+class _FakeRecordStore:
+    def __init__(self, error: Optional[Exception] = None) -> None:
+        self.error = error
+        self.records = []
+
+    def save(self, record: Dict[str, Any]) -> None:
+        if self.error is not None:
+            raise self.error
+        self.records.append(dict(record))
+
+
+class _FakeCollection:
+    def __init__(self) -> None:
+        self.inserted = []
+
+    def insert_one(self, payload: Dict[str, Any]) -> None:
+        self.inserted.append(payload)
+
+
+class _FakeDatabase:
+    def __init__(self, create_error: Optional[Exception] = None) -> None:
+        self.create_error = create_error
+        self.created = []
+        self.collections: Dict[str, _FakeCollection] = {}
+
+    def create_collection(self, name: str, **options: Any) -> _FakeCollection:
+        if self.create_error is not None:
+            raise self.create_error
+        self.created.append((name, options))
+        return self._collection(name)
+
+    def _collection(self, name: str) -> _FakeCollection:
+        return self.collections.setdefault(name, _FakeCollection())
+
+    def __getitem__(self, name: str) -> _FakeCollection:
+        return self._collection(name)
+
+
+class _FakeClient:
+    def __init__(self, database: _FakeDatabase) -> None:
+        self.database = database
+
+    def __getitem__(self, name: str) -> _FakeDatabase:
+        return self.database
+
+
+class _MutableClock:
+    def __init__(self, day: int) -> None:
+        self.day = day
+
+    def __call__(self) -> datetime:
+        return datetime(2026, 11, self.day, tzinfo=timezone.utc)
 
 
 async def _collect(stream) -> bytes:
@@ -303,6 +366,8 @@ def test_composition_root_builds_a_service_with_the_observer(monkeypatch):
     assert observer._sampler is service.sampling_monitor
     assert observer._alerts is service.alerts
     assert isinstance(observer._gateway._evaluator, ProductionTTSQualityEvaluator)
+    assert isinstance(observer._record_store, MongoTTSQualityRecordRepository)
+    assert isinstance(observer._quota, DailyEvaluationQuota)
     observer._executor.shutdown(wait=False)
 
 
@@ -311,3 +376,114 @@ def test_controller_forwards_optional_reference_audio():
     assert "reference_audio: Optional[str] = None" in source
     assert "reference_audio=reference_audio" in source
     assert "TTSQualityRejected" not in source
+
+
+def _service_class(monkeypatch):
+    lightweight_package = types.ModuleType("model_providers")
+    lightweight_package.__path__ = [str(ROOT / "model_providers")]
+    monkeypatch.setitem(sys.modules, "model_providers", lightweight_package)
+    from services.tts_service import TTSService
+
+    return TTSService
+
+
+def test_first_chunk_latency_is_recorded_as_an_observation_only(monkeypatch):
+    service_class = _service_class(monkeypatch)
+    observer, trends, sampler, alerts = _observer()
+    chunk = _wav(b"\x00\x00" * 20)
+    service = service_class(
+        adapter=_FakeAdapter(chunk, first_chunk_ms=123.0),
+        quality_observer=observer,
+        trends=trends,
+        sampling_monitor=sampler,
+        alerts=alerts,
+    )
+    assert asyncio.run(_collect(service.stream("hello"))) == chunk
+    metrics = service.metrics()
+    assert metrics["first_chunk"]["mean"] == 123.0
+    assert metrics["first_chunk"]["count"] == 1.0
+    assert alerts.alerts() == []
+
+
+def test_daily_quota_degrades_without_blocking():
+    trends = TTSQualityStatistics()
+    sampler = TTSRequestSampler(sample_rate=1.0)
+    alerts = TTSAlertService()
+    observer = TTSQualityObserver(
+        TTSQualityGateway(_Evaluator()), trends, sampler, alerts,
+        executor=_InlineExecutor(), quota=DailyEvaluationQuota(1),
+    )
+    observer.observe(_lightweight_result(), b"audio", None)
+    observer.observe(_lightweight_result(), b"audio", None)
+    assert sampler.sampled_count == 2
+    assert trends.wer_statistics()["count"] == 1.0
+    assert alerts.alerts() == []
+
+
+def test_daily_quota_resets_on_a_new_utc_day():
+    clock = _MutableClock(7)
+    quota = DailyEvaluationQuota(1, clock=clock)
+    assert quota.reserve() is True
+    assert quota.reserve() is False
+    clock.day = 8
+    assert quota.reserve() is True
+
+
+def test_observer_persists_evaluated_record_through_the_store():
+    collection = _FakeCollection()
+    store = MongoTTSQualityRecordRepository(collection=collection, clock=_MutableClock(9))
+    trends = TTSQualityStatistics()
+    observer = TTSQualityObserver(
+        TTSQualityGateway(_Evaluator()), trends, TTSRequestSampler(sample_rate=1.0),
+        TTSAlertService(), executor=_InlineExecutor(), record_store=store,
+    )
+    observer.observe({**_lightweight_result(), "stratum": "user-a"}, b"audio", None)
+    assert len(collection.inserted) == 1
+    assert collection.inserted[0]["wer"] == 0.05
+    assert "text" not in collection.inserted[0]
+    assert "stratum" not in collection.inserted[0]
+
+
+def test_persistence_failure_does_not_affect_observation():
+    store = _FakeRecordStore(error=OSError("mongo down"))
+    trends = TTSQualityStatistics()
+    observer = TTSQualityObserver(
+        TTSQualityGateway(_Evaluator()), trends, TTSRequestSampler(sample_rate=1.0),
+        TTSAlertService(), executor=_InlineExecutor(), record_store=store,
+    )
+    observer.observe(_lightweight_result(), b"audio", None)
+    assert trends.wer_statistics()["mean"] == 0.05
+
+
+def test_repository_creates_time_series_collection_with_ttl_and_redacts_text():
+    database = _FakeDatabase()
+    clock = _MutableClock(9)
+    repository = MongoTTSQualityRecordRepository(
+        retention_days=7, clock=clock, client_factory=lambda uri: _FakeClient(database)
+    )
+    repository.save({
+        "status": "pass", "text": "private", "stratum": "user-a",
+        "audio": b"raw", "wer": 0.05, "first_chunk_ms": 123.0,
+    })
+    name, options = database.created[0]
+    assert name == TTS_MONGO_COLLECTION_QUALITY
+    assert options["timeseries"]["timeField"] == "recorded_at"
+    assert options["expireAfterSeconds"] == 7 * 86400
+    payload = database.collections[name].inserted[0]
+    assert payload["recorded_at"] == clock()
+    assert payload["wer"] == 0.05
+    assert {"text", "stratum", "audio"}.isdisjoint(payload)
+
+
+def test_repository_still_inserts_when_collection_already_exists():
+    database = _FakeDatabase(create_error=RuntimeError("exists"))
+    repository = MongoTTSQualityRecordRepository(
+        clock=_MutableClock(9), client_factory=lambda uri: _FakeClient(database)
+    )
+    repository.save({"status": "pass"})
+    assert len(database.collections[TTS_MONGO_COLLECTION_QUALITY].inserted) == 1
+
+
+def test_repository_rejects_invalid_retention():
+    with pytest.raises(ValueError):
+        MongoTTSQualityRecordRepository(retention_days=0)

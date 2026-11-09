@@ -58,19 +58,29 @@ class TTSService:
     ) -> AsyncGenerator[bytes, None]:
         base64_chunks: List[str] = []
         audio_chunks: List[bytes] = []
-        text_value = text or ""
+        events: List[Dict[str, Any]] = []
         async for chunk in self.adapter.generate_speech_stream(
-            text, emotion_params, speaker_id, user_id=user_id
+            text, emotion_params, speaker_id, callback=events.append, user_id=user_id
         ):
             base64_chunks.append(chunk)
-            try:
-                payload = base64.b64decode(chunk, validate=True)
-            except (ValueError, TypeError):
-                payload = chunk.encode("utf-8")
+            payload = self._decode_chunk(chunk)
             audio_chunks.append(payload)
             yield payload
         audio = b"".join(audio_chunks)
-        self._record_request(text_value, "".join(base64_chunks), audio, reference_audio)
+        stratum = speaker_id or user_id or "anonymous"
+        self._record_request(text or "", "".join(base64_chunks), audio, reference_audio, events, stratum)
+
+    @staticmethod
+    def _decode_chunk(chunk: str) -> bytes:
+        try:
+            return base64.b64decode(chunk, validate=True)
+        except (ValueError, TypeError):
+            return chunk.encode("utf-8")
+
+    @staticmethod
+    def _first_chunk_ms(events: List[Dict[str, Any]]) -> Optional[float]:
+        values = [item.get("elapsed_ms") for item in events if item.get("type") == "first_chunk"]
+        return float(values[0]) if values and values[0] is not None else None
 
     def record_feedback(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return self.feedback.record(payload)
@@ -81,6 +91,7 @@ class TTSService:
             "wer": self.trends.wer_statistics(),
             "dnsmos": self.trends.dnsmos_statistics(),
             "speaker_similarity": self.trends.similarity_statistics(),
+            "first_chunk": self.trends.first_chunk_statistics(),
             "failure_rate": self.trends.failure_rate(),
             "daily": self.trends.daily_breakdown(),
             "alerts": self.alerts.alerts(limit=20),
@@ -103,17 +114,19 @@ class TTSService:
         return {"results": results}
 
     def _record_request(
-        self, text: str, text_chunks: str, audio: bytes, reference_audio: Optional[bytes]
+        self, text: str, text_chunks: str, audio: bytes, reference_audio: Optional[bytes],
+        events: List[Dict[str, Any]], stratum: str = "anonymous",
     ) -> None:
         anomaly = self.audio_quality.is_duration_anomaly(audio) if audio else True
         duplicate = self.audio_quality.has_duplicate(audio) if audio else False
-        status = "reject" if anomaly or duplicate else "pass"
         result = {
-            "status": status,
+            "status": "reject" if anomaly or duplicate else "pass",
             "duration_seconds": self.audio_quality.duration_seconds(audio),
             "duration_anomaly": anomaly,
             "duplicate": duplicate,
             "text": text,
+            "first_chunk_ms": self._first_chunk_ms(events),
+            "stratum": stratum,
         }
         self.alerts.check([result])
         if self.quality_observer is None:

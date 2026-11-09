@@ -1,13 +1,19 @@
-from constants import TTS_QUALITY_MAX_PENDING, TTS_QUALITY_SAMPLE_RATE
+from constants import (
+    TTS_QUALITY_DAILY_LIMIT,
+    TTS_QUALITY_MAX_PENDING,
+    TTS_QUALITY_SAMPLE_RATE,
+)
 from infrastructure.tts.logging_notifier import StructuredLogNotifier
 from infrastructure.tts.preference_collection import build_preference_collection
 from infrastructure.tts.quality_evaluator_adapter import ProductionTTSQualityEvaluator
+from infrastructure.tts.quality_record_repository import MongoTTSQualityRecordRepository
 from infrastructure.tts.speaker_repository import MongoSpeakerRepository
 from model_providers.tts.style_tts2_adapter import StyleTTS2Adapter
 from services.tts_alerts import TTSAlertService
 from services.tts_preference_store import TTSPreferenceStore
 from services.tts_quality_gateway import TTSQualityGateway
 from services.tts_quality_observer import TTSQualityObserver
+from services.tts_quality_quota import DailyEvaluationQuota
 from services.tts_quality_statistics import TTSQualityStatistics
 from services.tts_request_sampler import TTSRequestSampler
 from services.tts_service import TTSService
@@ -21,6 +27,8 @@ def _build_quality_observer(alerts, trends, sampler) -> TTSQualityObserver:
         sampler=sampler,
         alerts=alerts,
         max_pending=TTS_QUALITY_MAX_PENDING,
+        record_store=MongoTTSQualityRecordRepository(),
+        quota=DailyEvaluationQuota(TTS_QUALITY_DAILY_LIMIT),
     )
 
 
