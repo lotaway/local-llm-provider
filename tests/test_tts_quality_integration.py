@@ -268,7 +268,6 @@ def test_stream_never_blocks_and_metrics_contain_quality_scores(monkeypatch):
     lightweight_package.__path__ = [str(ROOT / "model_providers")]
     monkeypatch.setitem(sys.modules, "model_providers", lightweight_package)
     from services.tts_service import TTSService
-
     observer, trends, sampler, alerts = _observer()
     chunk = _wav(b"\x00\x00" * 20)
     service = TTSService(
@@ -283,6 +282,7 @@ def test_stream_never_blocks_and_metrics_contain_quality_scores(monkeypatch):
     assert metrics["wer"]["mean"] == 0.05
     assert metrics["dnsmos"]["mean"] == 4.1
     assert metrics["sampled_requests"] == 1
+    assert metrics["daily"][-1]["wer"]["mean"] == 0.05
 
 
 def test_composition_root_wires_the_production_observer():

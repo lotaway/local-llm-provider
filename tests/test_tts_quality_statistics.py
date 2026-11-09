@@ -1,4 +1,14 @@
+from datetime import datetime, timezone
+
 from services.tts_quality_statistics import TTSQualityStatistics
+
+
+class _FakeClock:
+    def __init__(self, day: int):
+        self.day = day
+
+    def __call__(self):
+        return datetime(2026, 11, self.day, 23, 59, tzinfo=timezone.utc)
 
 
 def test_trend_statistics_aggregates_failures_and_percentiles():
@@ -10,6 +20,7 @@ def test_trend_statistics_aggregates_failures_and_percentiles():
     assert wer_stats["count"] == 20.0
     assert wer_stats["mean"] > 0.0
     assert wer_stats["p90"] >= wer_stats["mean"]
+    assert round(wer_stats["p95"], 6) == 1.8
 
     dnsmos_stats = statistics.dnsmos_statistics()
     assert dnsmos_stats["mean"] > 0.0
@@ -22,3 +33,62 @@ def test_trend_statistics_rejects_invalid_window():
 
     with raises(ValueError):
         TTSQualityStatistics(window=0)
+
+
+def test_daily_statistics_separates_days_and_reports_anomaly_rate():
+    clock = _FakeClock(7)
+    statistics = TTSQualityStatistics(window=20, clock=clock)
+    statistics.add({"status": "pass", "wer": 0.02, "dnsmos": {"overall": 4.2}, "speaker_similarity": 0.9})
+    statistics.add({"status": "reject", "wer": 0.30, "dnsmos": {"overall": 2.1}, "duration_anomaly": True})
+    clock.day = 8
+    statistics.add({"status": "pass", "wer": 0.10, "dnsmos": {"overall": 3.8}, "speaker_similarity": 0.8})
+    first = statistics.daily_statistics("2026-11-07")
+    assert first["day"] == "2026-11-07"
+    assert first["count"] == 2.0
+    assert round(first["wer"]["mean"], 6) == 0.16
+    assert round(first["dnsmos"]["mean"], 6) == 3.15
+    assert first["speaker_similarity"]["count"] == 1.0
+    assert first["failure_rate"] == 0.5
+    assert first["anomaly_rate"] == 0.5
+    second = statistics.daily_statistics("2026-11-08")
+    assert second["count"] == 1.0
+    assert second["wer"]["mean"] == 0.10
+    assert second["anomaly_rate"] == 0.0
+
+
+def test_daily_breakdown_returns_recent_days_in_order():
+    clock = _FakeClock(6)
+    statistics = TTSQualityStatistics(window=20, clock=clock)
+    for day in (6, 7, 8):
+        clock.day = day
+        statistics.add({"status": "pass", "wer": float(day) / 100})
+
+    breakdown = statistics.daily_breakdown(limit=2)
+    assert [item["day"] for item in breakdown] == ["2026-11-07", "2026-11-08"]
+    assert breakdown[-1]["wer"]["mean"] == 0.08
+    assert statistics.daily_breakdown() == statistics.daily_breakdown(limit=7)
+    assert statistics.daily_breakdown(limit=0) == []
+
+
+def test_daily_statistics_defaults_to_current_day_and_handles_empty():
+    clock = _FakeClock(9)
+    statistics = TTSQualityStatistics(window=20, clock=clock)
+    empty = statistics.daily_statistics()
+    assert empty["day"] == "2026-11-09"
+    assert empty["count"] == 0.0
+    assert empty["anomaly_rate"] == 0.0
+    assert empty["wer"]["p95"] == 0.0
+    assert statistics.daily_breakdown() == []
+
+
+def test_skipped_records_are_not_anomalies_but_evaluation_failures_are():
+    statistics = TTSQualityStatistics(window=20, clock=_FakeClock(7))
+    statistics.add({"status": "pass"})
+    statistics.add({"status": "skipped", "reason": "evaluator_unavailable"})
+    statistics.add({"status": "evaluation_failed"})
+    statistics.add({"status": "reject", "duplicate": True})
+
+    summary = statistics.daily_statistics("2026-11-07")
+    assert summary["count"] == 4.0
+    assert summary["failure_rate"] == 0.25
+    assert summary["anomaly_rate"] == 0.5

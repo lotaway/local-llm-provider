@@ -82,6 +82,7 @@ class TTSService:
             "dnsmos": self.trends.dnsmos_statistics(),
             "speaker_similarity": self.trends.similarity_statistics(),
             "failure_rate": self.trends.failure_rate(),
+            "daily": self.trends.daily_breakdown(),
             "alerts": self.alerts.alerts(limit=20),
             "feedback": self.feedback.distribution(),
         }

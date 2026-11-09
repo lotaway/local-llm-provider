@@ -16,8 +16,18 @@ def test_startup_imports_current_memory_repo():
     assert "logger.exception(\"Failed to start MOLT scheduler\")" in source
 
 
+def _call_names():
+    return {
+        name
+        for node in ast.walk(_init_function())
+        if isinstance(node, ast.Call)
+        for name in [getattr(node.func, "attr", None) or getattr(node.func, "id", None)]
+        if name
+    }
+
+
 def test_startup_starts_controller_and_scheduler():
-    calls = [node.func.attr for node in ast.walk(_init_function()) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)]
+    calls = _call_names()
     assert "start" in calls
     assert "build_molt_controller" in calls
     assert "current_memory_repo" in calls

@@ -3,6 +3,7 @@
 > 整理于 2026-11-05：依据 `audit-2026-11-05.md` 移除 58 项已核验完成的任务；其余 31 项 PARTIAL + 1 项 NO_EVIDENCE 回退为待办并挂子任务，另新增 3 项 P0 运行期缺陷。
 > 本文件以未完成任务为主体，已核验完成的项保留 `[x]` 与证据；已移除内容与历史整改记录见 git 历史 `44d1d81`。
 > 2026-11-07：按「离线筛选 / 抽样告警、异步评估、不阻断响应」决议落地后，§4 首条、§5 首条与 §6.1-5 改为 `[x]` 并保留完成证据；勾选项的定向测试须在 `scripts/todo_test_map.json` 与 `.github/workflows/ci.yml` 中登记且保持绿灯。
+> 2026-11-09：按「TTS 质量优先、不设 500ms 绝对阈值」决议改写 §4-7；§5-1 每日聚合与 §6.4 门禁红项完成并勾选。
 
 ## 4. TTS 情感语音系统（来源：TTS_SPEC.md）
 
@@ -14,8 +15,9 @@
   - 已决议 C：复用 `tts_estimate` 三项模型并按需懒加载，仅对抽样请求推理。
   - 已决议 D：阈值沿用 `constants.py` 的 0.08 / 3.8 / 0.78；evaluator 不可用、推理失败、队列满载均放行并告警。
   - 已决议 E：不阻断响应，无 HTTP 错误语义；失败只写一条 `evaluation_failed` 告警。
-- [ ] 实现流式输出（首包延迟 <500ms）
-  - [ ] 子任务（`§4-7` / PARTIAL）：`StreamingResponse` 与 `elapsed_ms` 计时存在，但首包是整句 10 步 diffusion 合成后的完整 WAV，无首包延迟测量或断言（测试只断言 `>=0`）。需定义首包口径并加 SLA 断言，或把描述修正为实际能力。
+- [ ] 实现流式输出（质量优先；首包延迟仅作观测指标，不设 500ms 绝对阈值）
+  - [ ] 子任务（`§4-7` / PARTIAL）：2026-11-09 决议——这是 **TTS**（`todo/TTS_SPEC.md` §4.4），不是 STT 式实时识别，不为压低首包延迟牺牲质量：不切碎音频、不削减 diffusion 步数、不加 SLA 断言。`model_providers/tts/style_tts2_adapter.py:106-117` 的 `first_chunk/elapsed_ms` 仅用于观测，`StyleTTS2Engine.synthesize_stream` 按句产出完整 WAV，质量评估在合成后异步进行且不阻断响应（`tests/test_tts_quality_integration.py`）。
+  - 剩余缺口：`TTSService.stream`（`services/tts_service.py:62-64`）调用 `generate_speech_stream` 时**未传 `callback`**，首包耗时事件在生产链路里无人消费。需把该观测值写进请求记录 / 趋势，仍不设阈值、不告警、不拦截；验收为能在 `metrics()` 查到首包耗时观测序列。
 ## 5. TTS 质量评估与线上监控（来源：TTS_QUALITY_ESTIMATE.md）
 
 - [x] 生产监控抽样（默认 5%）接入评估流水线 — 证据 `tests/test_tts_quality_integration.py`
@@ -32,8 +34,9 @@
   - 待人为抉择 A（模型来源与放置）：随镜像打包 / 启动时下载 / 挂载卷；模型版本、校验与回滚方式。
   - 待人为抉择 B（依赖与资源）：把推理依赖加入 `pyproject.toml` 的 `tts` extra 与镜像；CPU/GPU 选择、显存与并发上限。
   - 验收：用真实 `sig_bak_ovr.onnx` 等模型跑通一次完整 `/tts` 抽样评估（WER / DNSMOS / Similarity 三项均有值），并在部署文档中记录模型路径与降级行为。
-- [ ] 每日统计、滚动均值、P90/P95、异常比例
-  - [ ] 子任务（`§5-1` / PARTIAL）：指标来源已补齐——抽样请求的 WER/DNSMOS/Similarity 现经 `TTSQualityObserver` 异步写回 `TTSQualityStatistics`，`metrics()` 三项不再恒为 0；但仍仅进程内 `deque(maxlen=1000)`，无「每日」聚合、P90/P95 分位与持久化。需补每日聚合与持久化。
+- [x] 每日统计、滚动均值、P90/P95、异常比例（进程内按日聚合）— 证据 `tests/test_tts_quality_statistics.py`
+  - 完成证据：复核发现 P90/P95 / rolling_mean / failure_rate 原已实现（此前描述有误）；本次在 `TTSQualityStatistics` 新增 UTC 日切分桶（可注入 `clock`）、`daily_statistics()` 单日汇总、`daily_breakdown()` 近 N 日趋势、按日 `anomaly_rate`（status 非 pass/skipped 或时长异常 / 重复片段计为异常，`skipped` 不计异常），并在 `TTSService.metrics()` 暴露 `daily` 字段。6 项单元测试绿灯，与 §4 / §5 抽样链路合跑 43 passed。
+  - 决议：本项验收范围限定为**进程内按日聚合与异常比例**；结果持久化、保留窗口与文本脱敏仍按 §5 首条下的遗留项保持 `[ ]`，未纳入本次勾选。
 - [ ] 固定测试句集 + 每日回归测试 + 版本对比曲线
   - 现状证据：固定句集已有 3 句英文（`services/tts_regression_suite.py:11-15`），但只有手动接口 `POST /tts/regression`（`controllers/tts_controller.py:138-141`，限流 2/min），无任何每日调度（`main.py:170` 只注册 MOLT 任务）；`TTSService.run_regression` 只返回 `duration_seconds`/`bytes`（`services/tts_service.py:94-107`），未调用 `TTSRegressionSuite.run()`，`_runs` 历史不写入；`compare()`（`services/tts_regression_suite.py:40`）唯一调用点是 `tests/test_tts_regression_suite.py:18`；`version` 为随机 `uuid4()[:8]`，无真实版本与持久化，无法形成曲线。
   - 待人为抉择 A（句集内容）：是否保留现有 3 句英文，改为中文/中英混合、覆盖多情绪与长难句、数字与专有名词；句集数量与存放位置（代码常量 / 配置文件 / 数据库）。
@@ -53,14 +56,11 @@
   - [x] 子任务（`§6.1-5`）：已与 §4 首条合并完成，装配契约由 `tests/test_tts_quality_integration.py::test_composition_root_builds_a_service_with_the_observer` 覆盖。
 - [ ] 复核 §5 生产监控/统计/报警/反馈/回归
   - 进展：`TTSRequestSampler` / `TTSQualityStatistics` / `TTSAlertService` / `TTSAudioQualityService` 现已由 `bootstrap/tts_composition.py` 装配，并由 `/tts` 请求真实写入；通知实现 `StructuredLogNotifier` 已接入。
-  - [ ] 子任务（`§6.1-7` / PARTIAL）：`TTSFeedbackMonitor` 仍只由手动反馈接口驱动，`TTSRegressionSuite` 仍无每日调度与版本曲线；评估结果的持久化与每日聚合亦缺。需逐项核实并补可复现证据链。
+  - [ ] 子任务（`§6.1-7` / PARTIAL）：`TTSFeedbackMonitor` 仍只由手动反馈接口驱动，`TTSRegressionSuite` 仍无每日调度与版本曲线；评估结果的持久化仍缺（每日聚合已于 2026-11-09 补上，见 §5-1）。需逐项核实并补可复现证据链。
 ### 6.4 质量门禁（防止回归）
 
 - [ ] 复核后同步更新第 1–5 节勾选状态
   - [ ] 子任务（`§6.4-5` / PARTIAL）：核查发现多处原记录与代码不符，历史整改记录已移除；各回退项需补可复现证据后再重新勾选。
-- [ ] 修复质量门禁的既有红项：`tests/test_molt_startup.py` 的 AST 断言与 `main.py` 调用形态不符
-  - 现状证据：`tests/test_molt_startup.py:20` 只收集 `ast.Call` 中 `node.func` 为 `ast.Attribute` 的调用名，`:22-23` 却断言 `build_molt_controller` / `current_memory_repo` 在其中；而 `main.py:95` 的 `controller = build_molt_controller(current_memory_repo())` 两者都是普通 `ast.Name` 调用。实测 `attr calls=['start','start','exception']`、`name calls=['build_molt_controller','MoltScheduler','AsyncTaskScheduler','current_memory_repo','hasattr']`，断言恒失败。`bb5cd9c` 引入该测试时 `main.py:93` 已是同样写法；`main.py` 在 `2712f04` 与 `fec244e` 均未改动，属既有红项，与 TTS 质量评估改动无关。
-  - 影响：`scripts/todo_guard.py::failing_cases` 扫描整个 JUnit 报告，任意 failure / error / skipped 都判违规；`.github/workflows/ci.yml:87-89` 的 `Assert checked TODO tests are green`（`if: always()`）因此持续报红，导致 §4 / §5 / §6.1 已勾选项的绿灯证据在 CI 上无法成立。
-  - 待人为抉择 A（修哪一侧）：改测试为同时收集 `ast.Name` 调用名（推荐，与 `main.py` 现状一致），或把 `main.py` 改成模块属性调用以迎合断言。
-  - 待人为抉择 B（门禁口径）：`failing_cases()` 是否只校验勾选项引用 / `todo_test_map.json` 登记的用例，而非整个报告；若改需同步 `tests/test_todo_guard_policy.py` 的防护断言，避免门禁被架空。
-  - 验收：`python -m pytest tests/test_molt_startup.py -q` 全绿；`python scripts/todo_guard.py --report <junit>` 返回 0；CI `Assert checked TODO tests are green` 步骤通过。
+- [x] 修复质量门禁的既有红项：`tests/test_molt_startup.py` 的 AST 断言与 `main.py` 调用形态不符 — 证据 `tests/test_molt_startup.py`
+  - 完成证据：根因是测试只收集 `ast.Attribute` 调用名，而 `main.py:95` 的 `build_molt_controller(current_memory_repo())` 是 `ast.Name` 调用。测试新增 `_call_names()` 同时收集 Name / Attribute，`main.py` 未改动；`python -m pytest tests/test_molt_startup.py -q` → **2 passed**（此前 1 failed / 1 passed），`todo_guard.py --report` 不再因该用例判违规。
+  - 决议：待抉择 A 采用「改测试、不动生产代码」；待抉择 B（放宽 `failing_cases()` 只校验登记用例）**不实施**，避免门禁被架空。CI `Assert checked TODO tests are green` 恢复可用。
