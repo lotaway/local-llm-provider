@@ -22,7 +22,7 @@ from infrastructure.tts.wav_bytes import merge_wav_segments
 from services.tts_alerts import TTSAlertService
 from services.tts_quality_gateway import TTSQualityGateway
 from services.tts_quality_observer import TTSQualityObserver
-from services.tts_quality_quota import DailyEvaluationQuota
+from services.tts_quality_quota import DailyEvaluationQuota, EvaluationQuotaExceeded
 from services.tts_quality_statistics import TTSQualityStatistics
 from services.tts_request_sampler import TTSRequestSampler
 
@@ -139,6 +139,7 @@ class _FakeDatabase:
     def __init__(self, create_error: Optional[Exception] = None) -> None:
         self.create_error = create_error
         self.created = []
+        self.retention_updates = []
         self.collections: Dict[str, _FakeCollection] = {}
 
     def create_collection(self, name: str, **options: Any) -> _FakeCollection:
@@ -146,6 +147,10 @@ class _FakeDatabase:
             raise self.create_error
         self.created.append((name, options))
         return self._collection(name)
+
+    def command(self, name: str, collection: str, **options: Any) -> Dict[str, Any]:
+        self.retention_updates.append((name, collection, options))
+        return {"ok": 1}
 
     def _collection(self, name: str) -> _FakeCollection:
         return self.collections.setdefault(name, _FakeCollection())
@@ -420,13 +425,14 @@ def test_daily_quota_degrades_without_blocking():
     assert alerts.alerts() == []
 
 
-def test_daily_quota_resets_on_a_new_utc_day():
+def test_daily_quota_exhausts_and_resets_on_a_new_utc_day():
     clock = _MutableClock(7)
     quota = DailyEvaluationQuota(1, clock=clock)
-    assert quota.reserve() is True
-    assert quota.reserve() is False
+    quota.consume()
+    with pytest.raises(EvaluationQuotaExceeded):
+        quota.consume()
     clock.day = 8
-    assert quota.reserve() is True
+    quota.consume()
 
 
 def test_observer_persists_evaluated_record_through_the_store():
@@ -487,3 +493,101 @@ def test_repository_still_inserts_when_collection_already_exists():
 def test_repository_rejects_invalid_retention():
     with pytest.raises(ValueError):
         MongoTTSQualityRecordRepository(retention_days=0)
+
+
+def test_repository_reapplies_retention_when_the_collection_exists():
+    database = _FakeDatabase(create_error=RuntimeError("already exists"))
+    repository = MongoTTSQualityRecordRepository(
+        retention_days=3, clock=_MutableClock(9), client_factory=lambda uri: _FakeClient(database)
+    )
+    repository.save({"status": "pass"})
+
+    command, collection, options = database.retention_updates[0]
+    assert command == "collMod"
+    assert collection == TTS_MONGO_COLLECTION_QUALITY
+    assert options["expireAfterSeconds"] == 3 * 86400
+
+
+def test_repository_inserts_when_retention_cannot_be_reapplied():
+    class _NoCommandDatabase(_FakeDatabase):
+        def command(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+            raise RuntimeError("not authorized")
+
+    database = _NoCommandDatabase(create_error=RuntimeError("already exists"))
+    repository = MongoTTSQualityRecordRepository(
+        clock=_MutableClock(9), client_factory=lambda uri: _FakeClient(database)
+    )
+    repository.save({"status": "pass"})
+
+    assert len(database.collections[TTS_MONGO_COLLECTION_QUALITY].inserted) == 1
+
+
+def test_unsampled_rejected_request_alerts_exactly_once(monkeypatch):
+    monkeypatch.setattr("services.tts_request_sampler.random.random", lambda: 0.99)
+    trends = TTSQualityStatistics()
+    sampler = TTSRequestSampler(sample_rate=0.01, failed_sample_rate=0.0)
+    alerts = TTSAlertService()
+    observer = TTSQualityObserver(
+        TTSQualityGateway(_Evaluator()), trends, sampler, alerts, executor=_InlineExecutor()
+    )
+    observer.observe({"status": "reject", "text": "hello", "stratum": "user-a"}, b"audio", None)
+
+    assert sampler.sampled_count == 0
+    assert len(alerts.alerts()) == 1
+    assert alerts.alerts()[0]["status"] == "reject"
+
+
+def test_sampled_rejection_alerts_exactly_once_with_the_evaluated_verdict():
+    class _RejectingEvaluator:
+        def evaluate(self, *args, **kwargs):
+            return _Result(0.9, is_passed=False)
+
+    observer, _, _, alerts = _observer(evaluator=_RejectingEvaluator(), sample_rate=1.0)
+    observer.observe({"status": "pass", "text": "hello"}, b"audio", None)
+
+    recorded = alerts.alerts()
+    assert len(recorded) == 1
+    assert recorded[0]["status"] == "reject"
+    assert recorded[0]["wer"] == 0.05
+    assert "text" not in recorded[0]
+
+
+def test_failed_evaluation_alerts_exactly_once(monkeypatch):
+    monkeypatch.setattr("services.tts_request_sampler.random.random", lambda: 0.99)
+    service_class = _service_class(monkeypatch)
+    observer, trends, sampler, alerts = _observer(evaluator=_FailingEvaluator(), sample_rate=0.05)
+    service = service_class(
+        adapter=_FakeAdapter(_wav(b"")),
+        quality_observer=observer,
+        trends=trends,
+        sampling_monitor=sampler,
+        alerts=alerts,
+    )
+    asyncio.run(_collect(service.stream("hello")))
+
+    recorded = alerts.alerts()
+    assert len(recorded) == 1
+    assert recorded[0]["reason"] == "evaluation_failed"
+
+
+def test_request_bookkeeping_runs_off_the_event_loop(monkeypatch):
+    service_class = _service_class(monkeypatch)
+    observer, trends, sampler, alerts = _observer()
+    service = service_class(
+        adapter=_FakeAdapter(_wav(b"\x00\x00" * 20)),
+        quality_observer=observer,
+        trends=trends,
+        sampling_monitor=sampler,
+        alerts=alerts,
+    )
+    observed = []
+    record = service._record_request
+
+    def _record_on_current_thread(*args, **kwargs):
+        observed.append(threading.current_thread())
+        return record(*args, **kwargs)
+
+    service._record_request = _record_on_current_thread
+    asyncio.run(_collect(service.stream("hello")))
+
+    assert observed and observed[0] is not threading.main_thread()

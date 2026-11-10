@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
 
+import threading
+import time
+
 from services.tts_quality_statistics import TTSQualityStatistics
 
 
@@ -103,3 +106,36 @@ def test_first_chunk_latency_is_summarized_without_missing_records():
     assert summary["count"] == 2.0
     assert summary["mean"] == 150.0
     assert statistics.daily_statistics()["first_chunk"]["p95"] == 180.0
+
+
+def test_rolling_mean_ignores_records_without_the_metric():
+    statistics = TTSQualityStatistics(window=10, clock=_FakeClock(7))
+    statistics.add({"wer": 0.2})
+    statistics.add({"status": "pass"})
+
+    assert statistics.rolling_mean("wer") == 0.2
+
+
+def test_reads_survive_concurrent_writes_without_mutation_errors():
+    statistics = TTSQualityStatistics(window=50)
+    stop = threading.Event()
+    writer = threading.Thread(target=_write_until_stopped, args=(statistics, stop), daemon=True)
+    writer.start()
+    reads = 0
+    try:
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            statistics.daily_breakdown()
+            statistics.daily_statistics()
+            statistics.wer_statistics()
+            reads += 1
+    finally:
+        stop.set()
+        writer.join(1.0)
+
+    assert reads > 0
+
+
+def _write_until_stopped(statistics, stop):
+    while not stop.is_set():
+        statistics.add({"status": "pass", "wer": 0.1, "dnsmos": {"overall": 4.0}})

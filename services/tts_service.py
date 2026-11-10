@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
@@ -56,19 +57,18 @@ class TTSService:
         user_id: str = "",
         reference_audio: Optional[bytes] = None,
     ) -> AsyncGenerator[bytes, None]:
-        base64_chunks: List[str] = []
         audio_chunks: List[bytes] = []
         events: List[Dict[str, Any]] = []
         async for chunk in self.adapter.generate_speech_stream(
             text, emotion_params, speaker_id, callback=events.append, user_id=user_id
         ):
-            base64_chunks.append(chunk)
             payload = self._decode_chunk(chunk)
             audio_chunks.append(payload)
             yield payload
-        audio = b"".join(audio_chunks)
-        stratum = speaker_id or user_id or "anonymous"
-        self._record_request(text or "", "".join(base64_chunks), audio, reference_audio, events, stratum)
+        await asyncio.to_thread(
+            self._record_request, text or "", b"".join(audio_chunks),
+            reference_audio, events, speaker_id or user_id or "anonymous",
+        )
 
     @staticmethod
     def _decode_chunk(chunk: str) -> bytes:
@@ -114,7 +114,7 @@ class TTSService:
         return {"results": results}
 
     def _record_request(
-        self, text: str, text_chunks: str, audio: bytes, reference_audio: Optional[bytes],
+        self, text: str, audio: bytes, reference_audio: Optional[bytes],
         events: List[Dict[str, Any]], stratum: str = "anonymous",
     ) -> None:
         anomaly = self.audio_quality.is_duration_anomaly(audio) if audio else True
@@ -128,8 +128,8 @@ class TTSService:
             "first_chunk_ms": self._first_chunk_ms(events),
             "stratum": stratum,
         }
-        self.alerts.check([result])
         if self.quality_observer is None:
+            self.alerts.check([result])
             self.trends.add(result)
             return
         self.quality_observer.observe(result, audio, reference_audio)

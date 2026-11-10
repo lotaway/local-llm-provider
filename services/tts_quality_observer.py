@@ -8,7 +8,7 @@ from constants import TTS_QUALITY_DAILY_LIMIT, TTS_QUALITY_MAX_PENDING, TTS_QUAL
 from interfaces.tts_types import ITTSQualityRecordStore
 from services.tts_alerts import TTSAlertService
 from services.tts_quality_gateway import TTSQualityGateway
-from services.tts_quality_quota import DailyEvaluationQuota
+from services.tts_quality_quota import DailyEvaluationQuota, EvaluationQuotaExceeded
 from services.tts_quality_statistics import TTSQualityStatistics
 from services.tts_request_sampler import TTSRequestSampler
 
@@ -46,19 +46,27 @@ class TTSQualityObserver:
     def observe(
         self, result: Dict[str, Any], audio: bytes, reference_audio: Optional[bytes]
     ) -> None:
-        if not self._sampler.should_sample(result):
-            self._trends.add(result)
+        if not self._sampler.select(result):
+            self._record_lightweight(result)
             return
         if not self._capacity.acquire(blocking=False):
-            logger.warning("tts_quality_evaluation_dropped", extra={"reason": "queue_full"})
-            self._trends.add(result)
+            self._skip(result, {"reason": "queue_full"})
             return
-        if not self._quota.reserve():
+        try:
+            self._quota.consume()
+        except EvaluationQuotaExceeded as error:
             self._capacity.release()
-            logger.warning("tts_quality_evaluation_quota_exceeded", extra={"limit": self._quota.limit})
-            self._trends.add(result)
+            self._skip(result, {"reason": "quota_exceeded", "limit": error.limit})
             return
         self._submit(result, audio, reference_audio)
+
+    def _skip(self, result: Dict[str, Any], extra: Dict[str, Any]) -> None:
+        logger.warning("tts_quality_evaluation_skipped", extra=extra)
+        self._record_lightweight(result)
+
+    def _record_lightweight(self, result: Dict[str, Any]) -> None:
+        self._trends.add(result)
+        self._alerts.check([result])
 
     def _submit(
         self, result: Dict[str, Any], audio: bytes, reference_audio: Optional[bytes]
@@ -68,7 +76,7 @@ class TTSQualityObserver:
         except RuntimeError:
             self._capacity.release()
             logger.exception("tts_quality_evaluation_submission_failed")
-            self._trends.add(result)
+            self._record_lightweight(result)
             return
         future.add_done_callback(partial(self._on_completed, result=result))
 

@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
@@ -24,6 +25,10 @@ ALLOWED_FIELDS = (
     "reason",
 )
 
+TIME_FIELD = "recorded_at"
+RETENTION_COMMAND = "collMod"
+DAY_SECONDS = 86400
+
 
 class MongoTTSQualityRecordRepository:
     def __init__(
@@ -39,10 +44,15 @@ class MongoTTSQualityRecordRepository:
         self._retention_days = retention_days
         self._clock = clock or self._utc_now
         self._client_factory = client_factory
+        self._lock = threading.Lock()
 
     @staticmethod
     def _utc_now() -> datetime:
         return datetime.now(timezone.utc)
+
+    @property
+    def _expire_after_seconds(self) -> int:
+        return self._retention_days * DAY_SECONDS
 
     def save(self, record: Dict[str, Any]) -> None:
         payload = {
@@ -50,29 +60,52 @@ class MongoTTSQualityRecordRepository:
             for key in ALLOWED_FIELDS
             if key in record and record[key] is not None
         }
-        payload["recorded_at"] = self._clock()
+        payload[TIME_FIELD] = self._clock()
         self._get_collection().insert_one(payload)
 
     def _get_collection(self) -> Any:
-        if self._collection is None:
-            if self._client_factory is None:
-                from pymongo import MongoClient
+        with self._lock:
+            if self._collection is None:
+                self._collection = self._open_collection()
+            return self._collection
 
-                self._client_factory = MongoClient
-            database = self._client_factory(MONGO_URI)[MONGO_DB_NAME]
-            self._ensure_timeseries(database)
-            self._collection = database[TTS_MONGO_COLLECTION_QUALITY]
-        return self._collection
+    def _open_collection(self) -> Any:
+        database = self._client(MONGO_URI)[MONGO_DB_NAME]
+        self._apply_retention(database)
+        return database[TTS_MONGO_COLLECTION_QUALITY]
 
-    def _ensure_timeseries(self, database: Any) -> None:
+    def _client(self, uri: str) -> Any:
+        factory = self._client_factory or _default_client
+        return factory(uri)
+
+    def _apply_retention(self, database: Any) -> None:
         options = {
-            "timeseries": {"timeField": "recorded_at", "granularity": "hours"},
-            "expireAfterSeconds": self._retention_days * 86400,
+            "timeseries": {"timeField": TIME_FIELD, "granularity": "hours"},
+            "expireAfterSeconds": self._expire_after_seconds,
         }
         try:
             database.create_collection(TTS_MONGO_COLLECTION_QUALITY, **options)
         except Exception as error:
-            logger.debug(
-                "tts_quality_collection_create_skipped",
-                extra={"error_type": type(error).__name__},
+            self._update_retention(database, error)
+
+    def _update_retention(self, database: Any, create_error: Exception) -> None:
+        try:
+            database.command(
+                RETENTION_COMMAND,
+                TTS_MONGO_COLLECTION_QUALITY,
+                expireAfterSeconds=self._expire_after_seconds,
             )
+        except Exception as error:
+            logger.warning(
+                "tts_quality_retention_not_applied",
+                extra={
+                    "create_error": type(create_error).__name__,
+                    "update_error": type(error).__name__,
+                },
+            )
+
+
+def _default_client(uri: str) -> Any:
+    from pymongo import MongoClient
+
+    return MongoClient(uri)

@@ -1,3 +1,5 @@
+import pytest
+
 from services.tts_alerts import TTSAlertService
 from services.tts_quality_gateway import TTSQualityGateway
 
@@ -24,14 +26,16 @@ def test_alert_service_flags_quality_regression():
     result = {"status": "reject", "wer": 0.5, "dnsmos": {"overall": 3.0}, "speaker_similarity": 0.5}
 
     assert service.should_alert(result) is True
-    assert service.check([result])[0]["status"] == "reject"
+    service.check([result])
+    assert service.alerts()[-1]["status"] == "reject"
 
 
 def test_alert_service_passes_clean_result():
     service = TTSAlertService()
 
     assert service.should_alert({"status": "pass", "wer": 0.01, "dnsmos": {"overall": 4.0}, "speaker_similarity": 0.9}) is False
-    assert service.check([]) == []
+    service.check([])
+    assert service.alerts() == []
 
 
 def test_alert_service_notifies_and_exposes_alerts():
@@ -39,10 +43,9 @@ def test_alert_service_notifies_and_exposes_alerts():
     service = TTSAlertService(notifier=notifier)
 
     result = {"status": "reject", "wer": 0.5, "dnsmos": {"overall": 3.0}, "speaker_similarity": 0.5}
-    alerts = service.check([result])
+    service.check([result])
 
-    assert alerts == [result]
-    assert len(notifier.alerts) == 1
+    assert notifier.alerts == [result]
     assert len(service.alerts()) == 1
 
 
@@ -53,3 +56,19 @@ def test_alert_service_reset_clears_alerts():
     service.reset()
 
     assert service.alerts() == []
+
+
+def test_alerts_are_bounded_and_drop_the_request_text():
+    service = TTSAlertService(limit=2)
+    for index in range(3):
+        service.check([{"status": "reject", "wer": float(index + 1), "text": f"private-{index}"}])
+
+    alerts = service.alerts()
+    assert len(alerts) == 2
+    assert [item["wer"] for item in alerts] == [2.0, 3.0]
+    assert all("text" not in item for item in alerts)
+
+
+def test_alert_limit_is_validated():
+    with pytest.raises(ValueError):
+        TTSAlertService(limit=0)

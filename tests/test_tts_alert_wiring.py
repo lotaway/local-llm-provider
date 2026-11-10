@@ -44,6 +44,13 @@ def test_every_request_is_checked_against_the_alert_rules():
     assert 'if status != "pass":' not in source
 
 
+def test_observer_alerts_once_per_request():
+    source = (ROOT / "services" / "tts_quality_observer.py").read_text(encoding="utf-8")
+    assert "self._alerts.check([result])" in source
+    assert "self._alerts.check([evaluated])" in source
+    assert source.count("check(") == 3
+
+
 def test_startup_uses_the_tts_composition_root():
     source = (ROOT / "main.py").read_text(encoding="utf-8")
     assert "from bootstrap.tts_composition import build_tts_service" in source
