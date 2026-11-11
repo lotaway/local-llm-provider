@@ -106,7 +106,46 @@ def pattern_counts(source: str) -> Dict[str, int]:
     forbidden_imports = 0
     for match in re.finditer(r"(?m)^\s*(?:import|from)\s+(pymongo|numpy|redis)\b", source):
         forbidden_imports += 1
-    return {"print": prints, "bare_except_pass": bare_excepts, "forbidden_imports": forbidden_imports}
+    return {
+        "print": prints,
+        "bare_except_pass": bare_excepts,
+        "forbidden_imports": forbidden_imports,
+        "comments": comment_count(source),
+    }
+
+
+COMMENT_DIRECTIVE_PREFIXES = (
+    "#!",
+    "# -*-",
+    "# type:",
+    "# noqa",
+    "# fmt:",
+    "# isort:",
+    "# pylint:",
+    "# pragma:",
+    "# Contract:",
+    "# 契约:",
+)
+
+
+def comment_count(source: str) -> int:
+    """Count explanatory ``#`` comments, skipping tool/type directives."""
+    import io
+    import tokenize
+
+    count = 0
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+        for token in tokens:
+            if token.type != tokenize.COMMENT:
+                continue
+            text = token.string.strip()
+            if any(text.startswith(prefix) for prefix in COMMENT_DIRECTIVE_PREFIXES):
+                continue
+            count += 1
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return 0
+    return count
 
 
 def is_explanatory_comment(text: str) -> bool:
