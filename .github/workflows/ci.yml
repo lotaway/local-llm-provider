@@ -67,6 +67,7 @@ jobs:
             tests/test_agent_protocol.py \
             tests/test_agent_protocol_integration.py \
             tests/test_dnsmos_inference.py \
+            tests/test_tts_model_assets.py \
             tests/test_todo_guard.py \
             tests/test_molt_startup.py \
             tests/test_tts_jitter.py \

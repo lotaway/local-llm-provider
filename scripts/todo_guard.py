@@ -29,6 +29,8 @@ def checked_lines() -> List[str]:
 def referenced_tests(lines: Iterable[str]) -> Set[str]:
     found: Set[str] = set()
     for line in lines:
+        if not line.lstrip().startswith(CHECKED_PREFIX):
+            continue
         for match in REFERENCE.finditer(line):
             found.add(Path(match.group(1)).as_posix())
     return found

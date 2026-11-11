@@ -107,6 +107,11 @@ tts = [
     "audioop-lts>=0.2; python_version >= '3.13'",
     "vector-quantize-pytorch>=1.14",
     "monotonic-align @ git+https://github.com/resemble-ai/monotonic_align.git",
+    "openai-whisper>=20231117",
+    "onnxruntime>=1.17",
+    "speechbrain>=1.0",
+    "jiwer>=3.0",
+    "pydantic-settings>=2.0",
 ]
 # 使用方式: pip install -e .[vllm] / pip install -e .[tts]
 # 注意: [tts] 不包含 torch/torchaudio，需先按宿主安装对应的 ROCm/CUDA/CPU 构建。

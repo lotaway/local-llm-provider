@@ -4,10 +4,7 @@ import logging
 from typing import Any, Dict, List
 
 from .config.settings import AppConfig
-from .infrastructure.whisper_asr import WhisperASRProcessor
-from .infrastructure.dnsmos import MicrosoftDNSMOSCalculator
-from .infrastructure.speaker_similarity import ECAPASpeakerSimilarityCalculator
-from .infrastructure.wer_calculator import JiwerWERCalculator
+from .infrastructure.evaluator_factory import build_quality_evaluator
 from .application.evaluator_service import TTSQualityEvaluator
 from .report_summary import build_report, summarize_reports
 
@@ -16,14 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def bootstrap() -> TTSQualityEvaluator:
-    config = AppConfig()
-
-    asr = WhisperASRProcessor(model_name=config.models.whisper_model)
-    mos = MicrosoftDNSMOSCalculator(model_path=config.models.dnsmos_model_path)
-    speaker = ECAPASpeakerSimilarityCalculator(model_source=config.models.ecapa_model_source)
-    wer_calc = JiwerWERCalculator()
-
-    return TTSQualityEvaluator(asr, mos, speaker, wer_calc)
+    return build_quality_evaluator(AppConfig())
 
 
 def run_evaluation(

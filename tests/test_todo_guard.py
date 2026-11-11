@@ -24,7 +24,7 @@ def test_reference_extraction_ignores_unchecked_items():
 
 def test_checked_lines_only_returns_checkboxes():
     assert all(line.lstrip().startswith("- [x]") for line in checked_lines())
-    assert referenced_tests(checked_lines())
+    assert dangling_paths(referenced_tests(checked_lines())) == []
 
 
 def test_dangling_paths_are_detected(tmp_path):

@@ -193,6 +193,9 @@ def _stub_composition_dependencies(monkeypatch):
     package = types.ModuleType("model_providers")
     package.__path__ = [str(ROOT / "model_providers")]
     monkeypatch.setitem(sys.modules, "model_providers", package)
+    tts_package = types.ModuleType("model_providers.tts")
+    tts_package.__path__ = [str(ROOT / "model_providers" / "tts")]
+    monkeypatch.setitem(sys.modules, "model_providers.tts", tts_package)
     adapter_module = types.ModuleType("model_providers.tts.style_tts2_adapter")
     adapter_module.StyleTTS2Adapter = lambda **kwargs: object()
     monkeypatch.setitem(sys.modules, "model_providers.tts.style_tts2_adapter", adapter_module)
@@ -258,6 +261,46 @@ def test_adapter_materializes_bytes_and_loads_models_once():
     assert recorder.calls[0][2].endswith("generated.wav")
     assert recorder.calls[0][4] == 20
     assert recorder.calls[1][1] == ""
+
+
+def test_failed_construction_is_not_retried_during_the_cooldown():
+    attempts = []
+
+    def factory():
+        attempts.append("try")
+        raise OSError("model download failed")
+
+    adapter = ProductionTTSQualityEvaluator(
+        evaluator_factory=factory, retry_cooldown_seconds=600, clock=lambda: 1000.0
+    )
+    payload = _wav(b"\x00\x00" * 20)
+    with pytest.raises(OSError):
+        adapter.evaluate("hello", b"", payload, {"wer_max": 0.08})
+    with pytest.raises(RuntimeError):
+        adapter.evaluate("hello", b"", payload, {"wer_max": 0.08})
+    assert len(attempts) == 1
+
+
+def test_construction_is_retried_once_the_cooldown_expires():
+    now = {"value": 1000.0}
+    attempts = []
+
+    def factory():
+        attempts.append(now["value"])
+        if len(attempts) == 1:
+            raise OSError("transient model failure")
+        return _Evaluator()
+
+    adapter = ProductionTTSQualityEvaluator(
+        evaluator_factory=factory, retry_cooldown_seconds=10, clock=lambda: now["value"]
+    )
+    payload = _wav(b"\x00\x00" * 20)
+    with pytest.raises(OSError):
+        adapter.evaluate("hello", b"", payload, {"wer_max": 0.08})
+    now["value"] = 1011.0
+    result = adapter.evaluate("hello", b"", payload, {"wer_max": 0.08})
+    assert result.metrics.wer == 0.05
+    assert len(attempts) == 2
 
 
 def test_evaluator_without_reference_audio_skips_similarity_check():
@@ -335,6 +378,9 @@ def test_stream_never_blocks_and_metrics_contain_quality_scores(monkeypatch):
     lightweight_package = types.ModuleType("model_providers")
     lightweight_package.__path__ = [str(ROOT / "model_providers")]
     monkeypatch.setitem(sys.modules, "model_providers", lightweight_package)
+    lightweight_tts = types.ModuleType("model_providers.tts")
+    lightweight_tts.__path__ = [str(ROOT / "model_providers" / "tts")]
+    monkeypatch.setitem(sys.modules, "model_providers.tts", lightweight_tts)
     from services.tts_service import TTSService
     observer, trends, sampler, alerts = _observer()
     chunk = _wav(b"\x00\x00" * 20)
@@ -387,6 +433,9 @@ def _service_class(monkeypatch):
     lightweight_package = types.ModuleType("model_providers")
     lightweight_package.__path__ = [str(ROOT / "model_providers")]
     monkeypatch.setitem(sys.modules, "model_providers", lightweight_package)
+    lightweight_tts = types.ModuleType("model_providers.tts")
+    lightweight_tts.__path__ = [str(ROOT / "model_providers" / "tts")]
+    monkeypatch.setitem(sys.modules, "model_providers.tts", lightweight_tts)
     from services.tts_service import TTSService
 
     return TTSService

@@ -7,16 +7,10 @@
 > 2026-11-10（人工确认）：未完成项均需人工确认后才能实施，人工确认点逐项写在对应任务下：§5 模型部署 A–C、§5 每日回归 A–F、§6.1-7 A–B、§6.4-5 A–B。
 > 2026-11-10（完成项复核）：逐条核对 10 个 `[x]`（6 项主任务 + 4 项子任务）。核验通过并移除 5 个：§4-7 流式首包观测（主+子）、§6.1 §4 网关接入复核（主+子）、§6.4 AST 门禁红项。回退为 `[ ]` 并挂子问题 5 个：§4 质量链路接入、§5 抽样监控（主+两条遗留）、§5-1 每日统计，缺陷与复现方式见各条。
 > 2026-11-10（缺陷修复）：修复复核挂出的 11 个子问题后逐项核验通过，移除 §4 质量链路接入、§5 抽样监控（含两条遗留）、§5-1 每日统计。时长改按 WAV 头（PCM_16）解析，实测 3.0s 不再算成 1.5s；统计读写统一快照加锁，并发探针不再抛 `RuntimeError: deque mutated during iteration`，`rolling_mean` 跳过缺测；去重改用有界摘要集合且 `_record_request` 移交线程池；告警/采样记录设上限并脱敏，一次请求只告警一次；保留窗口在集合已存在时用 `collMod` 对账，建连接单飞初始化，非「已存在」失败以 warning 记录。证据：`tests/test_tts_audio_quality.py`、`tests/test_tts_quality_statistics.py`、`tests/test_tts_request_sampler.py`、`tests/test_tts_alerts.py`、`tests/test_tts_quality_integration.py`（101 项映射测试绿灯）。
+> 2026-11-11（§5 模型部署完成并移除）：按人工确认的一A/一B/一C 落地后移除 §5 首条「补齐生产评估模型的部署与端到端验证」。一A：三个评估模型（whisper `large` / DNSMOS `sig_bak_ovr.onnx` / ECAPA）首次使用时按需下载进项目根 `models/`，DNSMOS 走 `ensure_local_model`（sha256 固定校验 + 隔离 + 失败回滚），whisper/ECAPA 由各自库下载并指向 `models/`（ECAPA 用 `COPY_SKIP_CACHE` 直落 `models/ecapa`，不依赖 `~/.cache/huggingface`），支持手动放置，不随启动下载、不进镜像与 git；一B：推理依赖按 `tts` extra 声明（`openai-whisper`/`onnxruntime`/`speechbrain`/`jiwer`/`pydantic-settings`），torch 仍由所选宿主/镜像的 ROCm/CUDA 构建提供且经 `scripts/check_torch_build.py` 钉版守卫，部署不绑定显卡厂商（`Dockerfile` 以 `BASE_IMAGE` 构建参数选基座，默认 NVIDIA CUDA 官方镜像，AMD 以 `--build-arg` 换 ROCm 镜像；compose 的 ROCm 服务为 AMD 路径示例），镜像与 entrypoint 均补 ffmpeg 前置，entrypoint 的 bitsandbytes 源码编译仅在 ROCm 环境触发；一C：重复的模型解析统一进 `model_assets.py`，组装收敛到 `evaluator_factory.build_quality_evaluator` 单一入口，评估器构造失败降级契约（日志 + 告警 + 直通，`TTS_EVALUATOR_RETRY_COOLDOWN_SECONDS` 默认 600s 冷却）在 `ProductionTTSQualityEvaluator` 形式化。端到端实测（RX 7900 XTX，全部真实模型推理）：WER 0.0000 / DNSMOS 2.8285 / Similarity 1.0000，`scripts/verify_tts_quality_models.py` 退出码 0；部署与验证细节见 `TTS_QUALITY_MODELS.md`。证据：`tests/test_tts_model_assets.py`、`tests/test_dnsmos_inference.py`、`tests/test_tts_quality_integration.py`。
 
 ## 5. TTS 质量评估与线上监控（来源：TTS_QUALITY_ESTIMATE.md）
 
-- [ ] 补齐生产评估模型的部署与端到端验证
-  - 现状证据：仓库无 `models/dnsmos.onnx`；`ProductionTTSQualityEvaluator` 依赖的 Whisper / DNSMOS ONNX / ECAPA 模型文件，以及 `onnxruntime` / `librosa` / `speechbrain` 等运行时依赖，均未纳入部署流程（本机默认 Python 亦缺失）。当前 `tests/test_tts_quality_integration.py` 以可注入的 fake evaluator 覆盖契约与装配，未跑真实模型推理；生产上模型缺失时观察器降级为日志 + 告警并放行响应。
-  - 待人为抉择 A（模型来源与放置）：随镜像打包 / 启动时下载 / 挂载卷；模型版本、校验与回滚方式。
-  - 待人为抉择 B（依赖与资源）：把推理依赖加入 `pyproject.toml` 的 `tts` extra 与镜像；CPU/GPU 选择、显存与并发上限。
-  - 待人为抉择 C（验收环境与降级口径）：真实模型由谁提供、在哪个环境跑通 `/tts`；三项指标缺项是否算通过；部署文档需记录的模型路径、版本校验方式，以及「模型缺失 / 推理失败放行并告警」是否作为正式降级契约。
-  - 人工确认前不实施：模型文件、推理依赖、镜像与部署文档改动都不在本轮范围内；fake evaluator 只覆盖契约与装配，不能据此勾选本项。
-  - 验收：用真实 `sig_bak_ovr.onnx` 等模型跑通一次完整 `/tts` 抽样评估（WER / DNSMOS / Similarity 三项均有值），并在部署文档中记录模型路径与降级行为。
 - [ ] 固定测试句集 + 每日回归测试 + 版本对比曲线
   - 现状证据：固定句集已有 3 句英文（`services/tts_regression_suite.py:11-15`），但只有手动接口 `POST /tts/regression`（`controllers/tts_controller.py:147-150`，限流 2/min），无任何每日调度（`main.py:201-212` 只初始化 `TaskScheduler` / MOLT 调度器并装配 TTS 服务；`services/task_scheduler.py:58-73` 仅 `register_root_task()`，未注册 TTS 回归任务）；`TTSService.run_regression` 只返回 `duration_seconds`/`bytes`（`services/tts_service.py:101-114`），未调用 `TTSRegressionSuite.run()`，`_runs` 历史不写入；`compare()`（`services/tts_regression_suite.py:40`）唯一调用点是 `tests/test_tts_regression_suite.py:18`；`version` 为随机 `uuid.uuid4()[:8]`（`services/tts_regression_suite.py:31,36`），无真实版本与持久化，无法形成曲线。
   - 待人为抉择 A（句集内容）：是否保留现有 3 句英文，改为中文/中英混合、覆盖多情绪与长难句、数字与专有名词；句集数量与存放位置（代码常量 / 配置文件 / 数据库）。
@@ -44,7 +38,7 @@
 ### 6.4 质量门禁（防止回归）
 
 - [ ] 复核后同步更新第 1–5 节勾选状态
-  - [ ] 子任务（`§6.4-5` / PARTIAL）：2026-11-10 按「可复现证据 + 代码现状一致」再次复核，已移除 3 项并修复其挂出的 11 个子问题；剩余 §5 两项与 §6.1-7 待人工确认后再复核。
+  - [ ] 子任务（`§6.4-5` / PARTIAL）：2026-11-10 按「可复现证据 + 代码现状一致」再次复核，已移除 3 项并修复其挂出的 11 个子问题；剩余 §5 每日回归与 §6.1-7 待人工确认后再复核。
   - 待人为抉择 A（勾选口径）：是否维持「可复现测试证据 + 代码现状一致」的现行门槛，还是允许仅凭人工复核结论勾选；若放宽，需同步修改 `scripts/todo_guard.py` 门禁规则并说明理由（同类放宽门禁的提议此前已被否决，见 git 历史 `22d6233`）。
-  - 待人为抉择 B（范围与顺序）：第 1–5 节回退项的复核顺序、由谁确认证据、是否要求一次全量回归；§5 模型部署与每日回归两项在各自 A–F 未确认前不得勾选。
+  - 待人为抉择 B（范围与顺序）：第 1–5 节回退项的复核顺序、由谁确认证据、是否要求一次全量回归；§5 每日回归在 A–F 未确认前不得勾选。
   - 人工确认前不实施：保持 `[ ]`，不在无新证据的情况下批量同步勾选状态。

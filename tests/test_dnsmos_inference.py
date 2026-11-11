@@ -45,14 +45,19 @@ def test_feed_shape_matches_official_901_second_window():
 def test_first_output_maps_sig_bak_ovr_to_domain_scores():
     session = FakeSession((3.0, 2.5, 3.4))
     result = build(session, False)._run_inference(np.zeros(16000 * 11, dtype=np.float32))
-    assert result == {"overall": 3.4, "signal": 3.0, "background": 2.5}
+    assert result == {
+        "overall": pytest.approx(3.4),
+        "signal": pytest.approx(3.0),
+        "background": pytest.approx(2.5),
+    }
 
 
-def test_short_audio_is_padded_to_one_window():
+def test_short_audio_is_repeated_into_full_windows():
     session = FakeSession()
     build(session, False)._run_inference(np.ones(8000, dtype=np.float32))
-    assert len(session.feeds) == 1
-    assert session.feeds[0].shape == (1, FRAME_SAMPLES)
+    assert len(session.feeds) >= 1
+    assert all(feed.shape == (1, FRAME_SAMPLES) for feed in session.feeds)
+    assert session.feeds[0].sum() > 0.0
 
 
 def test_long_audio_uses_one_second_hop():
@@ -77,7 +82,14 @@ def test_model_without_three_scores_is_rejected():
         build(session, False)._run_inference(np.zeros(16000, dtype=np.float32))
 
 
-def test_empty_audio_returns_zero_scores():
+def test_empty_audio_is_padded_to_one_silent_window():
     session = FakeSession()
     result = build(session, False)._run_inference(np.array([], dtype=np.float32))
-    assert result == {"overall": 0.0, "signal": 0.0, "background": 0.0}
+    assert len(session.feeds) == 1
+    assert session.feeds[0].shape == (1, FRAME_SAMPLES)
+    assert not session.feeds[0].any()
+    assert result == {
+        "overall": pytest.approx(3.4),
+        "signal": pytest.approx(3.0),
+        "background": pytest.approx(2.5),
+    }

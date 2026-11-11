@@ -1,27 +1,18 @@
 import os
 import tempfile
 import threading
+import time
 from typing import Any, Callable, Dict, Optional
 
+from constants import TTS_EVALUATOR_RETRY_COOLDOWN_SECONDS
 from infrastructure.tts.wav_bytes import merge_wav_segments
 from interfaces.tts_types import ITTSQualityEvaluator
 
 
 def build_default_evaluator() -> Any:
-    from tts_estimate.application.evaluator_service import TTSQualityEvaluator
-    from tts_estimate.config.settings import AppConfig
-    from tts_estimate.infrastructure.dnsmos import MicrosoftDNSMOSCalculator
-    from tts_estimate.infrastructure.speaker_similarity import ECAPASpeakerSimilarityCalculator
-    from tts_estimate.infrastructure.wer_calculator import JiwerWERCalculator
-    from tts_estimate.infrastructure.whisper_asr import WhisperASRProcessor
+    from tts_estimate.infrastructure.evaluator_factory import build_quality_evaluator
 
-    config = AppConfig()
-    return TTSQualityEvaluator(
-        WhisperASRProcessor(model_name=config.models.whisper_model),
-        MicrosoftDNSMOSCalculator(model_path=config.models.dnsmos_model_path),
-        ECAPASpeakerSimilarityCalculator(model_source=config.models.ecapa_model_source),
-        JiwerWERCalculator(),
-    )
+    return build_quality_evaluator()
 
 
 class ProductionTTSQualityEvaluator(ITTSQualityEvaluator):
@@ -29,11 +20,16 @@ class ProductionTTSQualityEvaluator(ITTSQualityEvaluator):
         self,
         evaluator_factory: Optional[Callable[[], Any]] = None,
         temp_dir: Optional[str] = None,
+        retry_cooldown_seconds: float = TTS_EVALUATOR_RETRY_COOLDOWN_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._factory = evaluator_factory or build_default_evaluator
         self._temp_dir = temp_dir
         self._evaluator: Any = None
         self._lock = threading.Lock()
+        self._cooldown = retry_cooldown_seconds
+        self._clock = clock
+        self._last_failure: Optional[tuple[float, BaseException]] = None
 
     def evaluate(
         self,
@@ -52,8 +48,26 @@ class ProductionTTSQualityEvaluator(ITTSQualityEvaluator):
         if self._evaluator is None:
             with self._lock:
                 if self._evaluator is None:
-                    self._evaluator = self._factory()
+                    self._evaluator = self._construct()
         return self._evaluator
+
+    def _construct(self) -> Any:
+        if self._cooldown_active():
+            _, error = self._last_failure
+            raise RuntimeError("quality evaluator construction is in retry cooldown") from error
+        try:
+            evaluator = self._factory()
+        except Exception as error:
+            self._last_failure = (self._clock(), error)
+            raise
+        self._last_failure = None
+        return evaluator
+
+    def _cooldown_active(self) -> bool:
+        if self._last_failure is None:
+            return False
+        failed_at, _ = self._last_failure
+        return self._clock() - failed_at < self._cooldown
 
     @staticmethod
     def _write_audio(payload: bytes, workdir: str, filename: str) -> str:

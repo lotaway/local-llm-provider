@@ -6,17 +6,16 @@ dependencies = [
     "openai-whisper",
     "jiwer",
     "numpy",
-    "scipy",
-    "torch",
-    "torchaudio",
     "onnxruntime",
     "pydantic",
     "pydantic-settings",
     "speechbrain",
-    "resemblyzer",
-    "librosa"
+    "librosa",
 ]
 requires-python = ">=3.12"
+# torch/torchaudio are deliberately absent: install the host-specific
+# ROCm/CUDA build first, see the repository root pyproject.toml and
+# scripts/install.sh, then use the [tts] extra there.
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

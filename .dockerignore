@@ -1,0 +1,8 @@
+.git
+.gitignore
+models
+docs/note
+__pycache__
+*.pyc
+.pytest_cache
+todo_junit.xml

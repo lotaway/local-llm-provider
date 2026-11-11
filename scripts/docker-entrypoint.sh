@@ -1,17 +1,23 @@
 #!/bin/bash
 set -e
 
-pip install . -i https://pypi.tuna.tsinghua.edu.cn/simple
+python scripts/check_torch_build.py --constraints /tmp/torch-constraints.txt
+
+pip install --upgrade-strategy only-if-needed -c /tmp/torch-constraints.txt ".[tts]" -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+if ! command -v ffmpeg >/dev/null 2>&1; then
+    apt-get update && apt-get install -y --no-install-recommends ffmpeg
+fi
 
 WANTED_BIN=$(python -c "import bitsandbytes" 2>&1 | grep "Configured ROCm binary not found at" | head -n 1 | sed 's/.*found at //' | xargs)
 
-if [ -z "$WANTED_BIN" ]; then
+if [ -z "$WANTED_BIN" ] && [ -d /opt/rocm ]; then
     BNB_PATH=$(python -c "import bitsandbytes; print(bitsandbytes.__path__[0])")
     ROCM_VER=$(cat /opt/rocm/.info/version | cut -d'.' -f1,2 | tr -d '.')
     WANTED_BIN="$BNB_PATH/libbitsandbytes_rocm${ROCM_VER}.so"
 fi
 
-if [ ! -f "$WANTED_BIN" ]; then
+if [ -n "$WANTED_BIN" ] && [ ! -f "$WANTED_BIN" ]; then
     echo "----------------------------------------------------------------"
     echo "bitsandbytes ROCm binary not found. Expected: $WANTED_BIN"
     echo "Compiling from source to match your environment..."
